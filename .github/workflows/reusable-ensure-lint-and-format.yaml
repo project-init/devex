@@ -1,0 +1,25 @@
+name: Reusable Ensure Lint and Format
+
+on:
+  workflow_call:
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v3
+        with:
+          install: true
+          experimental: true
+          cache: true
+
+      - name: Lint
+        run: mise lint
+
+      - name: Format
+        run: mise format
+
+      - name: Git Diff
+        run: git diff --exit-code

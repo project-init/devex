@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Go
+  - package-ecosystem: "gomod"
+    directory: "/"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: "monthly"
+    groups:
+      patch:
+        update-types:
+          - "patch"
+
+  # Github Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

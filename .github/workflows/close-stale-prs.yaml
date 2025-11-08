@@ -1,0 +1,22 @@
+name: close-stale-prs.yaml
+on:
+  schedule:
+    - cron: '00 16 * * *'
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write # only for delete-branch option
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v10
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-pr-message: 'This PR is stale after 7 days of no activity. Remove the stale label, add a HOLD label or a comment, or this PR will be closed in 7 days.'
+          days-before-stale: 7
+          days-before-close: 7
+          exempt-pr-labels: 'HOLD'
+          delete-branch: 'true'

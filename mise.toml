@@ -1,0 +1,27 @@
+[tools]
+go = "1.25.2"
+golangci-lint = "2.4.0"
+
+[env]
+MISE_DISABLE_BACKENDS = "aqua,ubi"
+
+[settings]
+experimental = true
+
+# Commands
+
+[tasks.workplan]
+run = "go run cmd/workplan/main.go"
+
+# Linting
+
+[tasks.lint]
+run = "golangci-lint run --fix"
+
+[tasks.format]
+run = "go fmt ./..."
+
+# Release
+
+[tasks.start-release]
+run = "./scripts/git-tag-release.sh"
