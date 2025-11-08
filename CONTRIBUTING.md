@@ -24,7 +24,7 @@ changes to an automated formatter could be seen as substantial enough to warrant
 #### **Do you intend to add a new feature or change an existing one?**
 
 * Create a Pull Request with a new workplan. There should be at least a problem.md document and ideally a workplan.yaml
-  as part of the pull request. Use `workplan <cmd_to_add_or_alter> <workplan_name>` to generate the workplan documents
+  as part of the pull request. Use `mise workplan <cmd_to_add_or_alter> <workplan_name>` to generate the workplan documents
   to build out. Check the [workplans](docs/workplans) folder for example subtypes that have already been used.
 * Do not open an issue on GitHub until you have collected positive feedback about the change. GitHub issues are
   primarily intended for bug reports and fixes.
