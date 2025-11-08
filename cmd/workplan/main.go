@@ -2,14 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
-	"path"
 
 	"github.com/project-init/devex/internal/workplan"
-	"github.com/project-init/devex/internal/workplan/jira"
-	"github.com/project-init/devex/internal/workplan/problem"
 )
 
 func main() {
@@ -19,9 +15,15 @@ func main() {
 
 	switch os.Args[1] {
 	case "generate":
-		generateFiles()
+		err := workplan.GenerateFiles(os.Args[2])
+		if err != nil {
+			log.Fatal(err)
+		}
 	case "publish":
-		planWorkInJira()
+		err := workplan.PublishWorkPlanToJira(context.Background(), os.Args[2])
+		if err != nil {
+			log.Fatal(err)
+		}
 	case "help":
 		usage()
 	default:
@@ -40,36 +42,4 @@ Commands:
 	help - Print this help message.
 `
 	log.Fatal(usageOutput)
-}
-
-func generateFiles() {
-	workplanPath := os.Args[2]
-	problemOutputPath := path.Join(path.Dir(workplanPath), "problem.md")
-	err := problem.GenerateProblemTemplate(problemOutputPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = workplan.GenerateWorkplanTemplate(workplanPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func planWorkInJira() {
-	fmt.Println("Let's plan some work...")
-
-	workplanPath := os.Args[1]
-	wp, err := workplan.LoadWorkplan(workplanPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	jiraClient, err := jira.New()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err = jiraClient.Create(context.Background(), wp); err != nil {
-		log.Fatal(err)
-	}
 }
