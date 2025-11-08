@@ -1,0 +1,13 @@
+investigation: INIT-5
+project: INIT
+
+epics:
+  - summary: "Test"
+    description: "Test"
+    tasks:
+      - summary: "Test"
+        description: "Test"
+
+      - summary: "Test 2"
+        description: "Test 2"
+        type: "Feature"

@@ -1,0 +1,14 @@
+name: Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-format:
+    uses: ./.github/workflows/reusable-ensure-lint-and-format.yaml
