@@ -8,7 +8,8 @@ Developer Experience Tools
 
 ## Usable Commands
 
-* [workplan](docs/cmds/workplan.md)
+* [keygen](docs/cmds/keygen.md) - Generate an api key
+* [workplan](docs/cmds/workplan.md) - Generate or publish (to Jira) a workplan investigation.
 
 ## Useful Docs
 
