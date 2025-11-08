@@ -10,6 +10,9 @@ experimental = true
 
 # Commands
 
+[tasks.keygen]
+run = "go run cmd/keygen/main.go"
+
 [tasks.workplan]
 run = "go run cmd/workplan/main.go"
 
