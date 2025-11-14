@@ -1,0 +1,10 @@
+args:
+  - query: Which option would you like to use?
+    options:
+      - option1
+      - option2
+      - option3
+      - option4
+      - option5
+
+template: "Testing a template that takes in a single option. Use %s and do something with it."

@@ -1,0 +1,10 @@
+args:
+  - query: What event name should be used?
+  - query: What event type should be used?
+    options:
+      - eventType1
+      - eventType2
+
+template: "Generate a %s protobuf in the protos/events directory that represents a %s event. It should follow the
+           standards of the repo and use buf where possible to enforce requirements. It should be added to the
+           PublishEventRequest as event_data. More context exists in the llms.md file."

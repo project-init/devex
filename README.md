@@ -8,6 +8,7 @@ Developer Experience Tools
 
 ## Usable Commands
 
+* [aiprompt](docs/cmds/aiprompt.md) - Use a set of prompts to templatize work with the Gemini CLI.
 * [keygen](docs/cmds/keygen.md) - Generate an api key
 * [workplan](docs/cmds/workplan.md) - Generate or publish (to Jira) a workplan investigation.
 
