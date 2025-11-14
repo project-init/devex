@@ -21,7 +21,7 @@ func main() {
 		log.Fatal("No prompts found")
 	}
 
-	err = aiprompt.RunGemini(prompts)
+	err = aiprompt.RunAiAgent(prompts)
 	if err != nil {
 		log.Fatal(err)
 	}

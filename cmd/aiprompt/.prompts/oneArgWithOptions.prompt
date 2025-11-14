@@ -1,3 +1,10 @@
+agent:
+  name: claude
+  arguments:
+    - -a
+    - -b
+    - -c
+
 args:
   - query: Which option would you like to use?
     options:

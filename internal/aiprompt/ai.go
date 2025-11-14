@@ -8,7 +8,7 @@ import (
 	"github.com/manifoldco/promptui"
 )
 
-func RunGemini(prompts map[string]Prompt) error {
+func RunAiAgent(prompts map[string]Prompt) error {
 	prompt, err := selectAiPrompt(prompts)
 	if err != nil {
 		return err
@@ -24,7 +24,7 @@ func RunGemini(prompts map[string]Prompt) error {
 	}
 
 	promptString := fmt.Sprintf(prompt.Template, arguments...)
-	cmd := exec.Command("gemini", "-i", promptString)
+	cmd := exec.Command(prompt.Agent.AgentName, append(prompt.Agent.Arguments, promptString)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
