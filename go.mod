@@ -1,6 +1,6 @@
 module github.com/project-init/devex
 
-go 1.25.2
+go 1.25.4
 
 require (
 	github.com/manifoldco/promptui v0.9.0

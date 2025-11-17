@@ -9,13 +9,13 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 || len(os.Args) > 3 {
+	if len(os.Args) < 2 || len(os.Args) > 4 {
 		usage()
 	}
 
 	switch os.Args[1] {
 	case "generate":
-		err := workplan.GenerateFiles(os.Args[2])
+		err := workplan.GenerateFiles(os.Args[2], os.Args[3])
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -37,7 +37,7 @@ Usage:
 	workplan [command] [arguments]
 
 Commands:
-	generate <workplan_path> - Generate a workplan and problem markdown based on the current template(s).
+	generate <workplans_directory> <workplan_name> - Generate a workplan and problem markdown based on the current template(s).
 	publish <workplan_path> - Publish a workplan to JIRA.
 	help - Print this help message.
 `
