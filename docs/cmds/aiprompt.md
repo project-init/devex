@@ -1,8 +1,8 @@
 # AIPrompt
 
-The aiprompt cmd is meant to use a set of templates, with defined arguments to use in order to prompt `Gemini` to start
-an AI process "on rails". The goal being that whoever has a prompt that consistently produces results, can add that in
-a template form such that every dev working in the repo can use going forward.
+The `aiprompt` cmd is meant to use a set of templates, with defined arguments to use in order to prompt an ai agent to
+start an AI process "on rails". The goal being that whoever has a prompt that consistently produces results, can add
+that in a template form such that every dev working in the repo can use it going forward.
 
 ## Setup
 
@@ -23,23 +23,16 @@ which will load up the prompts in an interactive way to populate the data to use
 in [here](../../cmd/aiprompt/.prompts), but a general example looks like
 
 ```yaml
-agent:
-  name: claude
-  arguments:
-    - -a
-    - -b
-    - -c
-
 args:
-  - query: Which option would you like to use?
+  - query: What event name should be used?
+  - query: What event type should be used?
     options:
-      - option1
-      - option2
-      - option3
-      - option4
-      - option5
+      - eventType1
+      - eventType2
 
-template: "Testing a template that takes in a single option and an agent override. Use %s and do something with it."
+template: "Generate a %s protobuf in the protos/events directory that represents a %s event. It should follow the
+           standards of the repo and use buf where possible to enforce requirements. It should be added to the
+           PublishEventRequest as event_data. More context exists in the llms.md file."
 ```
 
 By default `gemini` is used as the agent with the `-i` argument, but that is overrideable with
