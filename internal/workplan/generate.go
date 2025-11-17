@@ -29,7 +29,7 @@ func GenerateFiles(workplanPath string) error {
 }
 
 func generateWorkplanTemplate(outputPath string) error {
-	templ, err := template.ParseFS(workplanFs, "workplanFs.yaml.tmpl")
+	templ, err := template.ParseFS(workplanFs, "workplan.yaml.tmpl")
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,32 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - errcheck
+    - gocheckcompilerdirectives
+    - govet
+    - ineffassign
+    - nilneserr
+    - rowserrcheck
+    - staticcheck
+    - tparallel
+    - unused
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - docs
+issues:
+  fix: true
+formatters:
+  enable:
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - docs
