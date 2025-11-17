@@ -19,8 +19,30 @@ Then you can run the cmd like
 aiprompt .prompts
 ```
 
-which will load up the prompts in an interactive way to populate the data to use in the template. By default `gemini` is
-used as the agent, but that is overrideable with
+which will load up the prompts in an interactive way to populate the data to use in the template. Example prompts are
+in [here](../../cmd/aiprompt/.prompts), but a general example looks like
+
+```yaml
+agent:
+  name: claude
+  arguments:
+    - -a
+    - -b
+    - -c
+
+args:
+  - query: Which option would you like to use?
+    options:
+      - option1
+      - option2
+      - option3
+      - option4
+      - option5
+
+template: "Testing a template that takes in a single option and an agent override. Use %s and do something with it."
+```
+
+By default `gemini` is used as the agent with the `-i` argument, but that is overrideable with
 
 ```yaml
 agent:
