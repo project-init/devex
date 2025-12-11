@@ -1,6 +1,7 @@
 [tools]
-go = "1.25.4"
-golangci-lint = "2.4.0"
+go = "1.25.5"
+golangci-lint = "2.7.2"
+awscli = "latest"
 
 [env]
 MISE_DISABLE_BACKENDS = "aqua,ubi"
