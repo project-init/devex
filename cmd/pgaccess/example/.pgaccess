@@ -1,0 +1,17 @@
+environments:
+  localhost-readonly:
+    host: "localhost"
+    database: "database"
+    port: 5432
+    sslMode: "disable"
+    username: "readonly"
+    password: ""
+  staging-readonly:
+    # Can be retrieved via
+    # aws rds describe-db-cluster-endpoints --db-cluster-identifier <identifier> --filters "Name=db-cluster-endpoint-type,Values=< reader | writer >" --query 'DBClusterEndpoints[].Endpoint' --output text --region us-east-1
+    host: "your-host.rds.amazonaws.com"
+    database: "database"
+    port: 5432
+    sslMode: require
+    username: "readonly"
+    iam: true
