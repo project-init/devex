@@ -40,7 +40,7 @@ func OutputFiles(config Config, outputDirectory string, entryPrefix string) erro
 				return err
 			}
 
-			templatizedFile, err := os.Create(outputPath)
+			templatizedFile, err := os.Create(strings.ReplaceAll(outputPath, ".tmpl", ""))
 			if err != nil {
 				return err
 			}
