@@ -1,0 +1,42 @@
+CREATE ROLE {{ .SchemaName }}_readonly_role;
+CREATE ROLE {{ .SchemaName }}_app_role;
+CREATE ROLE {{ .SchemaName }}_migration_role;
+
+CREATE USER {{ .SchemaName }}_readonly WITH PASSWORD 'secret';
+ALTER USER {{ .SchemaName }}_readonly WITH LOGIN;
+CREATE USER {{ .SchemaName }}_app WITH PASSWORD 'secret';
+ALTER USER {{ .SchemaName }}_app WITH LOGIN;
+CREATE USER {{ .SchemaName }}_migration WITH PASSWORD 'secret';
+ALTER USER {{ .SchemaName }}_migration WITH LOGIN;
+
+GRANT {{ .SchemaName }}_readonly_role TO {{ .SchemaName }}_readonly;
+GRANT {{ .SchemaName }}_app_role TO {{ .SchemaName }}_app;
+GRANT {{ .SchemaName }}_migration_role TO {{ .SchemaName }}_migration;
+
+-- Grant rds_iam role to users if the role exists (the role should exist only on AWS RDS instances).
+DO
+$$
+DECLARE
+    role_to_grant CONSTANT NAME := 'rds_iam';
+    target_users  CONSTANT NAME[] := ARRAY['{{ .SchemaName }}_readonly', '{{ .SchemaName }}_app', '{{ .SchemaName }}_migration'];
+    u NAME; -- Loop iterator
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_to_grant) THEN
+        RAISE NOTICE 'Role "%" found. Proceeding with grants.', role_to_grant;
+
+        FOREACH u IN ARRAY target_users
+        LOOP
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = u) THEN
+                EXECUTE format('GRANT %I TO %I', role_to_grant, u);
+                RAISE NOTICE '  -> SUCCESS: Granted role "%" to user "%".', role_to_grant, u;
+            ELSE
+                RAISE NOTICE '  -> WARNING: Target user "%" does not exist. Skipping grant for this user.', u;
+            END IF;
+        END LOOP;
+
+        RAISE NOTICE 'All grant attempts completed.';
+    ELSE
+        RAISE NOTICE 'SKIP: Role "%" does not exist. No grants were performed.', role_to_grant;
+    END IF;
+END
+$$;

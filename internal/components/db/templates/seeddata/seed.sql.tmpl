@@ -1,0 +1,7 @@
+SET session_replication_role = replica; --disable triggers
+COPY {{ .SchemaName }}.users FROM '/var/lib/postgresql/seeddata/users.csv' CSV HEADER;
+
+CREATE ROLE test_user_role IN ROLE {{ .SchemaName }}_app;
+GRANT SET ON PARAMETER session_replication_role TO test_user_role;
+CREATE USER test_user WITH PASSWORD 'testpassword';
+GRANT test_user_role TO test_user
