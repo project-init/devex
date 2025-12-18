@@ -6,12 +6,26 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 )
 
 //go:embed templates/*
 var templates embed.FS
+
+var (
+	nonOverwriteFiles = []string{
+		"init/100-bootstrap.sql",
+		"init/200-schema.sql",
+		"init/300-users.sql",
+		"seeddata/seed.sql",
+		"seeddata/users.csv",
+		"sqlc/users.sql",
+		"sqlc.yaml",
+		"structure.sql",
+	}
+)
 
 func OutputFiles(config Config, outputDirectory string, entryPrefix string) error {
 	err := os.MkdirAll(filepath.Join(outputDirectory, entryPrefix), 0755)
@@ -33,14 +47,21 @@ func OutputFiles(config Config, outputDirectory string, entryPrefix string) erro
 			continue
 		}
 
-		outputPath := filepath.Join(outputDirectory, entryPrefix, entry.Name())
+		outputPath := strings.ReplaceAll(filepath.Join(outputDirectory, entryPrefix, entry.Name()), ".tmpl", "")
+		if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
+			if slices.Contains(nonOverwriteFiles, filepath.Join(entryPrefix, strings.ReplaceAll(entry.Name(), ".tmpl", ""))) {
+				fmt.Printf("Skipping Overwrite of %s\n", outputPath)
+				continue
+			}
+		}
+
 		if strings.HasSuffix(entry.Name(), ".tmpl") {
 			templ, err := template.ParseFS(templates, filepath.Join("templates", entryPrefix, entry.Name()))
 			if err != nil {
 				return err
 			}
 
-			templatizedFile, err := os.Create(strings.ReplaceAll(outputPath, ".tmpl", ""))
+			templatizedFile, err := os.Create(outputPath)
 			if err != nil {
 				return err
 			}

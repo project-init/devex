@@ -19,7 +19,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Using Configuration - %+v", cfg)
+	fmt.Printf("Using Configuration - %+v\n", cfg)
 
 	err = outputDBFiles(cfg)
 	if err != nil {
