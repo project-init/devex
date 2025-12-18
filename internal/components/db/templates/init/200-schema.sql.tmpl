@@ -1,0 +1,348 @@
+--
+-- PostgreSQL database dump
+--
+
+\restrict s4LA4l2WPR9scusR8ly1EMdxUpJi9bEhAbNXQdJEVsfV6DkMSxtSwWZ7EW77zVF
+
+-- Dumped from database version 17.7 (Debian 17.7-3.pgdg13+1)
+-- Dumped by pg_dump version 17.7 (Debian 17.7-3.pgdg13+1)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: {{ .SchemaName }}; Type: DATABASE; Schema: -; Owner: clusteradmin
+--
+
+CREATE DATABASE {{ .SchemaName }} WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'en_US.utf8';
+
+
+ALTER DATABASE {{ .SchemaName }} OWNER TO clusteradmin;
+
+\unrestrict s4LA4l2WPR9scusR8ly1EMdxUpJi9bEhAbNXQdJEVsfV6DkMSxtSwWZ7EW77zVF
+\connect {{ .SchemaName }}
+\restrict s4LA4l2WPR9scusR8ly1EMdxUpJi9bEhAbNXQdJEVsfV6DkMSxtSwWZ7EW77zVF
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: {{ .SchemaName }}; Type: SCHEMA; Schema: -; Owner: clusteradmin
+--
+
+CREATE SCHEMA {{ .SchemaName }};
+
+
+ALTER SCHEMA {{ .SchemaName }} OWNER TO clusteradmin;
+
+--
+-- Name: gen_random_uuid_v7(); Type: FUNCTION; Schema: public; Owner: clusteradmin
+--
+
+CREATE FUNCTION public.gen_random_uuid_v7() RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+-- 48 bits for timestamp in milliseconds since Unix epoch
+ts_millis BIGINT := (extract(epoch FROM clock_timestamp()) * 1000)::BIGINT;
+    -- 74 bits for random data
+    rand_b1 BIGINT := trunc(random() * 2^12)::BIGINT; -- 12 bits
+    rand_b2 BIGINT := trunc(random() * 2^62)::BIGINT; -- 62 bits
+    -- Combine to form a 128-bit integer
+    ts_hex TEXT;
+    rand1_hex TEXT;
+    rand2_hex TEXT;
+    uuid TEXT;
+BEGIN
+    -- Convert timestamp to hex (12 hex digits = 48 bits)
+    ts_hex := lpad(to_hex(ts_millis), 12, '0');
+    -- Convert random parts to hex
+    rand1_hex := lpad(to_hex(rand_b1), 4, '0');
+    rand2_hex := lpad(to_hex(rand_b2), 16, '0');
+
+    -- Construct UUID v7 string
+RETURN concat(
+        substr(ts_hex, 1, 8), '-',
+        substr(ts_hex, 9, 4), '-',
+        '7', substr(rand1_hex, 1, 3), '-', -- version 7
+        substr(rand12_hex, 1, 4), '-',
+        substr(rand2_hex, 5, 12)
+       )::uuid;
+END;
+$$;
+
+
+ALTER FUNCTION public.gen_random_uuid_v7() OWNER TO clusteradmin;
+
+--
+-- Name: FUNCTION gen_random_uuid_v7(); Type: COMMENT; Schema: public; Owner: clusteradmin
+--
+
+COMMENT ON FUNCTION public.gen_random_uuid_v7() IS 'Generates a random UUID version 7';
+
+
+--
+-- Name: update_updated_at(); Type: FUNCTION; Schema: public; Owner: clusteradmin
+--
+
+CREATE FUNCTION public.update_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+NEW.updated_at = clock_timestamp();
+RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.update_updated_at() OWNER TO clusteradmin;
+
+--
+-- Name: FUNCTION update_updated_at(); Type: COMMENT; Schema: public; Owner: clusteradmin
+--
+
+COMMENT ON FUNCTION public.update_updated_at() IS 'Updates the updated_at timestamp on a table.';
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: schema_migrations; Type: TABLE; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE TABLE {{ .SchemaName }}.schema_migrations (
+    version bigint NOT NULL,
+    dirty boolean NOT NULL
+);
+
+
+ALTER TABLE {{ .SchemaName }}.schema_migrations OWNER TO {{ .SchemaName }}_migration;
+
+--
+-- Name: users; Type: TABLE; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE TABLE {{ .SchemaName }}.users (
+    uuid uuid NOT NULL,
+    first_name character varying NOT NULL,
+    last_name character varying NOT NULL,
+    email character varying NOT NULL,
+    phone_number character varying NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp without time zone DEFAULT now()
+);
+
+
+ALTER TABLE {{ .SchemaName }}.users OWNER TO {{ .SchemaName }}_migration;
+
+--
+-- Name: TABLE users; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON TABLE {{ .SchemaName }}.users IS 'Table used to store users personal information.';
+
+
+--
+-- Name: COLUMN users.uuid; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.uuid IS 'Primary Key for the user.';
+
+
+--
+-- Name: COLUMN users.first_name; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.first_name IS 'First name of the user.';
+
+
+--
+-- Name: COLUMN users.last_name; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.last_name IS 'Last name of the user.';
+
+
+--
+-- Name: COLUMN users.email; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.email IS 'Email of the user.';
+
+
+--
+-- Name: COLUMN users.phone_number; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.phone_number IS 'Phone number of the user.';
+
+
+--
+-- Name: COLUMN users.created_at; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.created_at IS 'Creation time of the user.';
+
+
+--
+-- Name: COLUMN users.updated_at; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.updated_at IS 'Last updated time of the user.';
+
+
+--
+-- Name: COLUMN users.deleted_at; Type: COMMENT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+COMMENT ON COLUMN {{ .SchemaName }}.users.deleted_at IS 'The timestamp when this user was deleted.';
+
+
+--
+-- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+ALTER TABLE ONLY {{ .SchemaName }}.schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+ALTER TABLE ONLY {{ .SchemaName }}.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (uuid);
+
+
+--
+-- Name: idx_{{ .SchemaName }}_users_on_email; Type: INDEX; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE INDEX idx_{{ .SchemaName }}_users_on_email ON {{ .SchemaName }}.users USING btree (email);
+
+
+--
+-- Name: index_users_unique_email; Type: INDEX; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE UNIQUE INDEX index_users_unique_email ON {{ .SchemaName }}.users USING btree (email);
+
+
+--
+-- Name: index_users_unique_phone_number; Type: INDEX; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE UNIQUE INDEX index_users_unique_phone_number ON {{ .SchemaName }}.users USING btree (phone_number);
+
+
+--
+-- Name: users _soft_deletion; Type: RULE; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE RULE _soft_deletion AS
+    ON DELETE TO {{ .SchemaName }}.users DO INSTEAD  UPDATE {{ .SchemaName }}.users SET deleted_at = now()
+  WHERE ((users.uuid = old.uuid) AND (users.deleted_at IS NULL));
+
+
+--
+-- Name: users users_soft_deletion; Type: RULE; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE RULE users_soft_deletion AS
+    ON DELETE TO {{ .SchemaName }}.users DO INSTEAD  UPDATE {{ .SchemaName }}.users SET deleted_at = now()
+  WHERE ((users.uuid = old.uuid) AND (users.deleted_at IS NULL));
+
+
+--
+-- Name: users t_{{ .SchemaName }}_users_update_modified_time; Type: TRIGGER; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+CREATE TRIGGER t_{{ .SchemaName }}_users_update_modified_time BEFORE UPDATE ON {{ .SchemaName }}.users FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: DATABASE {{ .SchemaName }}; Type: ACL; Schema: -; Owner: clusteradmin
+--
+
+GRANT CONNECT,TEMPORARY ON DATABASE {{ .SchemaName }} TO {{ .SchemaName }}_readonly_role;
+GRANT CONNECT,TEMPORARY ON DATABASE {{ .SchemaName }} TO {{ .SchemaName }}_app_role;
+GRANT CONNECT,TEMPORARY ON DATABASE {{ .SchemaName }} TO {{ .SchemaName }}_migration_role;
+
+
+--
+-- Name: SCHEMA {{ .SchemaName }}; Type: ACL; Schema: -; Owner: clusteradmin
+--
+
+GRANT USAGE ON SCHEMA {{ .SchemaName }} TO {{ .SchemaName }}_readonly_role;
+GRANT USAGE ON SCHEMA {{ .SchemaName }} TO {{ .SchemaName }}_app_role;
+GRANT ALL ON SCHEMA {{ .SchemaName }} TO {{ .SchemaName }}_migration_role;
+
+
+--
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pg_database_owner
+--
+
+GRANT USAGE ON SCHEMA public TO {{ .SchemaName }}_migration_role;
+
+
+--
+-- Name: TABLE schema_migrations; Type: ACL; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+GRANT SELECT ON TABLE {{ .SchemaName }}.schema_migrations TO {{ .SchemaName }}_readonly_role;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE {{ .SchemaName }}.schema_migrations TO {{ .SchemaName }}_app_role;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE {{ .SchemaName }}.schema_migrations TO {{ .SchemaName }}_migration_role;
+
+
+--
+-- Name: TABLE users; Type: ACL; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+GRANT SELECT ON TABLE {{ .SchemaName }}.users TO {{ .SchemaName }}_readonly_role;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE {{ .SchemaName }}.users TO {{ .SchemaName }}_app_role;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE {{ .SchemaName }}.users TO {{ .SchemaName }}_migration_role;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT,USAGE ON SEQUENCES TO {{ .SchemaName }}_readonly_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT,USAGE ON SEQUENCES TO {{ .SchemaName }}_app_role;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: {{ .SchemaName }}; Owner: {{ .SchemaName }}_migration
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT ON TABLES TO {{ .SchemaName }}_readonly_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT,INSERT,DELETE,UPDATE ON TABLES TO {{ .SchemaName }}_app_role;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict s4LA4l2WPR9scusR8ly1EMdxUpJi9bEhAbNXQdJEVsfV6DkMSxtSwWZ7EW77zVF
+

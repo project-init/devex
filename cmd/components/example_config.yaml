@@ -1,0 +1,4 @@
+outputDirectory: "gen"
+
+db:
+  schemaName: data_platform

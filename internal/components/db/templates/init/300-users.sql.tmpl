@@ -1,0 +1,25 @@
+-- The search_path commands define the order in which PostgreSQL looks for tables and objects, ensuring predictability.
+-- The minimal path ({{ .SchemaName }}, public) is used for automated roles to guarantee they access the core application
+-- schema first. The path for human login users adds "$user" first to enable developers to safely create temporary, private objects
+-- in their session schema without interfering with the shared {{ .SchemaName }}.
+
+ALTER ROLE {{ .SchemaName }}_readonly_role SET search_path TO {{ .SchemaName }}, public;
+ALTER ROLE {{ .SchemaName }}_readonly SET search_path TO "$user", {{ .SchemaName }}, public;
+
+ALTER ROLE {{ .SchemaName }}_app_role SET search_path TO {{ .SchemaName }}, public;
+ALTER ROLE {{ .SchemaName }}_app SET search_path TO "$user", {{ .SchemaName }}, public;
+
+ALTER ROLE {{ .SchemaName }}_migration_role SET search_path TO {{ .SchemaName }}, public;
+ALTER ROLE {{ .SchemaName }}_migration SET search_path TO "$user", {{ .SchemaName }}, public;
+
+
+-- Every time the {{ .SchemaName }}_migration user creates a new resource within the {{ .SchemaName }} schema, automatically
+-- grant usage rights on that resource to the other roles.
+--
+\c {{ .SchemaName }}
+SET ROLE {{ .SchemaName }}_migration;
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT,USAGE ON SEQUENCES TO {{ .SchemaName }}_readonly_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT,USAGE ON SEQUENCES TO {{ .SchemaName }}_app_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT ON TABLES TO {{ .SchemaName }}_readonly_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE {{ .SchemaName }}_migration IN SCHEMA {{ .SchemaName }} GRANT SELECT,INSERT,DELETE,UPDATE ON TABLES TO {{ .SchemaName }}_app_role;
+RESET ROLE;
