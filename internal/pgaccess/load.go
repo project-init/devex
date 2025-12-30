@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func LoadPGAccessEnvironmentUser(pgAccessFile string, environment string) (*PsqlConfig, error) {
+func LoadPGAccessEnvironments(pgAccessFile string) (map[string]EnvironmentConfig, error) {
 	bytes, err := os.ReadFile(pgAccessFile)
 	if err != nil {
 		return nil, err
@@ -21,10 +21,11 @@ func LoadPGAccessEnvironmentUser(pgAccessFile string, environment string) (*Psql
 		return nil, err
 	}
 
-	environmentConfig, found := config.Environments[environment]
-	if !found {
-		return nil, fmt.Errorf("environment %s not found in file %s", environment, pgAccessFile)
-	}
+	return config.Environments, nil
+}
+
+func LoadPGAccessEnvironment(environmentConfig EnvironmentConfig) (*PsqlConfig, error) {
+	fmt.Printf("Logging in to %s as %s via psql.\n", environmentConfig.Host, environmentConfig.UserName)
 
 	password, err := getPassword(environmentConfig)
 	if err != nil {
