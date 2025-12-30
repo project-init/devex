@@ -17,7 +17,7 @@ awscli = "latest"
 Then you can run the cmd like
 
 ```shell
-pgaccess <pgaccessfile> <environment>
+pgaccess <pgaccessfile>
 ```
 
 which will use set up the psql command to run as that user in the given environment assuming the proper definition has
