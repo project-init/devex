@@ -60,8 +60,8 @@ github.com/manifoldco/promptui v0.9.0 h1:3V4HzJk1TtXW1MTZMP7mdlwbBpIinw3HztaIlYt
 github.com/manifoldco/promptui v0.9.0/go.mod h1:ka04sppxSGFAtxX0qhlYQjISsg9mR4GWtQEhdbn6Pgg=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/project-init/gommon v0.2.1 h1:JHaniZ6iNm9mOXYGiSdk86ZF/REcE9GiJyKYvg+txiA=
-github.com/project-init/gommon v0.2.1/go.mod h1:9NZc+hei/ZlSRJ1z0BWI5N8fUc+o22/gVSiGhVjas5A=
+github.com/project-init/gommon v0.2.4 h1:dp83+UlTxU9yyUmGB5qlXcKl0VUt0N0ECXYtHwMOg2I=
+github.com/project-init/gommon v0.2.4/go.mod h1:z2QL7uuVTtHpRfdKsp5/z/dGtGjErJf7NZFwFpTcQ78=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
