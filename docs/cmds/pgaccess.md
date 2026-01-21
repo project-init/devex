@@ -17,11 +17,18 @@ awscli = "latest"
 Then you can run the cmd like
 
 ```shell
+pgaccess
+```
+
+which defaults to `.pgaccess` as the configuration file, or
+
+```shell
 pgaccess <pgaccessfile>
 ```
 
-which will use set up the psql command to run as that user in the given environment assuming the proper definition has
-been established in the `.pgaccess` file.
+which uses the specific config file. `pgaccess` will open a selection window which after selection will set up the psql
+command to run as that user in the given environment assuming the proper definition has been established in the
+`.pgaccess` file.
 
 **NOTE**: You will also need `psql` installed, which comes with any installation of `postgres`. At time of writing this
 doc, postgres doesn't seem to install via mise on Mac. Instead, the suggested install path for `postgresql` is via brew.
