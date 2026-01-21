@@ -9,11 +9,16 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
+	if len(os.Args) > 2 {
 		usage()
 	}
 
-	pgAccessFile := os.Args[1]
+	pgAccessFile := ".pgaccess"
+	if len(os.Args) > 1 {
+		pgAccessFile = os.Args[1]
+	}
+
+	fmt.Printf("Using %s as the pgaccess file...\n", pgAccessFile)
 
 	environments, err := pgaccess.LoadPGAccessEnvironments(pgAccessFile)
 	if err != nil {
@@ -62,6 +67,6 @@ func selectEnvironment(environments map[string]pgaccess.EnvironmentConfig) (stri
 }
 
 func usage() {
-	fmt.Println("Usage: pgaccess <pgAccessFilePath>")
+	fmt.Println("Usage: pgaccess || pgaccess <pgAccessFilePath>")
 	os.Exit(1)
 }
