@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/manifoldco/promptui"
 	"github.com/project-init/devex/internal/pgaccess"
@@ -52,6 +53,8 @@ func selectEnvironment(environments map[string]pgaccess.EnvironmentConfig) (stri
 	for environmentName := range environments {
 		environmentNames = append(environmentNames, environmentName)
 	}
+
+	sort.Strings(environmentNames)
 
 	argPrompt := promptui.Select{
 		Label: "Select Environment",
