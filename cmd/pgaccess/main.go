@@ -53,6 +53,8 @@ func selectEnvironment(environments map[string]pgaccess.EnvironmentConfig) (stri
 		environmentNames = append(environmentNames, environmentName)
 	}
 
+	sort.Strings(environmentNames)
+
 	argPrompt := promptui.Select{
 		Label: "Select Environment",
 		Items: environmentNames,
