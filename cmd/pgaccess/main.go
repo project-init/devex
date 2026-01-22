@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/manifoldco/promptui"
 	"github.com/project-init/devex/internal/pgaccess"
