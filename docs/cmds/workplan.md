@@ -25,6 +25,8 @@ to generate a problem and workplan template. Then once you fill in and review th
 export JIRA_URL=<your_url>
 export JIRA_EMAIL=<your_jira_email>
 export JIRA_API_KEY=<your_api_key>
+
+# Run this command next
 workplan publish docs/investigations/infrastructure/moveToProjectInitStack/workplan.yaml
 ```
 
