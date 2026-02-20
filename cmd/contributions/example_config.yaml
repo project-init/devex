@@ -1,0 +1,18 @@
+numLookBackDays: 10
+reposToSkip:
+    - "documentation"
+    - "super-secret-repo"
+
+# Only enable this if you want to get specific repos. Otherwise, the tool will pick up all repos in your organization.
+
+# reposToCheck:
+#   - "onlyRepoICareAbout"
+
+# Enable lastRepo if your scan was cut off for some reason, and you need to pick up where it fell off.
+# lastRepo: "repoHalfwayThroughScan"
+
+outputDirectories:
+    prs: "cmd/contributions/prs"
+    signals: "cmd/contributions/signals"
+
+organization: project-init
