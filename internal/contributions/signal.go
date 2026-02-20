@@ -1,7 +1,6 @@
 package contributions
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -33,8 +32,8 @@ type Signal struct {
 	AverageDaysToMerge float64 `csv:"average_days_to_merge"`
 }
 
-func GetGHSignal(ctx context.Context, cfg *config.Config, prs []gh.PR) {
-	signalMap := getUserGHSignal(ctx, prs)
+func GetGHSignal(cfg *config.Config, prs []gh.PR) {
+	signalMap := getUserGHSignal(prs)
 	sortedUsers := sortBySignal(signalMap)
 	userSignals := make([]*Signal, len(sortedUsers))
 	for index, user := range sortedUsers {
@@ -46,7 +45,7 @@ func GetGHSignal(ctx context.Context, cfg *config.Config, prs []gh.PR) {
 		log.Fatal(err)
 	}
 
-	signalMap = getRepoGHSignal(ctx, prs)
+	signalMap = getRepoGHSignal(prs)
 	sortedRepos := sortBySignal(signalMap)
 	repoSignals := make([]*Signal, len(sortedRepos))
 	for index, repo := range sortedRepos {
@@ -68,7 +67,7 @@ func sortBySignal(signalMap map[string]*Signal) []string {
 	return sorted
 }
 
-func getUserGHSignal(ctx context.Context, prs []gh.PR) map[string]*Signal {
+func getUserGHSignal(prs []gh.PR) map[string]*Signal {
 	signalMap := make(map[string]*Signal)
 	for _, pr := range prs {
 		if _, found := signalMap[pr.Author]; !found {
@@ -102,13 +101,15 @@ func getUserGHSignal(ctx context.Context, prs []gh.PR) map[string]*Signal {
 	// Set the weighted total after everything is done.
 	for _, signal := range signalMap {
 		signal.WeightedTotal = signal.WeightedPRs + signal.WeightedReviews
-		signal.AverageDaysToMerge = signal.totalTimeToMerge.Hours() / float64(signal.NumPRs) / float64(24)
+		if signal.NumPRs > 0 {
+			signal.AverageDaysToMerge = signal.totalTimeToMerge.Hours() / float64(signal.NumPRs) / float64(24)
+		}
 	}
 
 	return signalMap
 }
 
-func getRepoGHSignal(ctx context.Context, prs []gh.PR) map[string]*Signal {
+func getRepoGHSignal(prs []gh.PR) map[string]*Signal {
 	signalMap := make(map[string]*Signal)
 	for _, pr := range prs {
 		if _, found := signalMap[pr.Repo]; !found {
@@ -137,7 +138,9 @@ func getRepoGHSignal(ctx context.Context, prs []gh.PR) map[string]*Signal {
 	// Set the weighted total after everything is done.
 	for _, signal := range signalMap {
 		signal.WeightedTotal = signal.WeightedPRs + signal.WeightedReviews
-		signal.AverageDaysToMerge = signal.totalTimeToMerge.Hours() / float64(signal.NumPRs) / float64(24)
+		if signal.NumPRs > 0 {
+			signal.AverageDaysToMerge = signal.totalTimeToMerge.Hours() / float64(signal.NumPRs) / float64(24)
+		}
 	}
 
 	return signalMap

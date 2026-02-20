@@ -18,7 +18,11 @@ func main() {
 	}
 
 	log.Printf("starting Contribution Collections At - %s\n", time.Now().String())
-	github := gh.New("project-init")
+	github, err := gh.New(cfg.Organization)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	ctx := context.Background()
 
 	repos, err := github.GetRepos(ctx, cfg)
@@ -34,6 +38,6 @@ func main() {
 	year, month, day := time.Now().AddDate(0, 0, -cfg.NumLookBackDays).Date()
 	cutoffDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 	prs := github.GetPRs(ctx, cutoffDate, repos, cfg)
-	contributions.GetGHSignal(ctx, cfg, prs)
+	contributions.GetGHSignal(cfg, prs)
 	log.Printf("completed Collecting Contributions At - %s\n", time.Now().String())
 }

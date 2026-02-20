@@ -17,15 +17,7 @@ type Config struct {
 	ReposToCheck      []string          `yaml:"reposToCheck"`
 	LastRepo          *string           `yaml:"lastRepo"`
 	OutputDirectories OutputDirectories `yaml:"outputDirectories"`
-}
-
-func NewConfig(numLookBackDays int, reposToSkip []string, reposToCheck []string, lastRepo *string) *Config {
-	return &Config{
-		NumLookBackDays: numLookBackDays,
-		ReposToSkip:     reposToSkip,
-		ReposToCheck:    reposToCheck,
-		LastRepo:        lastRepo,
-	}
+	Organization      string            `yaml:"organization"`
 }
 
 func NewConfigFromYaml(configFile string) (*Config, error) {

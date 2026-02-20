@@ -14,3 +14,5 @@ reposToSkip:
 outputDirectories:
     prs: "cmd/contributions/prs"
     signals: "cmd/contributions/signals"
+
+organization: project-init
