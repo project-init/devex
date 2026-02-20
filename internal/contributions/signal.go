@@ -157,13 +157,13 @@ func authorMultiplier(author string) float64 {
 func signalsToCSV(signals []*Signal, signalType string, cfg *config.Config) error {
 	year, month, day := time.Now().Date()
 	f, err := os.Create(fmt.Sprintf("%s/%d_%02d_%02d_%s_%d_days_signal.csv", cfg.OutputDirectories.Signals, year, month, day, signalType, cfg.NumLookBackDays))
-	defer func(f *os.File) {
-		_ = f.Close()
-	}(f)
-
 	if err != nil {
 		return err
 	}
+
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(f)
 
 	bytes, err := csvutil.Marshal(signals)
 	if err != nil {
@@ -171,11 +171,6 @@ func signalsToCSV(signals []*Signal, signalType string, cfg *config.Config) erro
 	}
 
 	_, err = f.Write(bytes)
-	if err != nil {
-		return err
-	}
-
-	err = f.Close()
 	if err != nil {
 		return err
 	}

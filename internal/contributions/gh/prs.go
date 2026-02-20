@@ -50,13 +50,13 @@ func (g *GH) GetPRs(ctx context.Context, cutoff time.Time, repos []string, cfg *
 func prsToCSV(prs []PR, cfg *config.Config) error {
 	year, month, day := time.Now().Date()
 	f, err := os.Create(fmt.Sprintf("%s/%d_%02d_%02d_last_%d_days_prs.csv", cfg.OutputDirectories.Prs, year, month, day, cfg.NumLookBackDays))
-	defer func(f *os.File) {
-		_ = f.Close()
-	}(f)
-
 	if err != nil {
 		return err
 	}
+
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(f)
 
 	bytes, err := csvutil.Marshal(prs)
 	if err != nil {
@@ -64,11 +64,6 @@ func prsToCSV(prs []PR, cfg *config.Config) error {
 	}
 
 	_, err = f.Write(bytes)
-	if err != nil {
-		return err
-	}
-
-	err = f.Close()
 	if err != nil {
 		return err
 	}
