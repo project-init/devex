@@ -35,3 +35,7 @@ go.work.sum
 
 .DS_Store
 /gen/
+
+# Contributions
+cmd/contributions/prs
+cmd/contributions/signals

@@ -14,6 +14,9 @@ experimental = true
 [tasks.aiprompt]
 run = "go run cmd/aiprompt/main.go cmd/aiprompt/.prompts"
 
+[tasks.contributions]
+run = "go run cmd/contributions/main.go cmd/contributions/example_config.yaml"
+
 [tasks.keygen]
 run = "go run cmd/keygen/main.go"
 
