@@ -8,9 +8,6 @@ reposToSkip:
 # reposToCheck:
 #   - "onlyRepoICareAbout"
 
-# Enable lastRepo if your scan was cut off for some reason, and you need to pick up where it fell off.
-# lastRepo: "repoHalfwayThroughScan"
-
 outputDirectories:
     prs: "cmd/contributions/prs"
     signals: "cmd/contributions/signals"
