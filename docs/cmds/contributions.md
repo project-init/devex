@@ -13,30 +13,37 @@ Add the following to your `mise.toml` file
 "go:github.com/project-init/devex/cmd/contributions" = "latest"
 ```
 
-Then you can run the cmd like
+Then you can run the cmd to collect pr information via
 
 ```shell
-contributions contributions_config.yaml
+contributions collect contributions_config.yaml
 ```
 
-to generate output like
+to generate user signal output run
+
+```shell
+contributions signal contributions_config.yaml
+```
+
+to generate user signal output like
 
 ```csv
-user,repo,num_prs,num_reviews,weighted_prs,weighted_reviews,weighted_total,average_days_to_merge
-user1,,43,102,42.77784895833334,20.39999999999996,63.1778489583333,0.10332606589147286
-user2,,23,7,22.14840625,1.4,23.54840625,0.740516304347826
-user3,,20,10,19.41407986111111,1.9999999999999998,21.41407986111111,0.5859201388888889
+user,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,TotalTimeToMerge,average_days_to_merge
+user1,107.9807071759259,73.58070717592595,34.39999999999995,0.6814245720399452,0.3185754279600547,74,172,724538000000000,0.11332238488488489
+user2,49.21142592592594,39.61142592592594,9.599999999999998,0.8049233522627425,0.19507664773725755,42,48,4127456000000000,1.137416225749559
+user3,33.95246296296296,30.75246296296296,3.2000000000000006,0.905750578286744,0.09424942171325597,32,16,2155744000000000,0.7797106481481482
 ```
 
-and
+and repo signal output like
 
 ```csv
-user,repo,num_prs,num_reviews,weighted_prs,weighted_reviews,weighted_total,average_days_to_merge
-,tommon,7,9,6.990792245370371,1.7999999999999998,8.79079224537037,0.02630787037037037
-,gommon,3,9,2.6162690972222222,1.7999999999999998,4.416269097222222,2.5582060185185185
-,terraform-aws-rds,1,5,0.9478078703703704,1,1.9478078703703705,1.0438425925925927
-,terraform-aws-api-service,1,3,0.9735729166666667,0.6000000000000001,1.5735729166666668,0.5285416666666667
-,terraform-aws-grpc-service,1,3,0.9735491898148149,0.6000000000000001,1.5735491898148148,0.5290162037037037
-,devex,1,1,0.998953125,0.2,1.198953125,0.020937499999999998
-,terraform-aws-internal-service,1,0,0.9995526620370371,0,0.9995526620370371,0.00894675925925926
+repo,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,TotalTimeToMerge,average_days_to_merge
+business-platform,72.69404398148143,45.09404398148149,27.599999999999934,0.6203265289927886,0.3796734710072113,48,138,5021492000000000,1.2108150077160496
+admin-platform,48.03111574074073,39.63111574074073,8.400000000000002,0.8251133693137387,0.17488663068626142,40,42,637432000000000,0.1844421296296296
+data-platform,33.949771990740736,23.149771990740742,10.799999999999994,0.681882988700321,0.3181170112996789,24,54,1469194000000000,0.7085233410493826
 ```
+
+These are easily usable in a spreadsheet, or with an AI to help get some insights in to the data. Our suggestion is to
+use these to spot trends more than use any number as a true ranking. Not all PRs and not all Repos are the same, so this
+is more of a high level viewing where outliers can tell you some things, but the real value is in the month-to-month
+view over time.
