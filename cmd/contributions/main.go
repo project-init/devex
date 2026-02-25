@@ -36,9 +36,10 @@ func main() {
 	log.Printf("starting Contributions (%s) At - %s\n", cmd, time.Now().String())
 	ctx := context.Background()
 	err = fmt.Errorf("unimplemented command %s", cmd)
-	if cmd == "collect" {
+	switch cmd {
+	case "collect":
 		err = collection.Run(ctx, cfg)
-	} else if cmd == "signal" {
+	case "signal":
 		err = signal.Run(cfg)
 	}
 
@@ -55,5 +56,5 @@ func usage() {
 	usageString += "\tcollect - Gather all pull requests per the definition in the config file and store them in the prs directory.\n"
 	usageString += "\tsignal - Create a signal output per the definition in the config file and store it in the signals directory.\n"
 	usageString += "\n"
-	log.Fatalf(usageString)
+	log.Fatal(usageString)
 }
