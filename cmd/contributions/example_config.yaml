@@ -1,4 +1,4 @@
-numLookBackDays: 10
+numLookBackDays: 30
 reposToSkip:
     - "documentation"
     - "super-secret-repo"

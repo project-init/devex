@@ -41,7 +41,7 @@ func getUserGHSignal(prs []types.PR) map[string]*types.UserSignal {
 		}
 		authorSignal := signalMap[pr.Author]
 		authorSignal.NumPRs++
-		authorSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(pr.Repo), 0.0)
+		authorSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(pr.Author), 0.0)
 		authorSignal.TotalTimeToMerge += pr.TimeToMerge
 
 		if pr.Reviews == "" {

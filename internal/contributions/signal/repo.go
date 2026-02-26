@@ -41,7 +41,7 @@ func getRepoGHSignal(prs []types.PR) map[string]*types.RepoSignal {
 		}
 		repoSignal := signalMap[pr.Repo]
 		repoSignal.NumPRs++
-		repoSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(pr.Repo), 0.0)
+		repoSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(pr.Author), 0.0)
 		repoSignal.TotalTimeToMerge += pr.TimeToMerge
 
 		if pr.Reviews == "" {
