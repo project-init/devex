@@ -1,4 +1,4 @@
-numLookBackDays: 10
+numLookBackDays: 30
 reposToSkip:
     - "documentation"
     - "super-secret-repo"
@@ -7,9 +7,6 @@ reposToSkip:
 
 # reposToCheck:
 #   - "onlyRepoICareAbout"
-
-# Enable lastRepo if your scan was cut off for some reason, and you need to pick up where it fell off.
-# lastRepo: "repoHalfwayThroughScan"
 
 outputDirectories:
     prs: "cmd/contributions/prs"
