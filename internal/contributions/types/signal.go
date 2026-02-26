@@ -14,9 +14,11 @@ type UserSignal struct {
 	WeightedReviewShare float64 `csv:"weighted_review_share"`
 
 	// Raw Stats
-	NumPRs           int `csv:"num_prs"`
-	NumReviews       int `csv:"num_reviews"`
-	TotalTimeToMerge time.Duration
+	NumPRs     int `csv:"num_prs"`
+	NumReviews int `csv:"num_reviews"`
+
+	// Scoring Use Only
+	TotalTimeToMerge time.Duration `csv:"-"`
 
 	// Merge Information
 	AverageDaysToMerge float64 `csv:"average_days_to_merge"`
@@ -34,9 +36,11 @@ type RepoSignal struct {
 	WeightedReviewShare float64 `csv:"weighted_review_share"`
 
 	// Raw Stats
-	NumPRs           int `csv:"num_prs"`
-	NumReviews       int `csv:"num_reviews"`
-	TotalTimeToMerge time.Duration
+	NumPRs     int `csv:"num_prs"`
+	NumReviews int `csv:"num_reviews"`
+
+	// Scoring Use Only
+	TotalTimeToMerge time.Duration `csv:"-"`
 
 	// Merge Information
 	AverageDaysToMerge float64 `csv:"average_days_to_merge"`

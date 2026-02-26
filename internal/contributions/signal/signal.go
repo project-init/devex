@@ -28,7 +28,6 @@ func Run(cfg *config.Config) error {
 
 			allPrs = append(allPrs, pr)
 		}
-		allPrs = append(allPrs, repoPrs...)
 	}
 
 	getUserSignal(cfg, allPrs)
