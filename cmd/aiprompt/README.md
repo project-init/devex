@@ -20,7 +20,7 @@ aiprompt .prompts
 ```
 
 which will load up the prompts in an interactive way to populate the data to use in the template. Example prompts are
-in [here](../../cmd/aiprompt/.prompts), but a general example looks like
+in [here](.prompts), but a general example looks like
 
 ```yaml
 args:
