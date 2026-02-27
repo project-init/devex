@@ -111,7 +111,7 @@ func authorDistributionWeight(prs []types.PR, asOf time.Time, maxDays int) float
 	evenness = clamp01(evenness)
 
 	// Base score: "sustained work is worth ~double" feel via sqrt(coverage).
-	base := math.Sqrt(coverage) * evenness
+	base := math.Sqrt(coverage) * math.Sqrt(evenness)
 	base = clamp01(base)
 
 	// --- Burst-after-inactivity penalty ---
