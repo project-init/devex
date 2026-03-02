@@ -15,7 +15,6 @@ func getRepoSignal(cfg *config.Config, prs []types.PR) {
 	sortedRepos := sortByRepoSignal(signalMapRepos)
 	repoSignals := make([]*types.RepoSignal, len(sortedRepos))
 	for index, repo := range sortedRepos {
-		log.Printf("Repo %s has signal %+v\n", repo, signalMapRepos[repo])
 		repoSignals[index] = signalMapRepos[repo]
 	}
 	err := signalsToCSVRepos(repoSignals, cfg)
@@ -41,7 +40,7 @@ func getRepoGHSignal(prs []types.PR) map[string]*types.RepoSignal {
 		}
 		repoSignal := signalMap[pr.Repo]
 		repoSignal.NumPRs++
-		repoSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(pr.Author), 0.0)
+		repoSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(nil, pr.Author), 0.0)
 		repoSignal.TotalTimeToMerge += pr.TimeToMerge
 
 		if pr.Reviews == "" {
@@ -51,7 +50,7 @@ func getRepoGHSignal(prs []types.PR) map[string]*types.RepoSignal {
 		reviewerPlusStates := strings.Split(pr.Reviews, "!")
 		for range reviewerPlusStates {
 			repoSignal.NumReviews++
-			if isDependabot(pr.Author) {
+			if isBot(pr.Author) {
 				repoSignal.WeightedReviews += 0.01
 			} else {
 				repoSignal.WeightedReviews += 0.20

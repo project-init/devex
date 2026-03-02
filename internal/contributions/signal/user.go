@@ -1,7 +1,7 @@
 package signal
 
 import (
-	"log"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -10,18 +10,22 @@ import (
 	"github.com/project-init/devex/internal/contributions/types"
 )
 
-func getUserSignal(cfg *config.Config, prs []types.PR) {
-	signalMap := getUserGHSignal(prs)
+func getUserSignal(cfg *config.Config, prs []types.PR) error {
+	signalMap, err := getUserGHSignal(cfg, prs)
+	if err != nil {
+		return err
+	}
+
 	sortedUsers := sortByUserSignal(signalMap)
 	userSignals := make([]*types.UserSignal, len(sortedUsers))
 	for index, user := range sortedUsers {
-		log.Printf("User %s has signal %+v\n", user, signalMap[user])
 		userSignals[index] = signalMap[user]
 	}
-	err := signalsToCSVUsers(userSignals, cfg)
+	err = signalsToCSVUsers(userSignals, cfg)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }
 
 func sortByUserSignal(signalMap map[string]*types.UserSignal) []string {
@@ -33,15 +37,16 @@ func sortByUserSignal(signalMap map[string]*types.UserSignal) []string {
 	return sorted
 }
 
-func getUserGHSignal(prs []types.PR) map[string]*types.UserSignal {
+func getUserGHSignal(cfg *config.Config, prs []types.PR) (map[string]*types.UserSignal, error) {
 	signalMap := make(map[string]*types.UserSignal)
+	weightModifierByAuthor := distributionWeightsByAuthor(prs, cfg.NumLookBackDays)
 	for _, pr := range prs {
 		if _, found := signalMap[pr.Author]; !found {
 			signalMap[pr.Author] = &types.UserSignal{User: pr.Author}
 		}
 		authorSignal := signalMap[pr.Author]
 		authorSignal.NumPRs++
-		authorSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(pr.Author), 0.0)
+		authorSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(weightModifierByAuthor, pr.Author), 0.0)
 		authorSignal.TotalTimeToMerge += pr.TimeToMerge
 
 		if pr.Reviews == "" {
@@ -56,7 +61,7 @@ func getUserGHSignal(prs []types.PR) map[string]*types.UserSignal {
 			}
 			reviewerSignal := signalMap[reviewer]
 			reviewerSignal.NumReviews++
-			if isDependabot(pr.Author) {
+			if isBot(pr.Author) {
 				reviewerSignal.WeightedReviews += 0.01
 			} else {
 				reviewerSignal.WeightedReviews += 0.20
@@ -66,6 +71,11 @@ func getUserGHSignal(prs []types.PR) map[string]*types.UserSignal {
 
 	// Set the weighted total after everything is done.
 	for _, signal := range signalMap {
+		modifier, found := weightModifierByAuthor[signal.User]
+		if !found && !strings.Contains(signal.User, "[bot]") {
+			return nil, fmt.Errorf("user signal (%s) weight modifier not found", signal.User)
+		}
+		signal.WeightedDistributionModifier = modifier
 		signal.WeightedTotal = signal.WeightedPRs + signal.WeightedReviews
 		if signal.NumPRs > 0 {
 			signal.AverageDaysToMerge = signal.TotalTimeToMerge.Hours() / float64(signal.NumPRs) / float64(24)
@@ -78,5 +88,5 @@ func getUserGHSignal(prs []types.PR) map[string]*types.UserSignal {
 		}
 	}
 
-	return signalMap
+	return signalMap, nil
 }
