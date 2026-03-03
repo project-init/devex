@@ -13,7 +13,7 @@ Developer Experience Tools
 * [contributions](cmd/contributions/README.md) - Generate contribution signal from github pull requests.
 * [keygen](cmd/keygen/README.md) - Generate an api key
 * [pgaccess](cmd/pgaccess/README.md) - Better way to handle login management for your postgres clusters.
-* [release](cmd/release/README.md) - Better way to handle login management for your postgres clusters.
+* [release](cmd/release/README.md) - Handle consistent tagging for release via release type and auto created version tags.
 * [workplan](cmd/workplan/README.md) - Generate or publish (to Jira) a workplan investigation.
 
 ## Useful Docs
