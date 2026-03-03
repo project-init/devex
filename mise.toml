@@ -33,5 +33,5 @@ run = "go fmt ./..."
 
 # Release
 
-[tasks.start-release]
-run = "./scripts/git-tag-release.sh"
+[tasks.release]
+run = "go run cmd/release/main.go"
