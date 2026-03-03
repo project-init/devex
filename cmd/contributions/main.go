@@ -2,42 +2,59 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"slices"
 	"time"
 
-	"github.com/project-init/devex/internal/contributions"
+	"github.com/project-init/devex/internal/contributions/collection"
 	"github.com/project-init/devex/internal/contributions/config"
-	"github.com/project-init/devex/internal/contributions/gh"
+	"github.com/project-init/devex/internal/contributions/signal"
 )
 
+var validCommands = []string{
+	"collect",
+	"signal",
+}
+
 func main() {
-	cfg, err := config.NewConfigFromYaml(os.Args[1])
+	if len(os.Args) != 3 {
+		usage()
+	}
+
+	cmd := os.Args[1]
+	cfg, err := config.NewConfigFromYaml(os.Args[2])
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("starting Contribution Collections At - %s\n", time.Now().String())
-	github, err := gh.New(cfg.Organization)
-	if err != nil {
-		log.Fatal(err)
+	if !slices.Contains(validCommands, cmd) {
+		log.Fatalf("unknown command %s", cmd)
 	}
 
+	log.Printf("starting Contributions (%s) At - %s\n", cmd, time.Now().String())
 	ctx := context.Background()
+	err = fmt.Errorf("unimplemented command %s", cmd)
+	switch cmd {
+	case "collect":
+		err = collection.Run(ctx, cfg)
+	case "signal":
+		err = signal.Run(cfg)
+	}
 
-	repos, err := github.GetRepos(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("Got %d repositories:\n", len(repos))
-	for _, repo := range repos {
-		log.Printf("\t%s", repo)
-	}
+	log.Printf("completed Contributions (%s) At - %s\n", cmd, time.Now().String())
+}
 
-	year, month, day := time.Now().AddDate(0, 0, -cfg.NumLookBackDays).Date()
-	cutoffDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	prs := github.GetPRs(ctx, cutoffDate, repos, cfg)
-	contributions.GetGHSignal(cfg, prs)
-	log.Printf("completed Collecting Contributions At - %s\n", time.Now().String())
+func usage() {
+	usageString := fmt.Sprintf("Usage: %s <cmd> <config_file>\n", os.Args[0])
+	usageString += "\nCommands:\n"
+	usageString += "\tcollect - Gather all pull requests per the definition in the config file and store them in the prs directory.\n"
+	usageString += "\tsignal - Create a signal output per the definition in the config file and store it in the signals directory.\n"
+	usageString += "\n"
+	log.Fatal(usageString)
 }

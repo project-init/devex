@@ -8,10 +8,12 @@ Developer Experience Tools
 
 ## Usable Commands
 
-* [aiprompt](docs/cmds/aiprompt.md) - Use a set of prompts to templatize work with the Gemini CLI.
-* [keygen](docs/cmds/keygen.md) - Generate an api key
-* [pgaccess](docs/cmds/pgaccess.md) - Better way to handle login management for your postgres clusters.
-* [workplan](docs/cmds/workplan.md) - Generate or publish (to Jira) a workplan investigation.
+* [aiprompt](cmd/aiprompt/README.md) - Use a set of prompts to templatize work with the Gemini CLI.
+* [components](cmd/components/README.md) - Generate component skeleton code.
+* [contributions](cmd/contributions/README.md) - Generate contribution signal from github pull requests.
+* [keygen](cmd/keygen/README.md) - Generate an api key
+* [pgaccess](cmd/pgaccess/README.md) - Better way to handle login management for your postgres clusters.
+* [workplan](cmd/workplan/README.md) - Generate or publish (to Jira) a workplan investigation.
 
 ## Useful Docs
 

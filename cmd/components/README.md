@@ -18,7 +18,7 @@ Then you can run the cmd like
 components .components
 ```
 
-Example config can be found [here](../../cmd/components/example_config.yaml), but a general example looks like
+Example config can be found [here](example_config.yaml), but a general example looks like
 
 ```yaml
 outputDirectory: "gen"

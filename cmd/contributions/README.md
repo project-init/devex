@@ -1,8 +1,30 @@
 # Contributions
 
-The contributions cmd is meant to generate a signal file which can be used to determine which devs/repos are having the
-most impact or potentially are having issues. Can be used on a repo level basis, but the suggestion is to make a repo
-such as `github.com/yourorg/contributions` where you run a nightly cron to collect data and create signal from it.
+A lightweight, opinionated contribution signal generator for GitHub-based engineering teams. This tool analyzes PR and
+review activity over configurable time windows (10 / 30 / 90 days) and produces structured output for evaluating
+contribution patterns, merge velocity, and participation balance.
+
+It is designed to be transparent, extensible, and easy to integrate into dashboards or internal reporting systems.
+
+## Overview
+
+The DevEx Contribution Signal provides:
+
+- PR authorship counts
+- PR review counts
+- PR-to-review ratios
+- Total merge time
+- Average time-to-merge
+- Weighted contribution scoring
+- Share breakdowns across contributors
+
+The goal is to make contribution patterns visible and measurable over rolling time windows.
+
+This is **NOT** a replacement for leadership judgment.
+It **IS** a visibility tool.
+
+For design intent and cultural philosophy, see:
+👉 [PHILOSOPHY.md](./PHILOSOPHY.md)
 
 ## Setup
 
@@ -43,7 +65,4 @@ admin-platform,48.03111574074073,39.63111574074073,8.400000000000002,0.825113369
 data-platform,33.949771990740736,23.149771990740742,10.799999999999994,0.681882988700321,0.3181170112996789,24,54,1469194000000000,0.7085233410493826
 ```
 
-These are easily usable in a spreadsheet, or with an AI to help get some insights in to the data. Our suggestion is to
-use these to spot trends more than use any number as a true ranking. Not all PRs and not all Repos are the same, so this
-is more of a high level viewing where outliers can tell you some things, but the real value is in the month-to-month
-view over time.
+These are easily usable in a spreadsheet, or with an AI to help get some insights in to the data.
