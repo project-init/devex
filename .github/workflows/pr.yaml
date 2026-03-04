@@ -10,5 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ci:
+    uses: ./.github/workflows/reusable-ci.yaml
+
   lint-and-format:
     uses: ./.github/workflows/reusable-ensure-lint-and-format.yaml
