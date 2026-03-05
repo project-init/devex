@@ -23,6 +23,11 @@ run = "go run cmd/keygen/main.go"
 [tasks.workplan]
 run = "go run cmd/workplan/main.go"
 
+# Testing
+
+[tasks.test]
+run = "go test ./... -v"
+
 # Linting
 
 [tasks.lint]
