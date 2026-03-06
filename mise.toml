@@ -1,9 +1,9 @@
 [tools]
-go = "1.25.6"
+go = "1.26.0"
+golangci-lint = "2.10.1"
+awscli = "2.34.2"
 node = "25.7.0"
 prettier = "3.8.1"
-golangci-lint = "2.8.0"
-awscli = "latest"
 
 [env]
 MISE_DISABLE_BACKENDS = "aqua,ubi"
@@ -14,13 +14,19 @@ experimental = true
 # Commands
 
 [tasks.aiprompt]
-run = "go run cmd/aiprompt/main.go cmd/aiprompt/.prompts"
+run = "go run cmd/aiprompt/main.go"
+
+[tasks.components]
+run = "go run cmd/components/main.go"
 
 [tasks.contributions]
 run = "go run cmd/contributions/main.go"
 
 [tasks.keygen]
 run = "go run cmd/keygen/main.go"
+
+[tasks.pgaccess]
+run = "go run cmd/pgaccess/main.go"
 
 [tasks.workplan]
 run = "go run cmd/workplan/main.go"

@@ -62,7 +62,6 @@ func distributionWeightsByAuthor(prs []types.PR, maxDays int) map[string]float64
 }
 
 func authorDistributionWeight(prs []types.PR, asOf time.Time, maxDays int) float64 {
-	// Day buckets, relative to asOf.
 	// Index 0 = today, 1 = yesterday, ... maxDays-1 = oldest day in window.
 	counts := make([]int, maxDays)
 
@@ -86,12 +85,40 @@ func authorDistributionWeight(prs []types.PR, asOf time.Time, maxDays int) float
 		return 0
 	}
 
-	activeDays := 0
+	// Helper: is weekend for a bucket index i (relative to asOfDay).
+	isWeekendIdx := func(i int) bool {
+		d := asOfDay.AddDate(0, 0, -i)
+		w := d.Weekday()
+		return w == time.Saturday || w == time.Sunday
+	}
+
+	// Count weekdays in window (denominators should ignore weekend "missing" days).
+	weekdayDays := 0
+	for i := 0; i < maxDays; i++ {
+		if !isWeekendIdx(i) {
+			weekdayDays++
+		}
+	}
+	if weekdayDays == 0 {
+		// Extremely unlikely unless maxDays==0, but be safe.
+		return 0
+	}
+
+	// Active days counts:
+	// - activeAll: any day with activity (weekends included, so weekend work helps)
+	// - activeWeekdays: weekday activity only (used for some burst heuristics)
+	activeAll := 0
+	activeWeekdays := 0
+
 	maxDaily := 0
 	peakIdx := -1
+
 	for i, c := range counts {
 		if c > 0 {
-			activeDays++
+			activeAll++
+			if !isWeekendIdx(i) {
+				activeWeekdays++
+			}
 			if c > maxDaily {
 				maxDaily = c
 				peakIdx = i
@@ -99,45 +126,37 @@ func authorDistributionWeight(prs []types.PR, asOf time.Time, maxDays int) float
 		}
 	}
 
-	// 1) Coverage: distinct active days across the window.
-	coverage := float64(activeDays) / float64(maxDays)
+	// 1) Coverage: distinct active days across the window, but don't penalize weekends.
+	// Weekend contributions help because activeAll includes them, but denominator excludes weekends.
+	coverage := float64(activeAll) / float64(weekdayDays)
 	coverage = clamp01(coverage)
 
-	// 2) Evenness: best when PRs are spread across days instead of stacked.
-	//    Uses min(total, maxDays) so you can still get 1.0 even if total > maxDays,
-	//    as long as you're active on essentially all days.
-	den := float64(minInt(total, maxDays))
-	evenness := float64(activeDays) / den
+	// 2) Evenness: best when PRs are spread across days (weekend work can only help).
+	den := float64(minInt(total, weekdayDays))
+	evenness := float64(activeAll) / den
 	evenness = clamp01(evenness)
 
-	// Base score: "sustained work is worth ~double" feel via sqrt(coverage).
 	base := math.Sqrt(coverage) * math.Sqrt(evenness)
 	base = clamp01(base)
 
 	// --- Burst-after-inactivity penalty ---
-	//
-	// We want to punish:
-	//   [0 PRs for a long time] -> [burst]
-	// But we do NOT want to punish:
-	//   [consistent] -> [burst] -> [consistent]
-	//
-	// We'll detect:
-	// - leadingZerosOldest: count of oldest consecutive days with zero PRs (started late)
-	// - concentration: fraction of PRs on busiest day
-	// - burstSurrounded: activity exists clearly both before and after the peak day
-	leadingZerosOldest := 0
+	// Compute "leading zeros" ignoring weekends entirely so weekend gaps don't look like inactivity.
+	leadingZerosOldestWeekdays := 0
 	for i := maxDays - 1; i >= 0; i-- {
+		if isWeekendIdx(i) {
+			continue
+		}
 		if counts[i] == 0 {
-			leadingZerosOldest++
+			leadingZerosOldestWeekdays++
 			continue
 		}
 		break
 	}
-	lateStartFrac := float64(leadingZerosOldest) / float64(maxDays)
+
+	lateStartFrac := float64(leadingZerosOldestWeekdays) / float64(weekdayDays)
 	concentration := float64(maxDaily) / float64(total)
 
-	// "Surrounded" check: activity at least gap days older AND at least gap days newer than peak.
-	// This avoids treating spillover adjacent to the burst as "consistent on both sides".
+	// "Surrounded" check (still in calendar-day space). This is mostly about shape, not weekends.
 	const gap = 3
 	hasOlder := false // indices > peakIdx+gap
 	hasNewer := false // indices < peakIdx-gap
@@ -161,15 +180,13 @@ func authorDistributionWeight(prs []types.PR, asOf time.Time, maxDays int) float
 
 	// Strong penalty for "nothing then burst"
 	if lateStartFrac >= 0.40 && concentration >= 0.40 && !burstSurrounded {
-		// Scales with how late the start was and how concentrated the burst is.
-		// Caps at 85% reduction.
 		strength := 1.6 * lateStartFrac * concentration
 		if strength > 0.85 {
 			strength = 0.85
 		}
 		penalty = 1.0 - strength
-	} else if concentration >= 0.65 && activeDays <= maxDays/6 && !burstSurrounded {
-		// Mild penalty for very bursty patterns even without a huge late gap.
+	} else if concentration >= 0.65 && activeWeekdays <= weekdayDays/6 && !burstSurrounded {
+		// Mild penalty for very bursty patterns, weekend-neutral.
 		penalty = 0.85
 	}
 
