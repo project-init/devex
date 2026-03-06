@@ -20,11 +20,13 @@ workplan generate <directory> <title>
 ```
 
 For example:
+
 ```shell
 workplan generate docs/investigations/infrastructure/moveToProjectInitStack example_title
 ```
 
 This will generate a workplan template in the specified directory with the specified title. It'll be structured like this:
+
 ```
 <directory>
 └── <yyyy>_<m>_<d>_example_title
@@ -49,11 +51,11 @@ You will likely want to set the JIRA env variables in a zshrc setup of some kind
 steps.
 
 ## Getting your JIRA API key
+
 1. Navigate to https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click "Create API token"
 3. Give it a name and click "Create"
 4. Copy the token and ensure it is available for use in your environment variables as mentioned in the setup section above.
-
 
 ## Why Jira?
 

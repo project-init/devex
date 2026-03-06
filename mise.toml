@@ -2,6 +2,8 @@
 go = "1.26.0"
 golangci-lint = "2.10.1"
 awscli = "2.34.2"
+node = "25.7.0"
+prettier = "3.8.1"
 
 [env]
 MISE_DISABLE_BACKENDS = "aqua,ubi"
@@ -37,9 +39,26 @@ run = "go test ./... -v"
 # Linting
 
 [tasks.lint]
+depends = ["lint-*"]
+
+[tasks.lint-go]
 run = "golangci-lint run --fix"
 
+[tasks.lint-prettier]
+depends = ["format-prettier-sync"]
+run = "prettier --check ."
+
 [tasks.format]
+depends = ["format-*"]
+
+[tasks.format-prettier-sync]
+run = "sh ./scripts/sync-prettier-config.sh"
+
+[tasks.format-prettier]
+depends = ["format-prettier-sync"]
+run = "prettier --write ."
+
+[tasks.format-go]
 run = "go fmt ./..."
 
 # Release

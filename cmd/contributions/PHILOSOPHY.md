@@ -88,6 +88,7 @@ Not all engineers are evaluated identically.
 ### Developers
 
 Expected to:
+
 - Maintain high throughput
 - Review consistently
 - Keep merge cycles tight
@@ -96,6 +97,7 @@ Expected to:
 ### Architects
 
 Expected to:
+
 - Do all of the above
 - Shape 1–2 year system direction
 - Reduce long-term complexity

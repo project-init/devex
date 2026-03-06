@@ -30,9 +30,10 @@ args:
       - eventType1
       - eventType2
 
-template: "Generate a %s protobuf in the protos/events directory that represents a %s event. It should follow the
-           standards of the repo and use buf where possible to enforce requirements. It should be added to the
-           PublishEventRequest as event_data. More context exists in the llms.md file."
+template:
+  "Generate a %s protobuf in the protos/events directory that represents a %s event. It should follow the
+  standards of the repo and use buf where possible to enforce requirements. It should be added to the
+  PublishEventRequest as event_data. More context exists in the llms.md file."
 ```
 
 By default `gemini` is used as the agent with the `-i` argument, but that is overrideable with
