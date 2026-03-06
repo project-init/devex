@@ -33,30 +33,24 @@ run = "go test ./... -v"
 # Linting
 
 [tasks.lint]
-depends = [
-	"lint-go",
-	"lint-prettier",
-]
+depends = ["lint-*"]
 
 [tasks.lint-go]
 run = "golangci-lint run --fix"
 
 [tasks.lint-prettier]
 depends = ["format-prettier-sync"]
-run = "prettier --config ./prettier.config.json --ignore-path ./.prettierignore --check \"**/*.{md,yml,yaml}\""
+run = "prettier --check ."
 
 [tasks.format]
-depends = [
-	"format-prettier",
-	"format-go",
-]
+depends = ["format-*"]
 
 [tasks.format-prettier-sync]
 run = "sh ./scripts/sync-prettier-config.sh"
 
 [tasks.format-prettier]
 depends = ["format-prettier-sync"]
-run = "prettier --config ./prettier.config.json --ignore-path ./.prettierignore --write \"**/*.{md,yml,yaml}\""
+run = "prettier --write ."
 
 [tasks.format-go]
 run = "go fmt ./..."
