@@ -34,11 +34,14 @@ func sortByRepoSignal(signalMap map[string]*types.RepoSignal) []string {
 
 func getRepoGHSignal(prs []types.PR) map[string]*types.RepoSignal {
 	signalMap := make(map[string]*types.RepoSignal)
+	contributorsByRepo := make(map[string]map[string]struct{})
 	for _, pr := range prs {
 		if _, found := signalMap[pr.Repo]; !found {
 			signalMap[pr.Repo] = &types.RepoSignal{Repo: pr.Repo}
+			contributorsByRepo[pr.Repo] = make(map[string]struct{})
 		}
 		repoSignal := signalMap[pr.Repo]
+		contributorsByRepo[pr.Repo][pr.Author] = struct{}{}
 		repoSignal.NumPRs++
 		repoSignal.WeightedPRs += math.Max((1.0-(.05*float64(pr.TimeToMerge.Hours()/24)))*authorMultiplier(nil, pr.Author), 0.0)
 		repoSignal.TotalTimeToMerge += pr.TimeToMerge
@@ -59,7 +62,8 @@ func getRepoGHSignal(prs []types.PR) map[string]*types.RepoSignal {
 	}
 
 	// Set the weighted total after everything is done.
-	for _, signal := range signalMap {
+	for repo, signal := range signalMap {
+		signal.NumContributors = len(contributorsByRepo[repo])
 		signal.WeightedTotal = signal.WeightedPRs + signal.WeightedReviews
 		if signal.NumPRs > 0 {
 			signal.AverageDaysToMerge = signal.TotalTimeToMerge.Hours() / float64(signal.NumPRs) / float64(24)
