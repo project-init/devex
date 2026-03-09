@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/project-init/devex/internal/sre/postgres"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,9 @@ var rootCmd = &cobra.Command{
 
 func Execute() error {
 	// Register tools (subcommands)
+	rootCmd.AddCommand(postgres.Command())
+
+	// Example Tools
 	rootCmd.AddCommand(echoCmd())
 	rootCmd.AddCommand(versionCmd())
 

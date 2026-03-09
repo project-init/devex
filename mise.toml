@@ -1,8 +1,8 @@
 [tools]
-go = "1.26.0"
-golangci-lint = "2.10.1"
-awscli = "2.34.2"
-node = "25.7.0"
+go = "1.26.1"
+golangci-lint = "2.11.2"
+awscli = "2.34.4"
+node = "25.8.0"
 prettier = "3.8.1"
 
 [env]
@@ -27,6 +27,9 @@ run = "go run cmd/keygen/main.go"
 
 [tasks.pgaccess]
 run = "go run cmd/pgaccess/main.go"
+
+[tasks.sre]
+run = "go run cmd/sre/main.go"
 
 [tasks.workplan]
 run = "go run cmd/workplan/main.go"
