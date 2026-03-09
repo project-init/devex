@@ -37,9 +37,9 @@ type RepoSignal struct {
 	WeightedReviewShare float64 `csv:"weighted_review_share"`
 
 	// Raw Stats
-	NumPRs           int `csv:"num_prs"`
-	NumReviews       int `csv:"num_reviews"`
-	NumContributors  int `csv:"num_contributors"`
+	NumPRs          int `csv:"num_prs"`
+	NumReviews      int `csv:"num_reviews"`
+	NumContributors int `csv:"num_contributors"`
 
 	// Scoring Use Only
 	TotalTimeToMerge time.Duration `csv:"-"`
