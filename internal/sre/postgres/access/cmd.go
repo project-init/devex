@@ -28,7 +28,7 @@ func Command() *cobra.Command {
 			fmt.Printf("%s chosen. Loading environment config...\n", environment)
 			environmentConfig, found := cfg.Postgres.Environments[environment]
 			if !found {
-				panic(fmt.Errorf("environment %s not found in cfg %+v", environment, cfg.Postgres))
+				return fmt.Errorf("environment %s not found in cfg %+v", environment, cfg.Postgres)
 			}
 
 			psqlCfg, err := loadPGAccessEnvironment(environmentConfig)
