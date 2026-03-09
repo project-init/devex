@@ -4,24 +4,42 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/project-init/devex/internal/sre/config"
 	"github.com/project-init/devex/internal/sre/postgres"
 	"github.com/spf13/cobra"
 )
 
-var rootCmd = &cobra.Command{
-	Use:           "sre <tool> [args]",
-	Short:         "sre is a toolbox CLI for site reliability operations",
-	SilenceUsage:  true,                  // don't print usage on errors by default
-	SilenceErrors: true,                  // we’ll print errors ourselves
-	Args:          cobra.MinimumNArgs(1), // requires <tool> unless help is requested
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// This only runs if Args passes, so this is mostly a guardrail.
-		return cmd.Help()
-	},
-}
-
 func Execute() error {
 	// Register tools (subcommands)
+	var sreConfigFile string
+	rootCmd := &cobra.Command{
+		Use:           "sre <tool> [args]",
+		Short:         "sre is a toolbox CLI for site reliability operations",
+		SilenceUsage:  true,                  // don't print usage on errors by default
+		SilenceErrors: true,                  // we’ll print errors ourselves
+		Args:          cobra.MinimumNArgs(1), // requires <tool> unless help is requested
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			path, err := resolveConfigPath(sreConfigFile)
+			if err != nil {
+				return err
+			}
+
+			cfg, err := config.LoadConfig(path)
+			if err != nil {
+				return err
+			}
+
+			cmd.SetContext(config.WithConfig(cmd.Context(), cfg))
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// This only runs if Args passes, so this is mostly a guardrail.
+			return cmd.Help()
+		},
+	}
+	rootCmd.PersistentFlags().StringVar(&sreConfigFile, "config", "", "config file (default is .sre)")
+
+	// Sub Commands (Tools)
 	rootCmd.AddCommand(postgres.Command())
 
 	// Example Tools
@@ -34,4 +52,19 @@ func Execute() error {
 		return err
 	}
 	return nil
+}
+
+func resolveConfigPath(explicit string) (string, error) {
+	if explicit != "" {
+		if _, err := os.Stat(explicit); err != nil {
+			return "", fmt.Errorf("config file %q not found: %w", explicit, err)
+		}
+		return explicit, nil
+	}
+
+	defaultPath := ".sre"
+	if _, err := os.Stat(defaultPath); err != nil {
+		return "", fmt.Errorf("no config found: pass --config or create %s", defaultPath)
+	}
+	return defaultPath, nil
 }
