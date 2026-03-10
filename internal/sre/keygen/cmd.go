@@ -15,13 +15,9 @@ func Command() *cobra.Command {
 		Short: "Print an API Key based on the sre configuration file.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, ok := config.GetConfig(cmd.Context())
-			if !ok || cfg == nil {
-				return fmt.Errorf("config not loaded")
-			}
-
 			length := 32
-			if cfg.Keygen.Length != nil {
+			cfg, _ := config.GetConfig(cmd.Context())
+			if cfg != nil && cfg.Keygen.Length != nil {
 				length = *cfg.Keygen.Length
 			}
 
