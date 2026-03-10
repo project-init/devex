@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "scripts": {
+    "format": "prettier --write .",
+    "lint": "prettier --check ."
+  },
+  "prettier": {
+    "plugins": [
+      "prettier-plugin-packagejson"
+    ]
+  },
+  "devDependencies": {
+    "prettier": "~3.8.1",
+    "prettier-plugin-packagejson": "~3.0.0"
+  }
+}
