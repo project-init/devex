@@ -10,6 +10,7 @@ import (
 type Configuration struct {
 	Keygen   KeygenConfiguration   `yaml:"keygen"`
 	Postgres PostgresConfiguration `yaml:"postgres"`
+	Release  ReleaseConfiguration  `yaml:"release"`
 }
 
 type configKey struct{}

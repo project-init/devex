@@ -23,10 +23,13 @@ run = "go run cmd/components/main.go"
 run = "go run cmd/contributions/main.go"
 
 [tasks.keygen]
-run = "go run cmd/keygen/main.go"
+run = "mise sre keygen --config cmd/sre/.sre"
 
 [tasks.pgaccess]
-run = "go run cmd/pgaccess/main.go"
+run = "mise sre postgres access --config cmd/sre/.sre"
+
+[tasks.start-release]
+run = "mise sre release --config cmd/sre/.sre"
 
 [tasks.sre]
 run = "go run cmd/sre/main.go"
