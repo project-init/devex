@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/sre/keygen"
 	"github.com/project-init/devex/internal/sre/postgres"
 	"github.com/spf13/cobra"
 )
@@ -40,6 +41,7 @@ func Execute() error {
 	rootCmd.PersistentFlags().StringVar(&sreConfigFile, "config", "", "config file (default is .sre)")
 
 	// Sub Commands (Tools)
+	rootCmd.AddCommand(keygen.Command())
 	rootCmd.AddCommand(postgres.Command())
 
 	// Example Tools

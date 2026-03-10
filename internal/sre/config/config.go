@@ -8,6 +8,7 @@ import (
 )
 
 type Configuration struct {
+	Keygen   KeygenConfiguration   `yaml:"keygen"`
 	Postgres PostgresConfiguration `yaml:"postgres"`
 }
 
