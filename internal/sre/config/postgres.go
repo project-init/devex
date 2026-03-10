@@ -16,6 +16,7 @@ type PostgresEnvironmentConfig struct {
 
 type PsqlConfig struct {
 	Host     string
+	Port     int
 	Username string
 	Password string
 	Database string

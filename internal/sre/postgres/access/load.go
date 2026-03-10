@@ -1,30 +1,15 @@
-package pgaccess
+package access
 
 import (
 	"context"
 	"fmt"
-	"os"
 
+	"github.com/project-init/devex/internal/sre/config"
 	"github.com/project-init/gommon/pkg/aws"
 	"github.com/project-init/gommon/pkg/postgres"
-	"gopkg.in/yaml.v3"
 )
 
-func LoadPGAccessEnvironments(pgAccessFile string) (map[string]EnvironmentConfig, error) {
-	bytes, err := os.ReadFile(pgAccessFile)
-	if err != nil {
-		return nil, err
-	}
-
-	var config Configuration
-	if err = yaml.Unmarshal(bytes, &config); err != nil {
-		return nil, err
-	}
-
-	return config.Environments, nil
-}
-
-func LoadPGAccessEnvironment(environmentConfig EnvironmentConfig) (*PsqlConfig, error) {
+func loadPGAccessEnvironment(environmentConfig config.PostgresEnvironmentConfig) (*config.PsqlConfig, error) {
 	fmt.Printf("Logging in to %s as %s via psql.\n", environmentConfig.Host, environmentConfig.UserName)
 
 	password, err := getPassword(environmentConfig)
@@ -32,8 +17,9 @@ func LoadPGAccessEnvironment(environmentConfig EnvironmentConfig) (*PsqlConfig, 
 		return nil, err
 	}
 
-	return &PsqlConfig{
+	return &config.PsqlConfig{
 		Host:     environmentConfig.Host,
+		Port:     environmentConfig.Port,
 		Username: environmentConfig.UserName,
 		Password: password,
 		Database: environmentConfig.Database,
@@ -41,7 +27,7 @@ func LoadPGAccessEnvironment(environmentConfig EnvironmentConfig) (*PsqlConfig, 
 	}, nil
 }
 
-func getPassword(environmentConfig EnvironmentConfig) (string, error) {
+func getPassword(environmentConfig config.PostgresEnvironmentConfig) (string, error) {
 	if environmentConfig.Password != nil {
 		return *environmentConfig.Password, nil
 	}
