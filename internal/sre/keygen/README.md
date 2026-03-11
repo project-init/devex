@@ -12,7 +12,7 @@ keygen:
 ## Usage
 
 ```shell
-sre keygen --config .sre
+sre keygen
 ```
 
 #### Description

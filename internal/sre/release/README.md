@@ -12,7 +12,7 @@ release:
 ## Usage
 
 ```shell
-sre release --config .sre
+sre release
 ```
 
 The above will generate a git tag and trigger your release if it is coupled with a GH workflow like [this](../../../.github/workflows/release.yaml).
