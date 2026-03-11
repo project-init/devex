@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/project-init/devex/internal/sre/analyze"
 	"github.com/project-init/devex/internal/sre/config"
 	"github.com/project-init/devex/internal/sre/keygen"
 	"github.com/project-init/devex/internal/sre/postgres"
@@ -44,6 +45,7 @@ func Execute() error {
 	rootCmd.PersistentFlags().StringVar(&sreConfigFile, configFlag, "", "config directory (default is .sre)")
 
 	// Sub Commands (Tools)
+	rootCmd.AddCommand(analyze.Command())
 	rootCmd.AddCommand(keygen.Command())
 	rootCmd.AddCommand(postgres.Command())
 	rootCmd.AddCommand(release.Command())
