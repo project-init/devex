@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,16 +26,19 @@ func GetConfig(ctx context.Context) (*Configuration, bool) {
 	return cfg, ok
 }
 
-func LoadConfig(configFilePath string) (*Configuration, error) {
-	bytes, err := os.ReadFile(configFilePath)
-	if err != nil {
-		return nil, err
-	}
+func LoadConfig(configDirPath string) (*Configuration, error) {
+	files, _ := filepath.Glob(filepath.Join(configDirPath, "*.yaml"))
+	sort.Strings(files)
 
 	var config Configuration
-	if err = yaml.Unmarshal(bytes, &config); err != nil {
-		return nil, err
+	for _, f := range files {
+		bytes, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		if err = yaml.Unmarshal(bytes, &config); err != nil {
+			return nil, err
+		}
 	}
-
 	return &config, nil
 }

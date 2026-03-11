@@ -1,6 +1,3 @@
-keygen:
-  length: 32
-
 postgres:
   environments:
     localhost-readonly:

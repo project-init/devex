@@ -32,7 +32,7 @@ postgres:
 #### Usage
 
 ```shell
-sre postgres access --config .sre
+sre postgres access
 ```
 
 #### Description

@@ -17,3 +17,6 @@ Add the following to your `mise.toml` file
 awscli = "latest" # We suggest pinning a version here
 "go:github.com/project-init/devex/cmd/sre" = "latest" # We suggest pinning a version here
 ```
+
+We also suggest making a directory `.sre` which will contain your configuration files. You can start with no files in
+the config dir if you want, but by default that is where the tool looks unless overridden using the `--configDir` flag.

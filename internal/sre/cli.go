@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const configFlag = "configDir"
+
 func Execute() error {
 	// Register tools (subcommands)
 	var sreConfigFile string
@@ -31,6 +33,7 @@ func Execute() error {
 				return err
 			}
 
+			fmt.Printf("%+v\n", cfg)
 			cmd.SetContext(config.WithConfig(cmd.Context(), cfg))
 			return nil
 		},
@@ -39,7 +42,7 @@ func Execute() error {
 			return cmd.Help()
 		},
 	}
-	rootCmd.PersistentFlags().StringVar(&sreConfigFile, "config", "", "config file (default is .sre)")
+	rootCmd.PersistentFlags().StringVar(&sreConfigFile, configFlag, "", "config directory (default is .sre)")
 
 	// Sub Commands (Tools)
 	rootCmd.AddCommand(keygen.Command())
@@ -61,14 +64,14 @@ func Execute() error {
 func resolveConfigPath(explicit string) (string, error) {
 	if explicit != "" {
 		if _, err := os.Stat(explicit); err != nil {
-			return "", fmt.Errorf("config file %q not found: %w", explicit, err)
+			return "", fmt.Errorf("config dir %q not found: %w", explicit, err)
 		}
 		return explicit, nil
 	}
 
 	defaultPath := ".sre"
 	if _, err := os.Stat(defaultPath); err != nil {
-		return "", fmt.Errorf("no config found: pass --config or create %s", defaultPath)
+		return "", fmt.Errorf("no config found: pass --%s or create %s", configFlag, defaultPath)
 	}
 	return defaultPath, nil
 }
