@@ -33,7 +33,6 @@ func Execute() error {
 				return err
 			}
 
-			fmt.Printf("%+v\n", cfg)
 			cmd.SetContext(config.WithConfig(cmd.Context(), cfg))
 			return nil
 		},
