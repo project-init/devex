@@ -8,10 +8,8 @@ Developer Experience Tools
 
 ## Usable Commands
 
-- [aiprompt](cmd/aiprompt/README.md) - Use a set of prompts to templatize work with the Gemini CLI.
 - [components](cmd/components/README.md) - Generate component skeleton code.
 - [contributions](cmd/contributions/README.md) - Generate contribution signal from github pull requests.
-- [release](cmd/release/README.md) - Handle consistent tagging for release via release type and auto created version tags.
 - [sre](cmd/sre/README.md) - SRE Toolbox. Multiple types of tools exist in this for common site reliability operations.
 - [workplan](cmd/workplan/README.md) - Generate or publish (to Jira) a workplan investigation.
 
