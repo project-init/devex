@@ -18,9 +18,6 @@ run = "bun install"
 
 # Commands
 
-[tasks.aiprompt]
-run = "go run cmd/aiprompt/main.go"
-
 [tasks.components]
 run = "go run cmd/components/main.go"
 
@@ -33,7 +30,7 @@ run = "mise sre keygen --config cmd/sre/.sre"
 [tasks.pgaccess]
 run = "mise sre postgres access --config cmd/sre/.sre"
 
-[tasks.start-release]
+[tasks.release]
 run = "mise sre release --config cmd/sre/.sre"
 
 [tasks.sre]
@@ -71,8 +68,3 @@ run = "bun run format"
 
 [tasks.format-go]
 run = "go fmt ./..."
-
-# Release
-
-[tasks.release]
-run = "go run cmd/release/main.go"
