@@ -13,6 +13,9 @@ experimental = true
 
 # Commands
 
+[tasks.analyze]
+run = "mise sre analyze"
+
 [tasks.components]
 run = "go run cmd/components/main.go"
 
