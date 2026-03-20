@@ -1,12 +1,9 @@
 [tools]
 go = "1.26.1"
-golangci-lint = "2.11.2"
+golangci-lint = "2.11.3"
 awscli = "2.34.4"
 node = "25.8.0"
 prettier = "3.8.1"
-
-[env]
-MISE_DISABLE_BACKENDS = "aqua,ubi"
 
 [settings]
 experimental = true
