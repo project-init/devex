@@ -18,8 +18,27 @@ func Command() *cobra.Command {
 				return fmt.Errorf("config not loaded")
 			}
 
-			fmt.Printf("%+v\n", cfg)
-			return nil
+			if cfg.Analyze.Protos.Enabled == nil || !*cfg.Analyze.Protos.Enabled {
+				fmt.Println("protos analysis disabled")
+				return nil
+			}
+
+			err := staticAnalysis(cfg.Analyze.Protos)
+			if err != nil {
+				return err
+			}
+
+			switch cfg.Analyze.Depth {
+			case config.Diff:
+				err = diffAnalysis(cfg.Analyze.Protos)
+			case config.Repo:
+				err = repoAnalysis(cfg.Analyze.Protos)
+			case config.Organization:
+				err = organizationAnalysis(cfg.Analyze.Protos)
+			default:
+				err = fmt.Errorf("unknown analyze depth: %s, must be in %+v", cfg.Analyze.Depth, config.AllowableAnalysisDepths)
+			}
+			return err
 		},
 	}
 	return cmd
