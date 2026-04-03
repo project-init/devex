@@ -1,6 +1,8 @@
 package config
 
-import "github.com/project-init/devex/internal/sre/config/analyze"
+import (
+	"github.com/project-init/devex/internal/sre/config/analyze"
+)
 
 type AnalysisDepth string
 
