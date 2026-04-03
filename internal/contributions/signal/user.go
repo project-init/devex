@@ -75,7 +75,7 @@ func getUserGHSignal(cfg *config.Config, prs []types.PR) (map[string]*types.User
 		if !found && !strings.Contains(signal.User, "[bot]") {
 			// Most likely the user only reviewed content in this repo so give them a base level modifier.
 			modifier = 0.75
-			fmt.Printf("user signal (%s) weight modifier not found, using %2f", signal.User, modifier)
+			fmt.Printf("user signal (%s) weight modifier not found, using %2f\n", signal.User, modifier)
 		}
 		signal.WeightedDistributionModifier = modifier
 		signal.WeightedTotal = signal.WeightedPRs + signal.WeightedReviews
