@@ -1,6 +1,6 @@
 module github.com/project-init/devex
 
-go 1.26.1
+go 1.26.2
 
 require (
 	github.com/google/go-github/v74 v74.0.0
