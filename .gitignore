@@ -37,8 +37,8 @@ go.work.sum
 /gen/
 
 # Contributions
-cmd/contributions/prs
-cmd/contributions/signals
+cmd/devex/contributions/prs
+cmd/devex/contributions/signals
 
 # Prettier configuration files
 # These are intentionally left untracked since `mise format` will pull down the latest version

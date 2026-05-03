@@ -12,28 +12,28 @@ experimental = true
 # Commands
 
 [tasks.analyze]
-run = "mise sre analyze"
+run = "go run cmd/devex/main.go sre analyze"
 
 [tasks.components]
-run = "go run cmd/components/main.go"
+run = "go run cmd/devex/main.go components"
 
 [tasks.contributions]
-run = "go run cmd/contributions/main.go"
+run = "go run cmd/devex/main.go contributions"
 
 [tasks.keygen]
-run = "mise sre keygen"
+run = "go run cmd/devex/main.go sre keygen"
 
 [tasks.pgaccess]
-run = "mise sre postgres access"
+run = "go run cmd/devex/main.go sre postgres access"
 
 [tasks.release]
-run = "mise sre release"
+run = "go run cmd/devex/main.go sre release"
 
 [tasks.sre]
-run = "go run cmd/sre/main.go"
+run = "go run cmd/devex/main.go sre"
 
 [tasks.workplan]
-run = "go run cmd/workplan/main.go"
+run = "go run cmd/devex/main.go workplan"
 
 # Testing
 
