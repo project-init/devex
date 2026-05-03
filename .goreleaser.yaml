@@ -1,0 +1,28 @@
+# .goreleaser.yaml
+project_name: devex
+
+builds:
+  - id: contributions
+    main: ./cmd/contributions
+    binary: devex-contributions
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+  - id: sre
+    main: ./cmd/sre
+    binary: devex-sre
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+  - id: workplan
+    main: ./cmd/workplan
+    binary: devex-workplan
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - name_template: "devex_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # This ensures all binaries from all build IDs above
+    # end up in the same .tar.gz file
+    files:
+      - none*
