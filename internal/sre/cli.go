@@ -14,13 +14,13 @@ import (
 
 const configFlag = "configDir"
 
-func Execute() error {
+func Command() *cobra.Command {
 	// Register tools (subcommands)
 	var sreConfigFile string
 	rootCmd := &cobra.Command{
 		Use:           "sre <tool> [args]",
 		Short:         "sre is a toolbox CLI for site reliability operations",
-		SilenceUsage:  true,                  // don't print usage on errors by default
+		SilenceUsage:  true,                  // don’t print usage on errors by default
 		SilenceErrors: true,                  // we’ll print errors ourselves
 		Args:          cobra.MinimumNArgs(1), // requires <tool> unless help is requested
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -54,9 +54,13 @@ func Execute() error {
 	rootCmd.AddCommand(echoCmd())
 	rootCmd.AddCommand(versionCmd())
 
-	if err := rootCmd.Execute(); err != nil {
+	return rootCmd
+}
+
+// Execute is kept for backwards compatibility if the standalone binary is still used
+func Execute() error {
+	if err := Command().Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
-		_ = rootCmd.Usage()
 		return err
 	}
 	return nil

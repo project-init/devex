@@ -9,7 +9,7 @@ reposToSkip:
 #   - "onlyRepoICareAbout"
 
 outputDirectories:
-  prs: "cmd/contributions/prs"
-  signals: "cmd/contributions/signals"
+  prs: "cmd/devex/contributions/prs"
+  signals: "cmd/devex/contributions/signals"
 
 organization: project-init
