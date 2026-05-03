@@ -4,6 +4,7 @@ golangci-lint = "2.12.1"
 awscli = "2.34.41"
 node = "25.9.0"
 prettier = "3.8.3"
+goreleaser = "2.15.4"
 
 [settings]
 experimental = true
@@ -63,3 +64,6 @@ run = "prettier --write ."
 
 [tasks.format-go]
 run = "go fmt ./..."
+
+[tasks."gorelease"]
+run = "goreleaser release --snapshot --clean --skip=publish"
