@@ -22,7 +22,14 @@ builds:
 
 archives:
   - name_template: "devex_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    # This ensures all binaries from all build IDs above
-    # end up in the same .tar.gz file
+    format: tar.gz
+    # Explicitly include all build IDs
+    builds:
+      - contributions
+      - sre
+      - workplan
+    # This is the "magic" bit:
+    # Ensure GoReleaser doesn't strip the binary names
     files:
-      - none*
+      - src: 'LICENSE*'
+      - src: 'README*'
