@@ -7,13 +7,11 @@ builds:
     binary: devex-contributions
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-
   - id: sre
     main: ./cmd/sre
     binary: devex-sre
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-
   - id: workplan
     main: ./cmd/workplan
     binary: devex-workplan
@@ -21,15 +19,21 @@ builds:
     goarch: [amd64, arm64]
 
 archives:
-  - name_template: "devex_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
-    # Explicitly include all build IDs
+  - id: contributions-archive
+    # This links this archive block ONLY to the contributions build
     builds:
       - contributions
+    name_template: "pi-contributions_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+
+  - id: sre-archive
+    builds:
       - sre
+    name_template: "pi-sre_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+
+  - id: workplan-archive
+    builds:
       - workplan
-    # This is the "magic" bit:
-    # Ensure GoReleaser doesn't strip the binary names
-    files:
-      - src: 'LICENSE*'
-      - src: 'README*'
+    name_template: "pi-workplan_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
