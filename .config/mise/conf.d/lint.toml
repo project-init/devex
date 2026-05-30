@@ -8,7 +8,7 @@ run = "golangci-lint run --fix"
 
 [tasks.lint-prettier]
 depends = ["format-prettier-sync"]
-run = "prettier --check ."
+run = "prettier --check . --write"
 
 [tasks.format]
 depends = ["format-*"]
