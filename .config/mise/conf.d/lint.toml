@@ -1,0 +1,24 @@
+##@ Lint and Formatting
+
+[tasks.lint]
+depends = ["lint-*"]
+
+[tasks.lint-go]
+run = "golangci-lint run --fix"
+
+[tasks.lint-prettier]
+depends = ["format-prettier-sync"]
+run = "prettier --check . --write"
+
+[tasks.format]
+depends = ["format-*"]
+
+[tasks.format-prettier-sync]
+run = "sh ./scripts/sync-prettier-config.sh"
+
+[tasks.format-prettier]
+depends = ["format-prettier-sync"]
+run = "prettier --write ."
+
+[tasks.format-go]
+run = "go fmt ./..."
