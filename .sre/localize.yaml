@@ -1,0 +1,3 @@
+localize:
+  localesDir: ../business-platform/internal/translations/locales
+  rubricPath: .sre/localization/rubric.md
