@@ -1,69 +1,12 @@
 [tools]
-go = "1.26.2"
-golangci-lint = "2.12.1"
-awscli = "2.34.41"
-node = "25.9.0"
+go = "1.26.3"
+golangci-lint = "2.12.2"
+awscli = "2.34.57"
+node = "26.2.0"
 prettier = "3.8.3"
-goreleaser = "2.15.4"
+goreleaser = "2.16.0"
 
 [settings]
 experimental = true
 
-# Commands
-
-[tasks.analyze]
-run = "go run cmd/devex/main.go sre analyze"
-
-[tasks.components]
-run = "go run cmd/devex/main.go components"
-
-[tasks.contributions]
-run = "go run cmd/devex/main.go contributions"
-
-[tasks.keygen]
-run = "go run cmd/devex/main.go sre keygen"
-
-[tasks.pgaccess]
-run = "go run cmd/devex/main.go sre postgres access"
-
-[tasks.release]
-run = "go run cmd/devex/main.go sre release"
-
-[tasks.sre]
-run = "go run cmd/devex/main.go sre"
-
-[tasks.workplan]
-run = "go run cmd/devex/main.go workplan"
-
-# Testing
-
-[tasks.test]
-run = "go test ./... -v"
-
-# Linting
-
-[tasks.lint]
-depends = ["lint-*"]
-
-[tasks.lint-go]
-run = "golangci-lint run --fix"
-
-[tasks.lint-prettier]
-depends = ["format-prettier-sync"]
-run = "prettier --check ."
-
-[tasks.format]
-depends = ["format-*"]
-
-[tasks.format-prettier-sync]
-run = "sh ./scripts/sync-prettier-config.sh"
-
-[tasks.format-prettier]
-depends = ["format-prettier-sync"]
-run = "prettier --write ."
-
-[tasks.format-go]
-run = "go fmt ./..."
-
-[tasks."gorelease"]
-run = "goreleaser release --snapshot --clean --skip=publish"
+# Tasks are under .config/mise/conf.d

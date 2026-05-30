@@ -1,0 +1,22 @@
+##@ Commands
+
+[tasks.analyze]
+run = "mise sre analyze"
+
+[tasks.contributions]
+run = "go run cmd/contributions/main.go"
+
+[tasks.keygen]
+run = "mise sre keygen"
+
+[tasks.pgaccess]
+run = "mise sre postgres access"
+
+[tasks.release]
+run = "mise sre release"
+
+[tasks.sre]
+run = "go run cmd/devex/main.go sre"
+
+[tasks.workplan]
+run = "go run cmd/workplan/main.go"

@@ -12,6 +12,7 @@ import (
 type Configuration struct {
 	Analyze  AnalyzeConfiguration  `yaml:"analyze"`
 	Keygen   KeygenConfiguration   `yaml:"keygen"`
+	Localize LocalizeConfiguration `yaml:"localize"`
 	Postgres PostgresConfiguration `yaml:"postgres"`
 	Release  ReleaseConfiguration  `yaml:"release"`
 }
