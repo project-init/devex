@@ -6,6 +6,7 @@ import (
 
 	"github.com/project-init/devex/internal/components"
 	"github.com/project-init/devex/internal/contributions"
+	"github.com/project-init/devex/internal/localize"
 	"github.com/project-init/devex/internal/sre"
 	"github.com/project-init/devex/internal/workplan"
 	"github.com/spf13/cobra"
@@ -21,6 +22,7 @@ func Execute() error {
 
 	// Add subcommands
 	rootCmd.AddCommand(sre.Command())
+	rootCmd.AddCommand(localize.Command())
 	rootCmd.AddCommand(workplan.Command())
 	rootCmd.AddCommand(contributions.Command())
 	rootCmd.AddCommand(components.Command())
