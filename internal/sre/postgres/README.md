@@ -45,6 +45,44 @@ as that user in the given environment assuming the proper definition has been es
 **NOTE**: You will also need `psql` installed, which comes with any installation of `postgres`. At time of writing this
 doc, postgres doesn't seem to install via mise on Mac. Instead, the suggested install path for `postgresql` is via brew.
 
+### migrate
+
+#### Usage
+
+```shell
+sre postgres migrate \
+  --cluster <ecs-cluster> \
+  --task-def <task-definition> \
+  --subnets <subnet-1,subnet-2> \
+  --security-groups <sg-1,sg-2> \
+  --container <container-name> \
+  --image-uri <docker-image-uri> \
+  [--region <aws-region>]
+```
+
+Each flag also falls back to an environment variable, so the command can be driven entirely from the environment in
+CI/CD:
+
+| Flag                | Environment variable | Required | Default     |
+| ------------------- | -------------------- | -------- | ----------- |
+| `--cluster`         | `CLUSTER`            | yes      |             |
+| `--task-def`        | `TASK_DEF`           | yes      |             |
+| `--subnets`         | `SUBNETS`            | yes      |             |
+| `--security-groups` | `SECURITY_GROUPS`    | yes      |             |
+| `--container`       | `CONTAINER`          | yes      |             |
+| `--image-uri`       | `IMAGE_URI`          | yes      |             |
+| `--region`          | `REGION`             | no       | `us-east-1` |
+
+#### Description
+
+The migrate command runs a database migration as a one-off ECS Fargate task. It takes an existing task definition,
+registers a new revision pointing the named container at the provided image, then runs that revision in the given
+cluster and waits (up to 30 minutes) for it to complete. On a non-zero exit it pulls the recent CloudWatch logs from
+`/ecs/<task-def>` to help diagnose the failure, and exits non-zero so callers (e.g. a deploy pipeline) can fail fast.
+
+**NOTE**: This relies on standard AWS credential resolution, so make sure your `AWS_PROFILE`/SSO login (or CI role) is in
+place and has permission to describe/register task definitions and run tasks on the target cluster.
+
 ## Why psql as the default?
 
 The `psql` CLI comes with an installation of postgresql by default, so it makes it very likely to exist on any system
