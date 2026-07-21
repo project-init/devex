@@ -17,3 +17,20 @@ jobs:
 
       - name: Unit Test
         run: mise test
+
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # GoReleaser needs the full git history for changelogs
+
+      - uses: jdx/mise-action@v4
+        with:
+          install: true
+          experimental: true
+          cache: true
+
+      - name: Run GoReleaser
+        run: goreleaser release --snapshot --clean
