@@ -20,6 +20,23 @@ type LocalizeConfiguration struct {
 	// RubricPath is an optional path to a text/markdown file containing translation rules,
 	// legal terms, and pre-defined translation strings to guide the LLM.
 	RubricPath string `yaml:"rubricPath"`
+
+	// Mobile configures generation of platform localization bundles from gotext catalogs.
+	Mobile MobileConfiguration `yaml:"mobile"`
+}
+
+type MobileConfiguration struct {
+	// SourceLanguage is the locale whose catalog must contain every registered mobile string.
+	SourceLanguage string `yaml:"sourceLanguage"`
+
+	// RegistryPath is the Go source file that declares mobile strings with message.Printer.Sprintf.
+	RegistryPath string `yaml:"registryPath"`
+
+	// SourceDir contains platform source files whose translation keys are validated.
+	SourceDir string `yaml:"sourceDir"`
+
+	// OutputDir receives one l10n-<locale>.json bundle per locale.
+	OutputDir string `yaml:"outputDir"`
 }
 
 type configKey struct{}

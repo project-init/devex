@@ -33,6 +33,13 @@ devex <subcommand> [options]
   devex sre <tool> [args]
   ```
 
+- **[localize](cmd/devex/README.md#localize)** - Audit translations and generate mobile localization bundles
+
+  ```bash
+  devex localize audit
+  devex localize mobile
+  ```
+
 - **[workplan](cmd/devex/README.md#workplan)** - Generate and publish workplan investigations to JIRA
 
   ```bash
