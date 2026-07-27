@@ -57,22 +57,23 @@ type generatedBundle struct {
 	count    int
 }
 
-func generate(
+func Generate(
 	localesDir string,
+	sourceLanguage string,
+	registryPath string,
 	cfg config.IOSConfiguration,
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	if err := validateConfig(localesDir, cfg); err != nil {
+	if err := validateConfig(localesDir, registryPath, cfg); err != nil {
 		return err
 	}
 
-	sourceLanguage := cfg.SourceLanguage
 	if sourceLanguage == "" {
 		sourceLanguage = defaultSourceLanguage
 	}
 
-	ids, err := loadRegistryIDs(cfg.RegistryPath)
+	ids, err := loadRegistryIDs(registryPath)
 	if err != nil {
 		return err
 	}
@@ -120,7 +121,7 @@ func generate(
 		})
 	}
 
-	if err := validateSourceUsage(cfg.SourceDir, cfg.RegistryPath, ids, stderr); err != nil {
+	if err := validateSourceUsage(cfg.SourceDir, registryPath, ids, stderr); err != nil {
 		return err
 	}
 
@@ -164,13 +165,13 @@ func marshalJSONString(value string) ([]byte, error) {
 	return bytes.TrimSuffix(output.Bytes(), []byte{'\n'}), nil
 }
 
-func validateConfig(localesDir string, cfg config.IOSConfiguration) error {
+func validateConfig(localesDir string, registryPath string, cfg config.IOSConfiguration) error {
 	missing := make([]string, 0, 4)
 	if localesDir == "" {
 		missing = append(missing, "localize.localesDir")
 	}
-	if cfg.RegistryPath == "" {
-		missing = append(missing, "localize.mobile.ios.registryPath")
+	if registryPath == "" {
+		missing = append(missing, "localize.mobile.registryPath")
 	}
 	if cfg.SourceDir == "" {
 		missing = append(missing, "localize.mobile.ios.sourceDir")

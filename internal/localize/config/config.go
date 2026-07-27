@@ -26,17 +26,17 @@ type LocalizeConfiguration struct {
 }
 
 type MobileConfiguration struct {
+	// SourceLanguage is the locale whose catalog must contain every registered mobile string.
+	SourceLanguage string `yaml:"sourceLanguage"`
+
+	// RegistryPath is the Go source file that declares mobile strings with message.Printer.Sprintf.
+	RegistryPath string `yaml:"registryPath"`
+
 	// IOS configures generation of iOS localization bundles from gotext catalogs.
 	IOS IOSConfiguration `yaml:"ios"`
 }
 
 type IOSConfiguration struct {
-	// SourceLanguage is the locale whose catalog must contain every registered iOS string.
-	SourceLanguage string `yaml:"sourceLanguage"`
-
-	// RegistryPath is the Go source file that declares iOS strings with message.Printer.Sprintf.
-	RegistryPath string `yaml:"registryPath"`
-
 	// SourceDir contains Swift source files whose translation keys are validated.
 	SourceDir string `yaml:"sourceDir"`
 

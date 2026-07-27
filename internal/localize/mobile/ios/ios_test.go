@@ -51,11 +51,17 @@ let welcome = translate("Welcome, {Email}")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := generate(localesDir, config.IOSConfiguration{
-		RegistryPath: registryPath,
-		SourceDir:    sourceDir,
-		OutputDir:    outputDir,
-	}, &stdout, &stderr)
+	err := Generate(
+		localesDir,
+		"",
+		registryPath,
+		config.IOSConfiguration{
+			SourceDir: sourceDir,
+			OutputDir: outputDir,
+		},
+		&stdout,
+		&stderr,
+	)
 	if err != nil {
 		t.Fatalf("generate() error = %v", err)
 	}
@@ -150,11 +156,17 @@ func TestGenerateValidatesCatalogAndSource(t *testing.T) {
 			writeTestFile(t, filepath.Join(sourceDir, "View.swift"), tt.source)
 
 			var stderr bytes.Buffer
-			err := generate(localesDir, config.IOSConfiguration{
-				RegistryPath: registryPath,
-				SourceDir:    sourceDir,
-				OutputDir:    outputDir,
-			}, &bytes.Buffer{}, &stderr)
+			err := Generate(
+				localesDir,
+				"",
+				registryPath,
+				config.IOSConfiguration{
+					SourceDir: sourceDir,
+					OutputDir: outputDir,
+				},
+				&bytes.Buffer{},
+				&stderr,
+			)
 
 			if tt.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
