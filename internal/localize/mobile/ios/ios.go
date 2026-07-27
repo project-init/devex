@@ -1,4 +1,4 @@
-package mobile
+package ios
 
 import (
 	"bufio"
@@ -59,7 +59,7 @@ type generatedBundle struct {
 
 func generate(
 	localesDir string,
-	cfg config.MobileConfiguration,
+	cfg config.IOSConfiguration,
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
@@ -164,19 +164,19 @@ func marshalJSONString(value string) ([]byte, error) {
 	return bytes.TrimSuffix(output.Bytes(), []byte{'\n'}), nil
 }
 
-func validateConfig(localesDir string, cfg config.MobileConfiguration) error {
+func validateConfig(localesDir string, cfg config.IOSConfiguration) error {
 	missing := make([]string, 0, 4)
 	if localesDir == "" {
 		missing = append(missing, "localize.localesDir")
 	}
 	if cfg.RegistryPath == "" {
-		missing = append(missing, "localize.mobile.registryPath")
+		missing = append(missing, "localize.mobile.ios.registryPath")
 	}
 	if cfg.SourceDir == "" {
-		missing = append(missing, "localize.mobile.sourceDir")
+		missing = append(missing, "localize.mobile.ios.sourceDir")
 	}
 	if cfg.OutputDir == "" {
-		missing = append(missing, "localize.mobile.outputDir")
+		missing = append(missing, "localize.mobile.ios.outputDir")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing configuration: %s", strings.Join(missing, ", "))
@@ -227,7 +227,7 @@ func loadCatalog(path string) (*catalog, error) {
 func validateCatalog(path string, cat *catalog, ids map[string]struct{}, source bool) error {
 	for _, msg := range cat.Messages {
 		if _, object := msg.Translation.(map[string]any); object {
-			return fmt.Errorf("%s contains plural/select translations; the mobile converter does not support them", path)
+			return fmt.Errorf("%s contains plural/select translations; the iOS converter does not support them", path)
 		}
 	}
 

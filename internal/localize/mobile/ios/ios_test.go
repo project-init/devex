@@ -1,4 +1,4 @@
-package mobile
+package ios
 
 import (
 	"bytes"
@@ -51,7 +51,7 @@ let welcome = translate("Welcome, {Email}")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := generate(localesDir, config.MobileConfiguration{
+	err := generate(localesDir, config.IOSConfiguration{
 		RegistryPath: registryPath,
 		SourceDir:    sourceDir,
 		OutputDir:    outputDir,
@@ -150,7 +150,7 @@ func TestGenerateValidatesCatalogAndSource(t *testing.T) {
 			writeTestFile(t, filepath.Join(sourceDir, "View.swift"), tt.source)
 
 			var stderr bytes.Buffer
-			err := generate(localesDir, config.MobileConfiguration{
+			err := generate(localesDir, config.IOSConfiguration{
 				RegistryPath: registryPath,
 				SourceDir:    sourceDir,
 				OutputDir:    outputDir,
