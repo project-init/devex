@@ -6,6 +6,7 @@ import (
 
 	"github.com/project-init/devex/internal/localize/audit"
 	"github.com/project-init/devex/internal/localize/config"
+	"github.com/project-init/devex/internal/localize/mobile"
 	"github.com/project-init/devex/internal/localize/translate"
 	"github.com/spf13/cobra"
 )
@@ -43,6 +44,7 @@ func Command() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&localizeConfigFile, configFlag, "", fmt.Sprintf("config directory (default is %s)", defaultConfigDir))
 
 	cmd.AddCommand(audit.Command())
+	cmd.AddCommand(mobile.Command())
 	cmd.AddCommand(translate.Command())
 
 	return cmd
