@@ -42,6 +42,11 @@ func Command() *cobra.Command {
 			if err = createAndPushTag(next.String()); err != nil {
 				return err
 			}
+
+			if actionsURL, err := getActionsURL(); err == nil {
+				fmt.Printf("\nView release workflow: %s\n", actionsURL)
+			}
+
 			return nil
 		},
 	}
