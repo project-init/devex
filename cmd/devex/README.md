@@ -33,6 +33,38 @@ Run `devex --help` to see all available subcommands, or `devex <subcommand> --he
 
 ## Subcommands
 
+### Localize
+
+Manage gotext translations and generate platform localization bundles.
+
+**Usage:**
+
+```shell
+devex localize audit
+devex localize mobile
+devex localize translate
+```
+
+The `mobile` command generates localization bundles for the platforms present in its
+configuration. The currently supported iOS generator distills registered strings from each
+`out.gotext.json` catalog into an `l10n-<locale>.json` bundle. It also validates registry
+coverage, placeholders, and Swift translation-key usage before replacing existing bundles.
+
+Configure repository paths under `.localize/*.yaml`:
+
+```yaml
+localize:
+  localesDir: internal/translations/locales
+  mobile:
+    sourceLanguage: en-US
+    registryPath: internal/translations/mobileregistry/registry.go
+    ios:
+      sourceDir: ios/ProjectInit
+      outputDir: ios/ProjectInit/Resources/l10n
+```
+
+---
+
 ### SRE
 
 Site Reliability Engineering toolbox for common operational tasks.

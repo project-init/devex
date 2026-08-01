@@ -3,6 +3,8 @@ package access
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/project-init/devex/internal/sre/config"
 	"github.com/project-init/gommon/pkg/aws"
@@ -27,9 +29,21 @@ func loadPGAccessEnvironment(environmentConfig config.PostgresEnvironmentConfig)
 	}, nil
 }
 
+func resolveEnvPassword(password string) (string, error) {
+	if strings.HasPrefix(password, "$$") && strings.HasSuffix(password, "$$") && len(password) > 4 {
+		varName := password[2 : len(password)-2]
+		value, ok := os.LookupEnv(varName)
+		if !ok {
+			return "", fmt.Errorf("environment variable %q not set", varName)
+		}
+		return value, nil
+	}
+	return password, nil
+}
+
 func getPassword(environmentConfig config.PostgresEnvironmentConfig) (string, error) {
 	if environmentConfig.Password != nil {
-		return *environmentConfig.Password, nil
+		return resolveEnvPassword(*environmentConfig.Password)
 	}
 
 	if environmentConfig.Iam == nil || !*environmentConfig.Iam {
