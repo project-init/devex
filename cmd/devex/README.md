@@ -117,6 +117,20 @@ Guide an idea through discovery, produce reviewable Markdown and YAML artifacts,
 
 The discovery feature is separate from the existing `workplan` command.
 
+Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you do not run discovery from a checkout of the devex source repository.
+
+Install the companion Agent Skill for the AI harnesses used by the project:
+
+```shell
+# Installs for Codex, Claude Code, and Cursor by default.
+devex discovery install-skill
+
+# Or install only one harness.
+devex discovery install-skill --harness codex
+```
+
+The command installs `run-discovery` under `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`. Commit the installed skill so each harness can discover the workflow in that project. Re-running the command is safe when the files are unchanged; use `--force` to accept an updated bundled version.
+
 **Create and validate a bundle:**
 
 ```shell
@@ -137,7 +151,13 @@ docs/discoveries/audit-logs/
 
 **Configure publication targets:**
 
-Copy [`cmd/devex/discovery/example_config.yaml`](discovery/example_config.yaml) to `.devex/discovery.yaml` and adjust the named targets. Target files contain no credentials.
+Generate `.sre/discovery.yaml` in the consuming project and adjust its named targets:
+
+```shell
+devex discovery config init
+```
+
+The example is also available at [`cmd/devex/discovery/example_config.yaml`](discovery/example_config.yaml) for contributors to devex. Project target files contain no credentials. Use `--config <path>` on `publish plan` when a project needs a different location.
 
 Set credentials only for the provider being applied:
 
@@ -155,8 +175,8 @@ The Jira base URL and project key live in the target configuration. GitHub targe
 **Plan and apply publication:**
 
 ```shell
-devex discovery publish plan docs/discoveries/audit-logs --target github-devex
-devex discovery publish apply docs/discoveries/audit-logs/.publish/github-devex/plan.yaml
+devex discovery publish plan docs/discoveries/audit-logs --target github-project
+devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
 ```
 
 `plan` performs no remote mutations. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.

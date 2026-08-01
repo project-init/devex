@@ -1,0 +1,25 @@
+schema_version: v1
+
+discovery:
+  id: example-discovery
+  title: Example discovery
+  document: discovery.md
+
+items:
+  - id: INIT-001
+    kind: initiative
+    title: Deliver the discovery outcome
+    description: Describe the outcome this initiative delivers.
+    acceptance_criteria:
+      - Describe a measurable outcome.
+
+  - id: WI-001
+    kind: research
+    parent: INIT-001
+    title: Validate the proposed approach
+    description: Resolve the most important unknowns before implementation.
+    acceptance_criteria:
+      - The proposed approach is supported by evidence.
+    estimate:
+      value: 1
+      unit: weeks

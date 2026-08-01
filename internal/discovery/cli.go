@@ -11,11 +11,12 @@ import (
 	githubprovider "github.com/project-init/devex/internal/discovery/provider/github"
 	"github.com/project-init/devex/internal/discovery/provider/jira"
 	"github.com/project-init/devex/internal/discovery/publish"
+	"github.com/project-init/devex/internal/discovery/skill"
 	"github.com/project-init/devex/internal/discovery/templates"
 	"github.com/spf13/cobra"
 )
 
-const defaultConfigPath = ".devex/discovery.yaml"
+const defaultConfigPath = ".sre/discovery.yaml"
 
 func Command() *cobra.Command {
 	command := &cobra.Command{
@@ -26,7 +27,75 @@ func Command() *cobra.Command {
 	}
 	command.AddCommand(initCommand())
 	command.AddCommand(validateCommand())
+	command.AddCommand(configCommand())
+	command.AddCommand(installSkillCommand())
 	command.AddCommand(publishCommand())
+	return command
+}
+
+func configCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "config",
+		Short: "Manage project-owned discovery configuration",
+	}
+	command.AddCommand(initConfigCommand())
+	return command
+}
+
+func initConfigCommand() *cobra.Command {
+	var force bool
+	command := &cobra.Command{
+		Use:   "init [path]",
+		Short: "Create an example discovery target configuration",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := defaultConfigPath
+			if len(args) == 1 {
+				path = args[0]
+			}
+			if err := config.WriteExample(path, force); err != nil {
+				return err
+			}
+			absolutePath, err := filepath.Abs(path)
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Discovery configuration: %s\n", absolutePath)
+			return nil
+		},
+	}
+	command.Flags().BoolVar(&force, "force", false, "replace a different existing configuration file")
+	return command
+}
+
+func installSkillCommand() *cobra.Command {
+	var harnesses []string
+	var force bool
+	command := &cobra.Command{
+		Use:   "install-skill [project-directory]",
+		Short: "Install the discovery skill into an AI harness",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectDirectory := "."
+			if len(args) == 1 {
+				projectDirectory = args[0]
+			}
+			selected, err := skill.ParseHarnesses(harnesses)
+			if err != nil {
+				return err
+			}
+			installed, err := skill.Install(projectDirectory, selected, force)
+			if err != nil {
+				return err
+			}
+			for _, path := range installed {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Installed run-discovery skill: %s\n", path)
+			}
+			return nil
+		},
+	}
+	command.Flags().StringSliceVar(&harnesses, "harness", []string{"all"}, "AI harness: codex, claude, cursor, or all")
+	command.Flags().BoolVar(&force, "force", false, "replace different existing skill files")
 	return command
 }
 

@@ -2,13 +2,18 @@ package config
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/project-init/devex/internal/discovery/domain"
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed example.yaml
+var examples embed.FS
 
 type File struct {
 	Targets map[string]Target `yaml:"targets"`
@@ -55,6 +60,30 @@ func Load(path string) (*File, error) {
 		}
 	}
 	return &file, nil
+}
+
+func WriteExample(path string, force bool) error {
+	content, err := examples.ReadFile("example.yaml")
+	if err != nil {
+		return fmt.Errorf("read embedded discovery configuration: %w", err)
+	}
+	if existing, readErr := os.ReadFile(path); readErr == nil {
+		if bytes.Equal(existing, content) {
+			return nil
+		}
+		if !force {
+			return fmt.Errorf("configuration %s already exists with different contents; use --force to replace it", path)
+		}
+	} else if !os.IsNotExist(readErr) {
+		return fmt.Errorf("read configuration %s: %w", path, readErr)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create configuration directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return fmt.Errorf("write configuration %s: %w", path, err)
+	}
+	return nil
 }
 
 func (t Target) Validate() error {

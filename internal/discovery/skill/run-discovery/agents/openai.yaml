@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Discovery"
+  short_description: "Turn ideas into reviewable discovery plans"
+  default_prompt: "Use $run-discovery to refine this idea into discovery.md and work-breakdown.yaml."
