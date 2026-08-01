@@ -1,0 +1,24 @@
+targets:
+  jira-devex:
+    provider: jira
+    jira:
+      base_url: https://example.atlassian.net
+      project_key: DEVEX
+      hierarchy_fallback: error
+      kind_mapping:
+        initiative: Epic
+        feature: Story
+        task: Task
+        defect: Bug
+        research: Task
+
+  github-devex:
+    provider: github
+    github:
+      owner: project-init
+      repository: devex
+      hierarchy_fallback: flatten
+      # Optional labels must already exist in the repository.
+      # kind_labels:
+      #   defect: bug
+      #   research: research

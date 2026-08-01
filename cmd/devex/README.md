@@ -79,6 +79,64 @@ devex sre release
 
 ---
 
+### Discovery
+
+Guide an idea through discovery, produce reviewable Markdown and YAML artifacts, and publish the resulting work breakdown to Jira or GitHub Issues after human review.
+
+The discovery feature is separate from the existing `workplan` command.
+
+**Create and validate a bundle:**
+
+```shell
+devex discovery init docs/discoveries audit-logs
+devex discovery validate docs/discoveries/audit-logs
+```
+
+The generated bundle contains:
+
+```text
+docs/discoveries/audit-logs/
+├── .gitignore
+├── discovery.md
+└── work-breakdown.yaml
+```
+
+`discovery.md` is the narrative document for GitHub-based peer review. `work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels, and estimates.
+
+**Configure publication targets:**
+
+Copy [`cmd/devex/discovery/example_config.yaml`](discovery/example_config.yaml) to `.devex/discovery.yaml` and adjust the named targets. Target files contain no credentials.
+
+Set credentials only for the provider being applied:
+
+```shell
+# GitHub
+export GITHUB_TOKEN=...
+
+# Jira
+export JIRA_EMAIL=...
+export JIRA_API_KEY=...
+```
+
+The Jira base URL and project key live in the target configuration. GitHub targets identify an owner and repository.
+
+**Plan and apply publication:**
+
+```shell
+devex discovery publish plan docs/discoveries/audit-logs --target github-devex
+devex discovery publish apply docs/discoveries/audit-logs/.publish/github-devex/plan.yaml
+```
+
+`plan` performs no remote mutations. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.
+
+The generated `.gitignore` excludes `.publish/`. Receipts are small local YAML files that allow a later CLI session to resume an interrupted publication. Jira issue properties and hidden GitHub issue-body markers provide a secondary idempotency check if a receipt is lost.
+
+The tool deliberately does not prove or verify peer approval. Review and approval happen through the team's normal GitHub process; a human explicitly runs `publish apply` afterward.
+
+GitHub initiatives are tracking issues, and hierarchy and dependencies are rendered as links in issue bodies. Jira kind and issue-type mappings are configured per target.
+
+---
+
 ### Workplan
 
 Generate and publish workplan templates for investigating features or problems. Workplans help estimate the effort needed to complete a task and can be published directly to JIRA.

@@ -1,0 +1,27 @@
+schema_version: v1
+
+discovery:
+  id: {{ .Slug }}
+  title: {{ printf "%q" .Title }}
+  document: discovery.md
+
+items:
+  - id: INIT-001
+    kind: initiative
+    title: {{ printf "%q" .Title }}
+    description: >-
+      Describe the outcome this initiative delivers.
+    acceptance_criteria:
+      - Describe a measurable outcome.
+
+  - id: WI-001
+    kind: research
+    parent: INIT-001
+    title: Validate the proposed approach
+    description: >-
+      Resolve the most important unknowns before implementation.
+    acceptance_criteria:
+      - The proposed approach is supported by evidence.
+    estimate:
+      value: 1
+      unit: weeks
