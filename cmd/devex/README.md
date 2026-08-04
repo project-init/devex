@@ -119,7 +119,20 @@ The discovery feature is separate from the existing `workplan` command.
 
 Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you do not run discovery from a checkout of the devex source repository.
 
-Install the companion Agent Skill for the AI harnesses used by the project:
+Run the top-level command from an interactive terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
+
+```shell
+devex discovery
+```
+
+The same flow is available explicitly and can safely install missing files without prompts:
+
+```shell
+devex discovery setup
+devex discovery setup --harness codex --yes
+```
+
+You can also install only the companion Agent Skill:
 
 ```shell
 # Installs for Codex, Claude Code, and Cursor by default.
@@ -129,7 +142,19 @@ devex discovery install-skill
 devex discovery install-skill --harness codex
 ```
 
-The command installs `run-discovery` under `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`. Commit the installed skill so each harness can discover the workflow in that project. Re-running the command is safe when the files are unchanged; use `--force` to accept an updated bundled version.
+The command installs `run-discovery` under `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`. Commit the installed skill so each harness can discover the workflow in that project. Installation is idempotent: identical files are reported as `UNCHANGED` and are not rewritten. Different files are protected; review them before using `--force` to install an updated bundled version.
+
+**Check prerequisites:**
+
+```shell
+# Checks all supported harnesses by default.
+devex discovery doctor
+
+# Check only the harnesses used by this project.
+devex discovery doctor --harness codex
+```
+
+`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Missing credentials are warnings because they are only required by `publish apply`; missing or modified skills and missing, invalid, or placeholder configuration are failures. The command exits nonzero when failures are present.
 
 **Create and validate a bundle:**
 

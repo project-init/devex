@@ -24,11 +24,17 @@ func Command() *cobra.Command {
 		Short:         "Turn product discovery into reviewable plans and published work",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Args:          cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSetup(cmd, ".", defaultConfigPath, nil, false)
+		},
 	}
 	command.AddCommand(initCommand())
 	command.AddCommand(validateCommand())
 	command.AddCommand(configCommand())
 	command.AddCommand(installSkillCommand())
+	command.AddCommand(setupCommand())
+	command.AddCommand(doctorCommand())
 	command.AddCommand(publishCommand())
 	return command
 }
@@ -88,8 +94,14 @@ func installSkillCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, path := range installed {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Installed run-discovery skill: %s\n", path)
+			for _, result := range installed {
+				_, _ = fmt.Fprintf(
+					cmd.OutOrStdout(),
+					"%s run-discovery skill for %s: %s\n",
+					strings.ToUpper(string(result.State)),
+					result.Harness,
+					result.Path,
+				)
 			}
 			return nil
 		},

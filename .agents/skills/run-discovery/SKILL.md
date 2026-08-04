@@ -13,7 +13,8 @@ Announce: "I'm using the run-discovery skill to understand your intent and produ
 
 1. Run `devex discovery --help` to verify that the project-installed CLI is available. If it is missing, stop and direct the user to install `github:project-init/devex` with their project tool manager.
 2. Treat discovery artifacts and configuration as files owned by the consuming project, never by the devex source repository.
-3. When publication targets are needed, look for `.sre/discovery.yaml`. If it is absent, offer to run `devex discovery config init`, then have the user customize the generated targets. Never add credentials to that file.
+3. Run `devex discovery doctor --harness <active-harness>` before creating artifacts. Resolve missing or modified skill files and invalid configuration. Credential warnings may wait until publication.
+4. When setup is incomplete, offer to run `devex discovery setup --harness <active-harness>`. Have the user customize target values generated in `.sre/discovery.yaml`. Never add credentials to that file.
 
 ## Discover
 

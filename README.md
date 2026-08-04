@@ -50,6 +50,8 @@ devex <subcommand> [options]
 - **[discovery](cmd/devex/README.md#discovery)** - Turn an idea into reviewable discovery artifacts and publish approved work to Jira or GitHub
 
   ```bash
+  devex discovery
+  devex discovery doctor --harness codex
   devex discovery install-skill
   devex discovery config init
   devex discovery init docs/discoveries audit-logs
