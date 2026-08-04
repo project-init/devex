@@ -29,6 +29,20 @@ func TestRunReportsMissingPrerequisites(t *testing.T) {
 	}
 }
 
+func TestRunFailsWhenNoHarnessHasTheSkill(t *testing.T) {
+	project := t.TempDir()
+	report, err := Run(project, filepath.Join(".sre", "discovery.yaml"), skill.AllHarnesses(), emptyEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FailureCount() != 4 {
+		t.Fatalf("failures = %d, checks = %#v", report.FailureCount(), report.Checks)
+	}
+	if report.FlagCount() != 0 {
+		t.Fatalf("flags = %d, checks = %#v", report.FlagCount(), report.Checks)
+	}
+}
+
 func TestRunValidatesConfigurationSkillsAndCredentials(t *testing.T) {
 	project := t.TempDir()
 	if err := os.Mkdir(filepath.Join(project, ".git"), 0o755); err != nil {
@@ -70,7 +84,7 @@ func TestRunValidatesConfigurationSkillsAndCredentials(t *testing.T) {
 		"JIRA_EMAIL":   "set",
 		"JIRA_API_KEY": "set",
 	}
-	report, err = Run(project, configurationPath, []skill.Harness{skill.HarnessCodex}, func(name string) (string, bool) {
+	report, err = Run(project, configurationPath, skill.AllHarnesses(), func(name string) (string, bool) {
 		value, exists := environment[name]
 		return value, exists
 	})
@@ -79,6 +93,9 @@ func TestRunValidatesConfigurationSkillsAndCredentials(t *testing.T) {
 	}
 	if report.FailureCount() != 0 || report.WarningCount() != 0 {
 		t.Fatalf("report = %#v", report)
+	}
+	if report.FlagCount() != 2 {
+		t.Fatalf("flags = %d, checks = %#v", report.FlagCount(), report.Checks)
 	}
 }
 
