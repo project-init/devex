@@ -29,8 +29,13 @@ func printSuccess(msg string) {
 func printError(msg string) { fmt.Fprintf(os.Stderr, "%s[ERROR]%s %s\n", colorRed, colorReset, msg) }
 
 // runMigration registers a new task definition revision pointing at the given
-// image and runs it as a one-off Fargate task, waiting for it to complete.
+// image and runs it as a one-off ECS task, waiting for it to complete.
 func runMigration(ctx context.Context, opts *options) error {
+	launchType, err := opts.resolveLaunchType()
+	if err != nil {
+		return err
+	}
+
 	printInfo("Starting database migration with parameters:")
 	printInfo(fmt.Sprintf("  Cluster: %s", opts.cluster))
 	printInfo(fmt.Sprintf("  Task Definition: %s", opts.taskDef))
@@ -39,6 +44,7 @@ func runMigration(ctx context.Context, opts *options) error {
 	printInfo(fmt.Sprintf("  Container: %s", opts.container))
 	printInfo(fmt.Sprintf("  Image: %s", opts.imageURI))
 	printInfo(fmt.Sprintf("  Region: %s", opts.region))
+	printInfo(fmt.Sprintf("  Launch Type: %s", launchType))
 
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
 	if err != nil {
@@ -91,7 +97,7 @@ func runMigration(ctx context.Context, opts *options) error {
 	runOutput, err := ecsClient.RunTask(ctx, &ecs.RunTaskInput{
 		Cluster:        &opts.cluster,
 		TaskDefinition: &fullTaskDef,
-		LaunchType:     ecstypes.LaunchTypeFargate,
+		LaunchType:     launchType,
 		NetworkConfiguration: &ecstypes.NetworkConfiguration{
 			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
 				Subnets:        subnetList,

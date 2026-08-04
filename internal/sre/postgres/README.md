@@ -57,7 +57,8 @@ sre postgres migrate \
   --security-groups <sg-1,sg-2> \
   --container <container-name> \
   --image-uri <docker-image-uri> \
-  [--region <aws-region>]
+  [--region <aws-region>] \
+  [--launch-type <ecs-launch-type>]
 ```
 
 Each flag also falls back to an environment variable, so the command can be driven entirely from the environment in
@@ -72,13 +73,18 @@ CI/CD:
 | `--container`       | `CONTAINER`          | yes      |             |
 | `--image-uri`       | `IMAGE_URI`          | yes      |             |
 | `--region`          | `REGION`             | no       | `us-east-1` |
+| `--launch-type`     | `LAUNCH_TYPE`        | no       | `FARGATE`   |
 
 #### Description
 
-The migrate command runs a database migration as a one-off ECS Fargate task. It takes an existing task definition,
+The migrate command runs a database migration as a one-off ECS task. It takes an existing task definition,
 registers a new revision pointing the named container at the provided image, then runs that revision in the given
 cluster and waits (up to 30 minutes) for it to complete. On a non-zero exit it pulls the recent CloudWatch logs from
 `/ecs/<task-def>` to help diagnose the failure, and exits non-zero so callers (e.g. a deploy pipeline) can fail fast.
+
+`--launch-type` defaults to `FARGATE`. Set it to `EC2` when the task definition is backed by container instances rather
+than Fargate — the value has to match the `requiresCompatibilities` on the task definition, or ECS rejects the run with
+`InvalidParameterException: Task definition does not support launch_type ...`.
 
 **NOTE**: This relies on standard AWS credential resolution, so make sure your `AWS_PROFILE`/SSO login (or CI role) is in
 place and has permission to describe/register task definitions and run tasks on the target cluster.
