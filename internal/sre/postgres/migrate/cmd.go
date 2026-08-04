@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +19,7 @@ type options struct {
 	container      string
 	imageURI       string
 	region         string
+	launchType     string
 }
 
 func Command() *cobra.Command {
@@ -44,8 +46,30 @@ func Command() *cobra.Command {
 	flags.StringVar(&opts.container, "container", os.Getenv("CONTAINER"), "Container name")
 	flags.StringVar(&opts.imageURI, "image-uri", os.Getenv("IMAGE_URI"), "Docker image URI")
 	flags.StringVar(&opts.region, "region", cmp.Or(os.Getenv("REGION"), "us-east-1"), "AWS region")
+	flags.StringVar(&opts.launchType, "launch-type", cmp.Or(os.Getenv("LAUNCH_TYPE"), string(ecstypes.LaunchTypeFargate)), "ECS launch type to run the task with")
 
 	return cmd
+}
+
+// resolveLaunchType normalizes the launch type flag and rejects values ECS does not accept.
+// The task definition must declare the resulting launch type in its requiresCompatibilities,
+// otherwise RunTask fails with InvalidParameterException.
+func (o *options) resolveLaunchType() (ecstypes.LaunchType, error) {
+	valid := ecstypes.LaunchTypeFargate.Values()
+
+	want := strings.ToUpper(o.launchType)
+	for _, launchType := range valid {
+		if string(launchType) == want {
+			return launchType, nil
+		}
+	}
+
+	names := make([]string, 0, len(valid))
+	for _, launchType := range valid {
+		names = append(names, string(launchType))
+	}
+
+	return "", fmt.Errorf("invalid --launch-type %q: must be one of %s", o.launchType, strings.Join(names, ", "))
 }
 
 // missingRequired returns the names of required flags that were not provided.
