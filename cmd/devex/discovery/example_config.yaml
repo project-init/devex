@@ -1,0 +1,24 @@
+targets:
+  jira-project:
+    provider: jira
+    jira:
+      base_url: https://example.atlassian.net
+      project_key: PROJECT
+      hierarchy_fallback: error
+      kind_mapping:
+        initiative: Epic
+        feature: Story
+        task: Task
+        defect: Bug
+        research: Task
+
+  github-project:
+    provider: github
+    github:
+      owner: your-organization
+      repository: your-repository
+      hierarchy_fallback: flatten
+      # Optional labels must already exist in the repository.
+      # kind_labels:
+      #   defect: bug
+      #   research: research

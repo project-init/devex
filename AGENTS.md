@@ -4,14 +4,14 @@ This file provides architectural context and conventions for AI agents working o
 
 ## Project Overview
 
-`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, workplan generation, contribution analysis, and component scaffolding.
+`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, discovery planning, workplan generation, contribution analysis, and component scaffolding.
 
 ## Architecture
 
 ### CLI Layout
 
 - `cmd/devex/main.go` is the executable entry point. Keep it minimal.
-- `internal/root` owns the top-level Cobra command and registers the primary subcommands: `sre`, `localize`, `workplan`, `contributions`, and `components`.
+- `internal/root` owns the top-level Cobra command and registers the primary subcommands: `sre`, `localize`, `discovery`, `workplan`, `contributions`, and `components`.
 - Each tool exposes a `Command() *cobra.Command` function from its `internal/<tool>` package.
 - Core behavior belongs in `internal/`; `cmd/` should only handle executable wiring.
 - Prefer adding new functionality as `devex <subcommand>` rather than introducing standalone `cmd/<tool>` binaries, unless there is an explicit distribution reason.

@@ -111,6 +111,109 @@ devex sre release
 
 ---
 
+### Discovery
+
+Guide an idea through discovery, produce reviewable Markdown and YAML artifacts, and publish the resulting work breakdown to Jira or GitHub Issues after human review.
+
+The discovery feature is separate from the existing `workplan` command.
+
+Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you do not run discovery from a checkout of the devex source repository.
+
+Run the top-level command from an interactive terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
+
+```shell
+devex discovery
+```
+
+The same flow is available explicitly and can safely install missing files without prompts:
+
+```shell
+devex discovery setup
+devex discovery setup --harness codex --yes
+```
+
+You can also install only the companion Agent Skill:
+
+```shell
+# Installs for Codex, Claude Code, and Cursor by default.
+devex discovery install-skill
+
+# Or install only one harness.
+devex discovery install-skill --harness codex
+```
+
+The command installs `run-discovery` under `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`. Commit the installed skill so each harness can discover the workflow in that project. Installation is idempotent: identical files are reported as `UNCHANGED` and are not rewritten. Different files are protected; review them before using `--force` to install an updated bundled version.
+
+**Check prerequisites:**
+
+```shell
+# Checks all supported harnesses by default.
+devex discovery doctor
+
+# Check only the harnesses used by this project.
+devex discovery doctor --harness codex
+```
+
+`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Missing credentials are warnings because they are only required by `publish apply`; missing or modified skills and missing, invalid, or placeholder configuration are failures. The command exits nonzero when failures are present.
+
+**Create and validate a bundle:**
+
+```shell
+devex discovery init docs/discoveries audit-logs
+devex discovery validate docs/discoveries/audit-logs
+```
+
+The generated bundle contains:
+
+```text
+docs/discoveries/audit-logs/
+├── .gitignore
+├── discovery.md
+└── work-breakdown.yaml
+```
+
+`discovery.md` is the narrative document for GitHub-based peer review. `work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels, and estimates.
+
+**Configure publication targets:**
+
+Generate `.sre/discovery.yaml` in the consuming project and adjust its named targets:
+
+```shell
+devex discovery config init
+```
+
+The example is also available at [`cmd/devex/discovery/example_config.yaml`](discovery/example_config.yaml) for contributors to devex. Project target files contain no credentials. Use `--config <path>` on `publish plan` when a project needs a different location.
+
+Set credentials only for the provider being applied:
+
+```shell
+# GitHub
+export GITHUB_TOKEN=...
+
+# Jira
+export JIRA_EMAIL=...
+export JIRA_API_KEY=...
+```
+
+The Jira base URL and project key live in the target configuration. GitHub targets identify an owner and repository.
+
+**Plan and apply publication:**
+
+```shell
+devex discovery publish plan docs/discoveries/audit-logs --target github-project
+devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
+```
+
+`plan` performs no remote mutations. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.
+
+The generated `.gitignore` excludes `.publish/`. Receipts are small local YAML files that allow a later CLI session to resume an interrupted publication. Jira issue properties and hidden GitHub issue-body markers provide a secondary idempotency check if a receipt is lost.
+
+The tool deliberately does not prove or verify peer approval. Review and approval happen through the team's normal GitHub process; a human explicitly runs `publish apply` afterward.
+
+GitHub initiatives are tracking issues, and hierarchy and dependencies are rendered as links in issue bodies. Jira kind and issue-type mappings are configured per target.
+
+---
+
 ### Workplan
 
 Generate and publish workplan templates for investigating features or problems. Workplans help estimate the effort needed to complete a task and can be published directly to JIRA.

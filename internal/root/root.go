@@ -6,6 +6,7 @@ import (
 
 	"github.com/project-init/devex/internal/components"
 	"github.com/project-init/devex/internal/contributions"
+	"github.com/project-init/devex/internal/discovery"
 	"github.com/project-init/devex/internal/localize"
 	"github.com/project-init/devex/internal/sre"
 	"github.com/project-init/devex/internal/workplan"
@@ -26,6 +27,7 @@ func Execute() error {
 	rootCmd.AddCommand(workplan.Command())
 	rootCmd.AddCommand(contributions.Command())
 	rootCmd.AddCommand(components.Command())
+	rootCmd.AddCommand(discovery.Command())
 
 	if err := rootCmd.Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
