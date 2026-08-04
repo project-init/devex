@@ -197,14 +197,20 @@ export JIRA_EMAIL=...
 export JIRA_API_KEY=...
 ```
 
-The Jira base URL and project key live in the target configuration. GitHub targets identify an owner and repository.
+The Jira base URL and project key live in the target configuration. GitHub targets identify an owner and repository. Set the top-level `default_target` to the name of the target normally used by the project:
 
-Deferred discovery enhancements, including configurable default-target selection, are tracked in the [discovery TODO](discovery/TODO.md).
+```yaml
+default_target: github-project
+```
+
+`publish plan` resolves its target in this order: an explicit `--target`, `default_target`, or the only configured target. If multiple targets remain and no default is configured, it exits with an error listing the available targets. This keeps scripted overrides explicit while allowing the common path to omit `--target`.
 
 **Plan and apply publication:**
 
 ```shell
-devex discovery publish plan docs/discoveries/audit-logs --target github-project
+devex discovery publish plan docs/discoveries/audit-logs
+# Override the configured default when needed:
+devex discovery publish plan docs/discoveries/audit-logs --target jira-project
 devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
 ```
 

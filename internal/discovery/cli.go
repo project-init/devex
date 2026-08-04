@@ -176,10 +176,11 @@ func planCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			target, exists := configuration.Targets[targetName]
-			if !exists {
-				return fmt.Errorf("target %q is not defined in %s", targetName, configPath)
+			resolvedTargetName, target, err := configuration.ResolveTarget(targetName)
+			if err != nil {
+				return fmt.Errorf("resolve publication target from %s: %w", configPath, err)
 			}
+			targetName = resolvedTargetName
 			adapter, err := newAdapter(target, false)
 			if err != nil {
 				return err
@@ -210,9 +211,8 @@ func planCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&configPath, "config", defaultConfigPath, "target configuration file")
-	command.Flags().StringVar(&targetName, "target", "", "named publication target")
+	command.Flags().StringVar(&targetName, "target", "", "named publication target (overrides default_target)")
 	command.Flags().StringVar(&outputPath, "out", "", "publication plan output path")
-	_ = command.MarkFlagRequired("target")
 	return command
 }
 

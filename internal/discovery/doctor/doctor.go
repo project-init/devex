@@ -157,10 +157,14 @@ func Run(
 		report.Checks = append(report.Checks, check)
 		return report, nil
 	}
+	configurationDetail := fmt.Sprintf("%s defines %d target(s)", configurationPath, len(configuration.Targets))
+	if configuration.DefaultTarget != "" {
+		configurationDetail += "; default is " + configuration.DefaultTarget
+	}
 	report.Checks = append(report.Checks, Check{
 		Severity: SeverityPass,
 		Name:     "configuration",
-		Detail:   fmt.Sprintf("%s defines %d target(s)", configurationPath, len(configuration.Targets)),
+		Detail:   configurationDetail,
 	})
 	targetNames := make([]string, 0, len(configuration.Targets))
 	for name := range configuration.Targets {
