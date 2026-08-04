@@ -10,7 +10,8 @@ import (
 
 func TestLoadStrictConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "discovery.yaml")
-	content := `targets:
+	content := `default_target: github-devex
+targets:
   github-devex:
     provider: github
     github:
@@ -27,12 +28,96 @@ func TestLoadStrictConfiguration(t *testing.T) {
 	if configuration.Targets["github-devex"].GitHub.Repository != "devex" {
 		t.Fatalf("configuration = %#v", configuration)
 	}
+	if configuration.DefaultTarget != "github-devex" {
+		t.Fatalf("DefaultTarget = %q", configuration.DefaultTarget)
+	}
 
 	if err := os.WriteFile(path, []byte(strings.Replace(content, "owner:", "unknown:\n      owner:", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(path); err == nil {
 		t.Fatal("Load() accepted an unknown field")
+	}
+}
+
+func TestLoadRejectsUnknownDefaultTarget(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "discovery.yaml")
+	content := `default_target: missing
+targets:
+  github-devex:
+    provider: github
+    github:
+      owner: project-init
+      repository: devex
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), `default_target "missing" is not defined`) {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestResolveTarget(t *testing.T) {
+	github := Target{Provider: "github"}
+	jira := Target{Provider: "jira"}
+	tests := []struct {
+		name          string
+		configuration File
+		explicit      string
+		wantName      string
+		wantProvider  string
+		wantError     string
+	}{
+		{
+			name:          "explicit target overrides default",
+			configuration: File{DefaultTarget: "github", Targets: map[string]Target{"github": github, "jira": jira}},
+			explicit:      "jira",
+			wantName:      "jira",
+			wantProvider:  "jira",
+		},
+		{
+			name:          "configured default",
+			configuration: File{DefaultTarget: "github", Targets: map[string]Target{"github": github, "jira": jira}},
+			wantName:      "github",
+			wantProvider:  "github",
+		},
+		{
+			name:          "sole target",
+			configuration: File{Targets: map[string]Target{"jira": jira}},
+			wantName:      "jira",
+			wantProvider:  "jira",
+		},
+		{
+			name:          "unknown explicit target",
+			configuration: File{Targets: map[string]Target{"github": github, "jira": jira}},
+			explicit:      "plane",
+			wantError:     `target "plane" is not defined; available targets: github, jira`,
+		},
+		{
+			name:          "ambiguous targets",
+			configuration: File{Targets: map[string]Target{"jira": jira, "github": github}},
+			wantError:     "multiple publication targets are configured (github, jira); pass --target or set default_target",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			name, target, err := test.configuration.ResolveTarget(test.explicit)
+			if test.wantError != "" {
+				if err == nil || err.Error() != test.wantError {
+					t.Fatalf("ResolveTarget() error = %v, want %q", err, test.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name != test.wantName || target.Provider != test.wantProvider {
+				t.Fatalf("ResolveTarget() = %q, %#v", name, target)
+			}
+		})
 	}
 }
 

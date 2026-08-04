@@ -56,7 +56,7 @@ devex <subcommand> [options]
   devex discovery config init
   devex discovery init docs/discoveries audit-logs
   devex discovery validate docs/discoveries/audit-logs
-  devex discovery publish plan docs/discoveries/audit-logs --target github-project
+  devex discovery publish plan docs/discoveries/audit-logs
   ```
 
 - **[contributions](cmd/devex/README.md#contributions)** - Analyze GitHub PR and review activity for contribution signals

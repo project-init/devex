@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/project-init/devex/internal/discovery/domain"
@@ -16,7 +17,8 @@ import (
 var examples embed.FS
 
 type File struct {
-	Targets map[string]Target `yaml:"targets"`
+	DefaultTarget string            `yaml:"default_target,omitempty"`
+	Targets       map[string]Target `yaml:"targets"`
 }
 
 type Target struct {
@@ -59,7 +61,52 @@ func Load(path string) (*File, error) {
 			return nil, fmt.Errorf("target %q: %w", name, err)
 		}
 	}
+	if file.DefaultTarget != "" {
+		if _, exists := file.Targets[file.DefaultTarget]; !exists {
+			return nil, fmt.Errorf("default_target %q is not defined in targets", file.DefaultTarget)
+		}
+	}
 	return &file, nil
+}
+
+// ResolveTarget selects a publication target using an explicit name, the
+// configured default, or the sole configured target, in that order.
+func (f *File) ResolveTarget(explicit string) (string, Target, error) {
+	names := f.targetNames()
+	if explicit != "" {
+		target, exists := f.Targets[explicit]
+		if !exists {
+			return "", Target{}, fmt.Errorf(
+				"target %q is not defined; available targets: %s",
+				explicit,
+				strings.Join(names, ", "),
+			)
+		}
+		return explicit, target, nil
+	}
+	if f.DefaultTarget != "" {
+		target, exists := f.Targets[f.DefaultTarget]
+		if !exists {
+			return "", Target{}, fmt.Errorf("default_target %q is not defined in targets", f.DefaultTarget)
+		}
+		return f.DefaultTarget, target, nil
+	}
+	if len(names) == 1 {
+		return names[0], f.Targets[names[0]], nil
+	}
+	return "", Target{}, fmt.Errorf(
+		"multiple publication targets are configured (%s); pass --target or set default_target",
+		strings.Join(names, ", "),
+	)
+}
+
+func (f *File) targetNames() []string {
+	names := make([]string, 0, len(f.Targets))
+	for name := range f.Targets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func WriteExample(path string, force bool) error {

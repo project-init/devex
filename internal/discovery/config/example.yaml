@@ -1,3 +1,5 @@
+default_target: github-project
+
 targets:
   jira-project:
     provider: jira

@@ -7,12 +7,15 @@ discovery:
 
 items:
   - id: INIT-001
+    # Supported kinds: initiative, feature, task, defect, research.
     kind: initiative
     title: {{ printf "%q" .Title }}
     description: >-
       Describe the outcome this initiative delivers.
     acceptance_criteria:
       - Describe a measurable outcome.
+    depends_on: []
+    labels: []
 
   - id: WI-001
     kind: research
@@ -22,6 +25,9 @@ items:
       Resolve the most important unknowns before implementation.
     acceptance_criteria:
       - The proposed approach is supported by evidence.
+    depends_on: []
+    labels: []
     estimate:
       value: 1
+      # Supported units: points, hours, days, weeks.
       unit: weeks

@@ -16,6 +16,7 @@ type Severity string
 
 const (
 	SeverityPass Severity = "PASS"
+	SeverityFlag Severity = "FLAG"
 	SeverityWarn Severity = "WARN"
 	SeverityFail Severity = "FAIL"
 )
@@ -47,6 +48,16 @@ func (r Report) WarningCount() int {
 	count := 0
 	for _, check := range r.Checks {
 		if check.Severity == SeverityWarn {
+			count++
+		}
+	}
+	return count
+}
+
+func (r Report) FlagCount() int {
+	count := 0
+	for _, check := range r.Checks {
+		if check.Severity == SeverityFlag {
 			count++
 		}
 	}
@@ -100,6 +111,13 @@ func Run(
 	if err != nil {
 		return Report{}, err
 	}
+	hasInstalledSkill := false
+	for _, status := range statuses {
+		if status.State != skill.StateMissing {
+			hasInstalledSkill = true
+			break
+		}
+	}
 	for _, status := range statuses {
 		check := Check{Name: "skill:" + string(status.Harness), Detail: status.Path}
 		projectArgument := shellQuote(projectRoot)
@@ -107,8 +125,13 @@ func Run(
 		case skill.StateCurrent:
 			check.Severity = SeverityPass
 		case skill.StateMissing:
-			check.Severity = SeverityFail
-			check.Detail = "run-discovery is not installed at " + status.Path
+			if hasInstalledSkill {
+				check.Severity = SeverityFlag
+				check.Detail = "run-discovery is not installed for this additional harness at " + status.Path
+			} else {
+				check.Severity = SeverityFail
+				check.Detail = "run-discovery is not installed at " + status.Path
+			}
 			check.Remedy = fmt.Sprintf("devex discovery install-skill --harness %s %s", status.Harness, projectArgument)
 		case skill.StateModified:
 			check.Severity = SeverityFail
@@ -134,10 +157,14 @@ func Run(
 		report.Checks = append(report.Checks, check)
 		return report, nil
 	}
+	configurationDetail := fmt.Sprintf("%s defines %d target(s)", configurationPath, len(configuration.Targets))
+	if configuration.DefaultTarget != "" {
+		configurationDetail += "; default is " + configuration.DefaultTarget
+	}
 	report.Checks = append(report.Checks, Check{
 		Severity: SeverityPass,
 		Name:     "configuration",
-		Detail:   fmt.Sprintf("%s defines %d target(s)", configurationPath, len(configuration.Targets)),
+		Detail:   configurationDetail,
 	})
 	targetNames := make([]string, 0, len(configuration.Targets))
 	for name := range configuration.Targets {

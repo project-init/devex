@@ -154,7 +154,9 @@ devex discovery doctor
 devex discovery doctor --harness codex
 ```
 
-`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Missing credentials are warnings because they are only required by `publish apply`; missing or modified skills and missing, invalid, or placeholder configuration are failures. The command exits nonzero when failures are present.
+`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Results are grouped as passed, flagged, and failed, with failures rendered last and highlighted in interactive terminals.
+
+At least one selected harness must have the skill installed. Once one is installed, missing additional harness integrations are flagged for awareness rather than treated as failures. Modified installed skills and missing, invalid, or placeholder configuration remain failures. Missing credentials are warnings because they are only required by `publish apply`. The command exits nonzero only when failures are present.
 
 **Create and validate a bundle:**
 
@@ -172,7 +174,7 @@ docs/discoveries/audit-logs/
 └── work-breakdown.yaml
 ```
 
-`discovery.md` is the narrative document for GitHub-based peer review. `work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels, and estimates.
+`discovery.md` is the narrative document for GitHub-based peer review. `work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels, and estimates. The generated YAML includes every supported work-item field, using empty lists where appropriate so teams can see what is configurable without consulting the Go schema.
 
 **Configure publication targets:**
 
@@ -195,12 +197,20 @@ export JIRA_EMAIL=...
 export JIRA_API_KEY=...
 ```
 
-The Jira base URL and project key live in the target configuration. GitHub targets identify an owner and repository.
+The Jira base URL and project key live in the target configuration. GitHub targets identify an owner and repository. Set the top-level `default_target` to the name of the target normally used by the project:
+
+```yaml
+default_target: github-project
+```
+
+`publish plan` resolves its target in this order: an explicit `--target`, `default_target`, or the only configured target. If multiple targets remain and no default is configured, it exits with an error listing the available targets. This keeps scripted overrides explicit while allowing the common path to omit `--target`.
 
 **Plan and apply publication:**
 
 ```shell
-devex discovery publish plan docs/discoveries/audit-logs --target github-project
+devex discovery publish plan docs/discoveries/audit-logs
+# Override the configured default when needed:
+devex discovery publish plan docs/discoveries/audit-logs --target jira-project
 devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
 ```
 

@@ -27,6 +27,27 @@ func TestGenerateCreatesValidBundle(t *testing.T) {
 	if !strings.Contains(string(gitignore), ".publish/") {
 		t.Fatalf(".gitignore = %q", gitignore)
 	}
+	workBreakdown, err := os.ReadFile(filepath.Join(directory, "work-breakdown.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"id:",
+		"kind:",
+		"parent:",
+		"title:",
+		"description:",
+		"acceptance_criteria:",
+		"depends_on:",
+		"labels:",
+		"estimate:",
+		"value:",
+		"unit:",
+	} {
+		if !strings.Contains(string(workBreakdown), field) {
+			t.Errorf("work-breakdown.yaml does not expose %s", field)
+		}
+	}
 }
 
 func TestGenerateDoesNotOverwrite(t *testing.T) {

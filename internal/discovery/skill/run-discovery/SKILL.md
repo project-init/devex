@@ -64,10 +64,10 @@ Do not inspect, prove, or claim peer approval. Do not publish unless the user ex
 Create and show the read-only plan first:
 
 ```bash
-devex discovery publish plan <bundle-directory> --target <target>
+devex discovery publish plan <bundle-directory> [--target <target>]
 ```
 
-Explain every warning or lossy provider mapping. Only run the explicit apply command after the user confirms the displayed plan:
+The CLI uses an explicit `--target`, then `default_target`, then the sole configured target. If multiple targets remain ambiguous, ask the user which target to use. Explain every warning or lossy provider mapping. Only run the explicit apply command after the user confirms the displayed plan:
 
 ```bash
 devex discovery publish apply <plan-file>
