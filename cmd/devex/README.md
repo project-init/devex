@@ -176,7 +176,7 @@ docs/discoveries/audit-logs/
 
 `discovery.md` is the narrative document for GitHub-based peer review. `work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels, and estimates. The generated YAML includes every supported work-item field, using empty lists where appropriate so teams can see what is configurable without consulting the Go schema.
 
-**Configure publication targets:**
+**Configure project defaults and publication targets:**
 
 Generate `.sre/discovery.yaml` in the consuming project and adjust its named targets:
 
@@ -184,7 +184,7 @@ Generate `.sre/discovery.yaml` in the consuming project and adjust its named tar
 devex discovery config init
 ```
 
-The example is also available at [`cmd/devex/discovery/example_config.yaml`](discovery/example_config.yaml) for contributors to devex. Project target files contain no credentials. Use `--config <path>` on `publish plan` when a project needs a different location.
+The example is also available at [`cmd/devex/discovery/example_config.yaml`](discovery/example_config.yaml) for contributors to devex. Project configuration files contain no credentials. Use `--config <path>` on `init` or `publish plan` when a project needs a different location.
 
 Set credentials only for the provider being applied:
 
@@ -201,7 +201,12 @@ The Jira base URL and project key live in the target configuration. GitHub targe
 
 ```yaml
 default_target: github-project
+default_labels:
+  - discovery
+  - team-platform
 ```
+
+`default_labels` is optional. `init` copies each configured label onto every starter work item in the generated breakdown; the discovery skill preserves those labels as it replaces or adds work items. Labels added directly to an item remain supported alongside the defaults.
 
 `publish plan` resolves its target in this order: an explicit `--target`, `default_target`, or the only configured target. If multiple targets remain and no default is configured, it exits with an error listing the available targets. This keeps scripted overrides explicit while allowing the common path to omit `--target`.
 

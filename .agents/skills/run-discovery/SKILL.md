@@ -45,7 +45,7 @@ Run:
 devex discovery init <directory> <name>
 ```
 
-Populate `discovery.md` using the accepted design and populate `work-breakdown.yaml` using [references/work-breakdown.md](references/work-breakdown.md). If the CLI is unavailable, use the templates in `assets/` as fallbacks.
+Populate `discovery.md` using the accepted design and populate `work-breakdown.yaml` using [references/work-breakdown.md](references/work-breakdown.md). Read `default_labels` from the discovery configuration (`.sre/discovery.yaml` unless `--config` selected another file) and include every configured default on every work item, merging them with item-specific labels without duplicates. The CLI seeds its starter items with these defaults. If the CLI is unavailable, use the templates in `assets/` as fallbacks and apply the defaults manually.
 
 Keep narrative reasoning in `discovery.md`. Keep executable scope, hierarchy, dependencies, acceptance criteria, and estimates in `work-breakdown.yaml`; do not duplicate the entire discovery narrative in every work item.
 

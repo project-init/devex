@@ -15,7 +15,7 @@ items:
     acceptance_criteria:
       - Describe a measurable outcome.
     depends_on: []
-    labels: []
+    labels:{{ .DefaultLabelsYAML }}
 
   - id: WI-001
     kind: research
@@ -26,7 +26,7 @@ items:
     acceptance_criteria:
       - The proposed approach is supported by evidence.
     depends_on: []
-    labels: []
+    labels:{{ .DefaultLabelsYAML }}
     estimate:
       value: 1
       # Supported units: points, hours, days, weeks.

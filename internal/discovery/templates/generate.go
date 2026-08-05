@@ -15,13 +15,22 @@ import (
 var files embed.FS
 
 type templateData struct {
-	Slug  string
-	Title string
+	Slug              string
+	Title             string
+	DefaultLabelsYAML string
+}
+
+type GenerateOptions struct {
+	DefaultLabels []string
 }
 
 var invalidSlug = regexp.MustCompile(`[^a-z0-9]+`)
 
 func Generate(baseDirectory string, name string) (string, error) {
+	return GenerateWithOptions(baseDirectory, name, GenerateOptions{})
+}
+
+func GenerateWithOptions(baseDirectory string, name string, options GenerateOptions) (string, error) {
 	slug := strings.Trim(invalidSlug.ReplaceAllString(strings.ToLower(name), "-"), "-")
 	if slug == "" {
 		return "", fmt.Errorf("discovery name must contain letters or digits")
@@ -31,7 +40,11 @@ func Generate(baseDirectory string, name string) (string, error) {
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return "", err
 	}
-	data := templateData{Slug: slug, Title: title}
+	data := templateData{
+		Slug:              slug,
+		Title:             title,
+		DefaultLabelsYAML: formatLabelsYAML(options.DefaultLabels),
+	}
 	if err := renderNew(filepath.Join(directory, "discovery.md"), "discovery.md.tmpl", data); err != nil {
 		return "", err
 	}
@@ -42,6 +55,17 @@ func Generate(baseDirectory string, name string) (string, error) {
 		return "", err
 	}
 	return filepath.Abs(directory)
+}
+
+func formatLabelsYAML(labels []string) string {
+	if len(labels) == 0 {
+		return " []"
+	}
+	var output strings.Builder
+	for _, label := range labels {
+		_, _ = fmt.Fprintf(&output, "\n      - %q", label)
+	}
+	return output.String()
 }
 
 func renderNew(outputPath string, templateName string, data templateData) error {

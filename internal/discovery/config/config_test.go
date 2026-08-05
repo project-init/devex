@@ -11,6 +11,9 @@ import (
 func TestLoadStrictConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "discovery.yaml")
 	content := `default_target: github-devex
+default_labels:
+  - discovery
+  - team-platform
 targets:
   github-devex:
     provider: github
@@ -31,12 +34,46 @@ targets:
 	if configuration.DefaultTarget != "github-devex" {
 		t.Fatalf("DefaultTarget = %q", configuration.DefaultTarget)
 	}
+	if strings.Join(configuration.DefaultLabels, ",") != "discovery,team-platform" {
+		t.Fatalf("DefaultLabels = %#v", configuration.DefaultLabels)
+	}
 
 	if err := os.WriteFile(path, []byte(strings.Replace(content, "owner:", "unknown:\n      owner:", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(path); err == nil {
 		t.Fatal("Load() accepted an unknown field")
+	}
+}
+
+func TestLoadRejectsInvalidDefaultLabels(t *testing.T) {
+	tests := []struct {
+		name      string
+		labels    string
+		wantError string
+	}{
+		{name: "empty", labels: "  - '   '", wantError: "default_labels[0] must not be empty"},
+		{name: "duplicate", labels: "  - discovery\n  - discovery", wantError: `default_labels contains duplicate label "discovery"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "discovery.yaml")
+			content := "default_labels:\n" + test.labels + `
+targets:
+  github-devex:
+    provider: github
+    github:
+      owner: project-init
+      repository: devex
+`
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("Load() error = %v, want containing %q", err, test.wantError)
+			}
+		})
 	}
 }
 

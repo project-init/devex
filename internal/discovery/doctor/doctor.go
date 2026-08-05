@@ -161,6 +161,9 @@ func Run(
 	if configuration.DefaultTarget != "" {
 		configurationDetail += "; default is " + configuration.DefaultTarget
 	}
+	if len(configuration.DefaultLabels) > 0 {
+		configurationDetail += fmt.Sprintf("; %d default label(s)", len(configuration.DefaultLabels))
+	}
 	report.Checks = append(report.Checks, Check{
 		Severity: SeverityPass,
 		Name:     "configuration",
