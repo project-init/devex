@@ -1,7 +1,9 @@
 package discovery
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -112,12 +114,19 @@ func installSkillCommand() *cobra.Command {
 }
 
 func initCommand() *cobra.Command {
-	return &cobra.Command{
+	var configPath string
+	command := &cobra.Command{
 		Use:   "init <directory> <name>",
 		Short: "Create a discovery document and provider-neutral work breakdown",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			directory, err := templates.Generate(args[0], args[1])
+			defaultLabels, err := loadDefaultLabels(configPath)
+			if err != nil {
+				return err
+			}
+			directory, err := templates.GenerateWithOptions(args[0], args[1], templates.GenerateOptions{
+				DefaultLabels: defaultLabels,
+			})
 			if err != nil {
 				return err
 			}
@@ -125,6 +134,19 @@ func initCommand() *cobra.Command {
 			return nil
 		},
 	}
+	command.Flags().StringVar(&configPath, "config", defaultConfigPath, "discovery configuration file")
+	return command
+}
+
+func loadDefaultLabels(path string) ([]string, error) {
+	configuration, err := config.Load(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return append([]string(nil), configuration.DefaultLabels...), nil
 }
 
 func validateCommand() *cobra.Command {

@@ -59,3 +59,21 @@ func TestGenerateDoesNotOverwrite(t *testing.T) {
 		t.Fatal("second Generate() succeeded, want overwrite protection")
 	}
 }
+
+func TestGenerateAppliesDefaultLabelsToEveryWorkItem(t *testing.T) {
+	directory, err := GenerateWithOptions(t.TempDir(), "Audit Logs", GenerateOptions{
+		DefaultLabels: []string{"discovery", "team-platform"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := artifact.Load(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range bundle.WorkBreakdown.Items {
+		if strings.Join(item.Labels, ",") != "discovery,team-platform" {
+			t.Errorf("item %s labels = %#v", item.ID, item.Labels)
+		}
+	}
+}

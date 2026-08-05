@@ -18,6 +18,7 @@ var examples embed.FS
 
 type File struct {
 	DefaultTarget string            `yaml:"default_target,omitempty"`
+	DefaultLabels []string          `yaml:"default_labels,omitempty"`
 	Targets       map[string]Target `yaml:"targets"`
 }
 
@@ -65,6 +66,16 @@ func Load(path string) (*File, error) {
 		if _, exists := file.Targets[file.DefaultTarget]; !exists {
 			return nil, fmt.Errorf("default_target %q is not defined in targets", file.DefaultTarget)
 		}
+	}
+	seenLabels := make(map[string]struct{}, len(file.DefaultLabels))
+	for index, label := range file.DefaultLabels {
+		if strings.TrimSpace(label) == "" {
+			return nil, fmt.Errorf("default_labels[%d] must not be empty", index)
+		}
+		if _, exists := seenLabels[label]; exists {
+			return nil, fmt.Errorf("default_labels contains duplicate label %q", label)
+		}
+		seenLabels[label] = struct{}{}
 	}
 	return &file, nil
 }

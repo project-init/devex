@@ -111,6 +111,7 @@ func Run(
 	if err != nil {
 		return Report{}, err
 	}
+	projectArgument := relativeProjectArgument(projectRoot)
 	hasInstalledSkill := false
 	for _, status := range statuses {
 		if status.State != skill.StateMissing {
@@ -120,7 +121,6 @@ func Run(
 	}
 	for _, status := range statuses {
 		check := Check{Name: "skill:" + string(status.Harness), Detail: status.Path}
-		projectArgument := shellQuote(projectRoot)
 		switch status.State {
 		case skill.StateCurrent:
 			check.Severity = SeverityPass
@@ -132,14 +132,14 @@ func Run(
 				check.Severity = SeverityFail
 				check.Detail = "run-discovery is not installed at " + status.Path
 			}
-			check.Remedy = fmt.Sprintf("devex discovery install-skill --harness %s %s", status.Harness, projectArgument)
+			check.Remedy = fmt.Sprintf("devex discovery install-skill %s --harness %s", projectArgument, status.Harness)
 		case skill.StateModified:
 			check.Severity = SeverityFail
 			check.Detail = "installed files differ from the bundled run-discovery skill at " + status.Path
 			check.Remedy = fmt.Sprintf(
-				"review the differences, then run devex discovery install-skill --harness %s --force %s",
-				status.Harness,
+				"review the differences, then run devex discovery install-skill %s --harness %s --force",
 				projectArgument,
+				status.Harness,
 			)
 		default:
 			return Report{}, fmt.Errorf("unsupported skill state %q", status.State)
@@ -160,6 +160,9 @@ func Run(
 	configurationDetail := fmt.Sprintf("%s defines %d target(s)", configurationPath, len(configuration.Targets))
 	if configuration.DefaultTarget != "" {
 		configurationDetail += "; default is " + configuration.DefaultTarget
+	}
+	if len(configuration.DefaultLabels) > 0 {
+		configurationDetail += fmt.Sprintf("; %d default label(s)", len(configuration.DefaultLabels))
 	}
 	report.Checks = append(report.Checks, Check{
 		Severity: SeverityPass,
@@ -248,4 +251,19 @@ func placeholderFields(target config.Target) []string {
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func relativeProjectArgument(projectRoot string) string {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return shellQuote(projectRoot)
+	}
+	relative, err := filepath.Rel(workingDirectory, projectRoot)
+	if err != nil {
+		return shellQuote(projectRoot)
+	}
+	if relative == "." {
+		return relative
+	}
+	return shellQuote(relative)
 }
