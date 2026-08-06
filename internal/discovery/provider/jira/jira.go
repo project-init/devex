@@ -21,6 +21,13 @@ import (
 const (
 	providerID  = "jira"
 	propertyKey = "devex.discovery"
+
+	actionCreateIssue = "create_issue"
+	actionLinkIssues  = "link_issues"
+
+	// defaultLinkType expresses depends_on as a blocking relationship. Jira orients a link
+	// so that inwardIssue holds the blocker and outwardIssue holds the blocked issue.
+	defaultLinkType = "Blocks"
 )
 
 type Adapter struct {
@@ -65,15 +72,23 @@ func (a *Adapter) Plan(
 	if err != nil {
 		return nil, nil, err
 	}
+	linkType := target.Jira.LinkType
+	if linkType == "" {
+		linkType = defaultLinkType
+	}
 	operations := make([]provider.Operation, 0, len(ordered))
+	links := make([]provider.Operation, 0, len(ordered))
 	for _, item := range ordered {
 		issueType := jiraIssueType(item.Kind, target.Jira.KindMapping)
 		labels := append([]string{"devex-discovery"}, item.Labels...)
 		sort.Strings(labels)
 		marker := workBreakdown.Discovery.ID + "/" + string(item.ID)
+		for _, dependency := range item.DependsOn {
+			links = append(links, linkOperation(workBreakdown.Discovery.ID, item.ID, dependency, linkType))
+		}
 		operations = append(operations, provider.Operation{
 			ID:             "create-" + string(item.ID),
-			Action:         "create_issue",
+			Action:         actionCreateIssue,
 			ItemID:         item.ID,
 			DependsOn:      dependenciesFor(item),
 			IdempotencyKey: marker,
@@ -89,7 +104,29 @@ func (a *Adapter) Plan(
 			},
 		})
 	}
-	return operations, []string{"Jira dependencies are represented as links in issue descriptions."}, nil
+	return append(operations, links...), nil, nil
+}
+
+// linkOperation records that dependency blocks item. Link operations carry no ItemID because
+// they publish a relationship rather than a work item.
+func linkOperation(
+	discoveryID string,
+	item domain.ItemID,
+	dependency domain.ItemID,
+	linkType string,
+) provider.Operation {
+	return provider.Operation{
+		ID:             "link-" + string(dependency) + "-" + string(item),
+		Action:         actionLinkIssues,
+		DependsOn:      []string{"create-" + string(dependency), "create-" + string(item)},
+		IdempotencyKey: discoveryID + "/link/" + string(dependency) + "/" + string(item),
+		Summary:        fmt.Sprintf("Link Jira %s: %s blocks %s", linkType, dependency, item),
+		Fields: map[string]any{
+			"link_type":        linkType,
+			"blocking_item_id": string(dependency),
+			"blocked_item_id":  string(item),
+		},
+	}
 }
 
 func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyKey string) (*provider.RemoteRef, error) {
@@ -173,6 +210,18 @@ func (a *Adapter) Execute(
 	operation provider.Operation,
 	resolved map[domain.ItemID]provider.RemoteRef,
 ) (provider.RemoteRef, error) {
+	if operation.Action == actionLinkIssues {
+		return a.executeLink(ctx, target, operation, resolved)
+	}
+	return a.executeCreateIssue(ctx, target, operation, resolved)
+}
+
+func (a *Adapter) executeCreateIssue(
+	ctx context.Context,
+	target config.Target,
+	operation provider.Operation,
+	resolved map[domain.ItemID]provider.RemoteRef,
+) (provider.RemoteRef, error) {
 	projectKey, err := fieldString(operation, "project_key")
 	if err != nil {
 		return provider.RemoteRef{}, err
@@ -239,6 +288,104 @@ func (a *Adapter) Execute(
 		URL:  strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + response.Key,
 		Type: issueType,
 	}, nil
+}
+
+func (a *Adapter) executeLink(
+	ctx context.Context,
+	target config.Target,
+	operation provider.Operation,
+	resolved map[domain.ItemID]provider.RemoteRef,
+) (provider.RemoteRef, error) {
+	linkType, err := fieldString(operation, "link_type")
+	if err != nil {
+		return provider.RemoteRef{}, err
+	}
+	blocking, err := resolveItem(operation, resolved, "blocking_item_id")
+	if err != nil {
+		return provider.RemoteRef{}, err
+	}
+	blocked, err := resolveItem(operation, resolved, "blocked_item_id")
+	if err != nil {
+		return provider.RemoteRef{}, err
+	}
+
+	linked, err := a.linkExists(ctx, target, blocked.Key, linkType, blocking.Key)
+	if err != nil {
+		return provider.RemoteRef{}, err
+	}
+	if !linked {
+		body := map[string]any{
+			"type":         map[string]string{"name": linkType},
+			"inwardIssue":  map[string]string{"key": blocking.Key},
+			"outwardIssue": map[string]string{"key": blocked.Key},
+		}
+		request, err := a.newRequest(ctx, target, http.MethodPost, "/rest/api/3/issueLink", body)
+		if err != nil {
+			return provider.RemoteRef{}, err
+		}
+		if err := a.do(request, nil); err != nil {
+			return provider.RemoteRef{}, err
+		}
+	}
+	return provider.RemoteRef{Key: blocked.Key, URL: blocked.URL, Type: "issue_link"}, nil
+}
+
+// linkExists reports whether issueKey already records linkType against blockingKey. Jira omits
+// the viewed issue from each link, so an existing blocker appears as the inward issue.
+func (a *Adapter) linkExists(
+	ctx context.Context,
+	target config.Target,
+	issueKey string,
+	linkType string,
+	blockingKey string,
+) (bool, error) {
+	request, err := a.newRequest(
+		ctx,
+		target,
+		http.MethodGet,
+		"/rest/api/3/issue/"+url.PathEscape(issueKey)+"?fields=issuelinks",
+		nil,
+	)
+	if err != nil {
+		return false, err
+	}
+	var issue struct {
+		Fields struct {
+			IssueLinks []struct {
+				Type struct {
+					Name string `json:"name"`
+				} `json:"type"`
+				InwardIssue struct {
+					Key string `json:"key"`
+				} `json:"inwardIssue"`
+			} `json:"issuelinks"`
+		} `json:"fields"`
+	}
+	if err := a.do(request, &issue); err != nil {
+		return false, err
+	}
+	for _, link := range issue.Fields.IssueLinks {
+		if link.Type.Name == linkType && link.InwardIssue.Key == blockingKey {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func resolveItem(
+	operation provider.Operation,
+	resolved map[domain.ItemID]provider.RemoteRef,
+	field string,
+) (provider.RemoteRef, error) {
+	itemID, err := fieldString(operation, field)
+	if err != nil {
+		return provider.RemoteRef{}, err
+	}
+	remote, exists := resolved[domain.ItemID(itemID)]
+	if !exists {
+		return provider.RemoteRef{}, fmt.Errorf("item %q has not been published", itemID)
+	}
+	return remote, nil
 }
 
 func (a *Adapter) newRequest(
@@ -321,14 +468,6 @@ func jiraDescription(item domain.WorkItem, document string) string {
 			description.WriteString("- ")
 			description.WriteString(criterion)
 			description.WriteString("\n")
-		}
-	}
-	if len(item.DependsOn) > 0 {
-		description.WriteString("\nDependencies\n")
-		for _, dependency := range item.DependsOn {
-			description.WriteString("- {{remote:")
-			description.WriteString(string(dependency))
-			description.WriteString("}}\n")
 		}
 	}
 	description.WriteString("\nDiscovery: ")

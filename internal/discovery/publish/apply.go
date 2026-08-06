@@ -47,7 +47,9 @@ func Apply(
 	for _, operation := range plan.Operations {
 		previous, exists := receipt.Operations[operation.ID]
 		if exists && (previous.Status == "created" || previous.Status == "reused") && previous.Remote != nil {
-			resolved[operation.ItemID] = *previous.Remote
+			if operation.ItemID != "" {
+				resolved[operation.ItemID] = *previous.Remote
+			}
 			continue
 		}
 
@@ -68,7 +70,9 @@ func Apply(
 			} else {
 				result.Status = "created"
 				result.Remote = &created
-				resolved[operation.ItemID] = created
+				if operation.ItemID != "" {
+					resolved[operation.ItemID] = created
+				}
 			}
 		}
 		receipt.Operations[operation.ID] = result
@@ -120,6 +124,9 @@ func existingReceipt(path string, plan *provider.Plan) (*provider.Receipt, error
 func resolvedItems(receipt *provider.Receipt) map[domain.ItemID]provider.RemoteRef {
 	resolved := make(map[domain.ItemID]provider.RemoteRef)
 	for _, result := range receipt.Operations {
+		if result.ItemID == "" {
+			continue
+		}
 		if result.Remote != nil && (result.Status == "created" || result.Status == "reused") {
 			resolved[result.ItemID] = *result.Remote
 		}

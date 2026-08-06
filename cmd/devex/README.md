@@ -225,7 +225,7 @@ The generated `.gitignore` excludes `.publish/`. Receipts are small local YAML f
 
 The tool deliberately does not prove or verify peer approval. Review and approval happen through the team's normal GitHub process; a human explicitly runs `publish apply` afterward.
 
-GitHub initiatives are tracking issues, and hierarchy and dependencies are rendered as links in issue bodies. Jira kind and issue-type mappings are configured per target.
+GitHub initiatives are tracking issues, and hierarchy and dependencies are rendered as links in issue bodies. Jira kind and issue-type mappings are configured per target. Jira publishes every `depends_on` edge as a real issue link oriented so the dependency blocks the dependent item; set `link_type` on the target to use a link type other than `Blocks`.
 
 ---
 

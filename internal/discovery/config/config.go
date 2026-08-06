@@ -29,10 +29,12 @@ type Target struct {
 }
 
 type JiraTarget struct {
-	BaseURL           string                     `yaml:"base_url" json:"base_url"`
-	ProjectKey        string                     `yaml:"project_key" json:"project_key"`
-	KindMapping       map[domain.ItemKind]string `yaml:"kind_mapping" json:"kind_mapping"`
-	HierarchyFallback string                     `yaml:"hierarchy_fallback,omitempty" json:"hierarchy_fallback,omitempty"`
+	BaseURL     string                     `yaml:"base_url" json:"base_url"`
+	ProjectKey  string                     `yaml:"project_key" json:"project_key"`
+	KindMapping map[domain.ItemKind]string `yaml:"kind_mapping" json:"kind_mapping"`
+	// LinkType names the Jira issue link type used for depends_on edges. Defaults to Blocks.
+	LinkType          string `yaml:"link_type,omitempty" json:"link_type,omitempty"`
+	HierarchyFallback string `yaml:"hierarchy_fallback,omitempty" json:"hierarchy_fallback,omitempty"`
 }
 
 type GitHubTarget struct {

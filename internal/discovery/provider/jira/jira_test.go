@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/project-init/devex/internal/discovery/config"
+	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
 )
 
@@ -102,6 +103,135 @@ func TestLookupFindsJiraProperty(t *testing.T) {
 	}
 	if searchRequests != 2 {
 		t.Fatalf("search requests = %d, want 2", searchRequests)
+	}
+}
+
+func TestPlanEmitsDependencyLinks(t *testing.T) {
+	operations, warnings, err := NewWithClient(nil, "user@example.com", "token").Plan(
+		context.Background(),
+		&domain.WorkBreakdown{
+			Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
+			Items: []domain.WorkItem{
+				{ID: "WI-001", Kind: domain.KindTask, Title: "First", Description: "First."},
+				{
+					ID:          "WI-002",
+					Kind:        domain.KindTask,
+					Title:       "Second",
+					Description: "Second.",
+					DependsOn:   []domain.ItemID{"WI-001"},
+				},
+			},
+		},
+		nil,
+		jiraTarget("https://jira.test"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", warnings)
+	}
+	if len(operations) != 3 {
+		t.Fatalf("operations = %d, want 3", len(operations))
+	}
+
+	// Links follow every create so both issues exist before the relationship is published.
+	link := operations[2]
+	if link.Action != actionLinkIssues || link.ID != "link-WI-001-WI-002" {
+		t.Fatalf("link = %#v", link)
+	}
+	if link.ItemID != "" {
+		t.Fatalf("link.ItemID = %q, want empty", link.ItemID)
+	}
+	if link.Fields["blocking_item_id"] != "WI-001" || link.Fields["blocked_item_id"] != "WI-002" {
+		t.Fatalf("link fields = %#v", link.Fields)
+	}
+	if link.Fields["link_type"] != defaultLinkType {
+		t.Fatalf("link type = %#v", link.Fields["link_type"])
+	}
+	if strings.Contains(operations[1].Fields["description"].(string), "Dependencies") {
+		t.Fatalf("description = %#v", operations[1].Fields["description"])
+	}
+}
+
+func TestExecuteCreatesIssueLink(t *testing.T) {
+	created := false
+	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/rest/api/3/issue/DEVEX-8":
+			return jiraJSONResponse(`{"fields":{"issuelinks":[]}}`)
+		case request.Method == http.MethodPost && request.URL.Path == "/rest/api/3/issueLink":
+			created = true
+			var body map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			// Jira reads the link as inwardIssue blocks outwardIssue.
+			inward := body["inwardIssue"].(map[string]any)
+			outward := body["outwardIssue"].(map[string]any)
+			if inward["key"] != "DEVEX-7" || outward["key"] != "DEVEX-8" {
+				t.Fatalf("body = %#v", body)
+			}
+			if body["type"].(map[string]any)["name"] != "Blocks" {
+				t.Fatalf("type = %#v", body["type"])
+			}
+			return jiraJSONResponse(`{}`)
+		default:
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+			return nil
+		}
+	})}
+
+	_, err := NewWithClient(client, "user@example.com", "token").Execute(
+		context.Background(),
+		jiraTarget("https://jira.test"),
+		linkOperation("audit", "WI-002", "WI-001", defaultLinkType),
+		map[domain.ItemID]provider.RemoteRef{
+			"WI-001": {Key: "DEVEX-7", URL: "https://jira.test/browse/DEVEX-7"},
+			"WI-002": {Key: "DEVEX-8", URL: "https://jira.test/browse/DEVEX-8"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("issue link was not created")
+	}
+}
+
+func TestExecuteSkipsExistingIssueLink(t *testing.T) {
+	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
+		if request.Method == http.MethodPost {
+			t.Fatalf("unexpected link creation: %s %s", request.Method, request.URL.Path)
+		}
+		return jiraJSONResponse(
+			`{"fields":{"issuelinks":[{"type":{"name":"Blocks"},"inwardIssue":{"key":"DEVEX-7"}}]}}`,
+		)
+	})}
+
+	_, err := NewWithClient(client, "user@example.com", "token").Execute(
+		context.Background(),
+		jiraTarget("https://jira.test"),
+		linkOperation("audit", "WI-002", "WI-001", defaultLinkType),
+		map[domain.ItemID]provider.RemoteRef{
+			"WI-001": {Key: "DEVEX-7"},
+			"WI-002": {Key: "DEVEX-8"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExecuteLinkRequiresPublishedItems(t *testing.T) {
+	_, err := NewWithClient(nil, "user@example.com", "token").Execute(
+		context.Background(),
+		jiraTarget("https://jira.test"),
+		linkOperation("audit", "WI-002", "WI-001", defaultLinkType),
+		map[domain.ItemID]provider.RemoteRef{"WI-002": {Key: "DEVEX-8"}},
+	)
+	if err == nil || !strings.Contains(err.Error(), "WI-001") {
+		t.Fatalf("err = %v, want unpublished WI-001", err)
 	}
 }
 

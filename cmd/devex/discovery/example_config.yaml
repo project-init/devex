@@ -8,6 +8,8 @@ targets:
       base_url: https://example.atlassian.net
       project_key: PROJECT
       hierarchy_fallback: error
+      # Issue link type published for depends_on edges. Must already exist in Jira.
+      # link_type: Blocks
       kind_mapping:
         initiative: Epic
         feature: Story
