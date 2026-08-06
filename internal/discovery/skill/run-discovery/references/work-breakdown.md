@@ -38,6 +38,8 @@ items:
 - Give initiatives no parent.
 - Reference parents and dependencies by stable item ID.
 - Avoid parent and dependency cycles.
+- Omit `depends_on` entries naming an ancestor. Hierarchy already orders that work, and providers publish each dependency as a real blocking link, so an initiative would block its own child.
+- Reserve `depends_on` for work that must finish first. Do not restate hierarchy, related context, or reading order.
 - Express verifiable completion conditions in `acceptance_criteria`.
 - Use `points`, `hours`, `days`, or `weeks` for estimates.
 - Represent consequential unknowns as `research` items instead of hiding them in implementation tasks.
