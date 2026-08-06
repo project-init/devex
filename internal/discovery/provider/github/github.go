@@ -16,9 +16,15 @@ import (
 	"github.com/project-init/devex/internal/discovery/provider"
 )
 
-const providerID = "github"
+const (
+	providerID = "github"
 
-var markerPattern = regexp.MustCompile(`<!-- devex-discovery-id: [^>]+ -->`)
+	// generatedMarker hides the idempotency key in the issue body so Lookup can recognise
+	// issues this tool created when a local receipt is unavailable.
+	generatedMarker = "devex-generated-id"
+)
+
+var markerPattern = regexp.MustCompile(`<!-- ` + generatedMarker + `: [^>]+ -->`)
 
 type Adapter struct {
 	client      *gh.Client
@@ -181,7 +187,7 @@ func (a *Adapter) Execute(
 }
 
 func marker(discoveryID string, itemID domain.ItemID) string {
-	return fmt.Sprintf("<!-- devex-discovery-id: %s/%s -->", discoveryID, itemID)
+	return fmt.Sprintf("<!-- %s: %s/%s -->", generatedMarker, discoveryID, itemID)
 }
 
 func bodyForItem(workBreakdown *domain.WorkBreakdown, item domain.WorkItem, idempotencyMarker string) string {

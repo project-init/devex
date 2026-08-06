@@ -50,13 +50,17 @@ func TestExecuteCreatesIssue(t *testing.T) {
 }
 
 func TestLookupFindsIdempotencyMarker(t *testing.T) {
+	// Build the marker through the helper so the pattern and the format cannot drift apart.
+	idempotencyMarker := marker("audit", "WI-001")
 	client := newTestClient(t, func(_ *http.Request) *http.Response {
-		return jsonResponse(`[{"id":42,"number":7,"html_url":"https://github.test/issues/7","body":"<!-- devex-discovery-id: audit/WI-001 -->"}]`)
+		return jsonResponse(
+			`[{"id":42,"number":7,"html_url":"https://github.test/issues/7","body":"` + idempotencyMarker + `"}]`,
+		)
 	})
 	remote, err := NewWithClient(client).Lookup(
 		context.Background(),
 		githubTarget(),
-		"<!-- devex-discovery-id: audit/WI-001 -->",
+		idempotencyMarker,
 	)
 	if err != nil {
 		t.Fatal(err)
