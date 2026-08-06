@@ -45,7 +45,7 @@ func TestExecuteCreatesJiraIssue(t *testing.T) {
 				"issue_type":         "Task",
 				"title":              "Implement audit logs",
 				"description":        "Implement persistence.",
-				"labels":             []any{"devex-discovery"},
+				"labels":             []any{generatedLabel},
 				"parent_item_id":     "",
 				"idempotency_marker": "audit/WI-001",
 			},
@@ -112,7 +112,13 @@ func TestPlanEmitsDependencyLinks(t *testing.T) {
 		&domain.WorkBreakdown{
 			Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
 			Items: []domain.WorkItem{
-				{ID: "WI-001", Kind: domain.KindTask, Title: "First", Description: "First."},
+				{
+					ID:          "WI-001",
+					Kind:        domain.KindTask,
+					Title:       "First",
+					Description: "First.",
+					Labels:      []string{"security"},
+				},
 				{
 					ID:          "WI-002",
 					Kind:        domain.KindTask,
@@ -133,6 +139,15 @@ func TestPlanEmitsDependencyLinks(t *testing.T) {
 	}
 	if len(operations) != 3 {
 		t.Fatalf("operations = %d, want 3", len(operations))
+	}
+
+	// Lookup finds published issues by this label, so planning must always attach it.
+	labels, err := fieldStringSlice(operations[0], "labels")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(labels) != 2 || labels[0] != generatedLabel || labels[1] != "security" {
+		t.Fatalf("labels = %#v", labels)
 	}
 
 	// Links follow every create so both issues exist before the relationship is published.

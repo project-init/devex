@@ -36,7 +36,7 @@ func TestExecuteCreatesIssue(t *testing.T) {
 		Fields: map[string]any{
 			"title":  "Implement audit logs",
 			"body":   "Parent: {{remote:INIT-001}}",
-			"labels": []any{"devex-discovery", "feature"},
+			"labels": []any{"security", "feature"},
 		},
 	}, map[domain.ItemID]provider.RemoteRef{
 		"INIT-001": {URL: "https://example.test/1"},

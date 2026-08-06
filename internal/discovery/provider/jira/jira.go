@@ -22,6 +22,10 @@ const (
 	providerID  = "jira"
 	propertyKey = "devex.discovery"
 
+	// generatedLabel narrows the idempotency search to issues this tool created. Issue
+	// properties hold the identity, so removing the label from an issue hides it from Lookup.
+	generatedLabel = "devex-generated"
+
 	actionCreateIssue = "create_issue"
 	actionLinkIssues  = "link_issues"
 
@@ -80,7 +84,7 @@ func (a *Adapter) Plan(
 	links := make([]provider.Operation, 0, len(ordered))
 	for _, item := range ordered {
 		issueType := jiraIssueType(item.Kind, target.Jira.KindMapping)
-		labels := append([]string{"devex-discovery"}, item.Labels...)
+		labels := append([]string{generatedLabel}, item.Labels...)
 		sort.Strings(labels)
 		marker := workBreakdown.Discovery.ID + "/" + string(item.ID)
 		for _, dependency := range item.DependsOn {
@@ -140,7 +144,7 @@ func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyK
 	nextPageToken := ""
 	for {
 		query := url.Values{}
-		query.Set("jql", fmt.Sprintf(`project = "%s" AND labels = "devex-discovery"`, target.Jira.ProjectKey))
+		query.Set("jql", fmt.Sprintf(`project = %q AND labels = %q`, target.Jira.ProjectKey, generatedLabel))
 		query.Set("fields", "key")
 		query.Set("maxResults", "100")
 		if nextPageToken != "" {
