@@ -158,6 +158,11 @@ func (t Target) Validate() error {
 		if !validFallback(t.Jira.HierarchyFallback) {
 			return fmt.Errorf("jira.hierarchy_fallback must be error or flatten")
 		}
+		// Jira link type names are case-sensitive and instance-specific, so only obviously
+		// unusable values are rejected here; apply reports the instance's valid names.
+		if t.Jira.LinkType != strings.TrimSpace(t.Jira.LinkType) {
+			return fmt.Errorf("jira.link_type must not have leading or trailing whitespace")
+		}
 	case "github":
 		if t.GitHub == nil || t.Jira != nil {
 			return fmt.Errorf("github provider requires only a github configuration")

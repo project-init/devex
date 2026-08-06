@@ -34,6 +34,15 @@ func TestWorkBreakdownValidate(t *testing.T) {
 			},
 			wantError: "duplicate",
 		},
+		{
+			// Hierarchy already orders this work, and providers publish dependencies as
+			// blocking links, so the edge would make a parent block its own child.
+			name: "depends on parent",
+			mutate: func(workBreakdown *WorkBreakdown) {
+				workBreakdown.Items[1].DependsOn = []ItemID{workBreakdown.Items[1].Parent}
+			},
+			wantError: "ancestor",
+		},
 	}
 
 	for _, test := range tests {

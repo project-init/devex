@@ -17,6 +17,7 @@ import (
 type fakeAdapter struct {
 	executions map[string]int
 	resolvedAt map[string][]domain.ItemID
+	lookups    []string
 	failOnce   string
 }
 
@@ -31,7 +32,12 @@ func (f *fakeAdapter) Plan(
 	return nil, nil, nil
 }
 
-func (f *fakeAdapter) Lookup(context.Context, config.Target, string) (*provider.RemoteRef, error) {
+func (f *fakeAdapter) Lookup(
+	_ context.Context,
+	_ config.Target,
+	idempotencyKey string,
+) (*provider.RemoteRef, error) {
+	f.lookups = append(f.lookups, idempotencyKey)
 	return nil, nil
 }
 
@@ -155,6 +161,13 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 	resolved := adapter.resolvedAt["create-WI-002"]
 	if len(resolved) != 1 || resolved[0] != "WI-001" {
 		t.Fatalf("resolved items = %#v, want only WI-001", resolved)
+	}
+
+	// No remote carries a relationship operation's key, so looking it up could only ever miss.
+	for _, idempotencyKey := range adapter.lookups {
+		if idempotencyKey == "link" {
+			t.Fatalf("lookups = %#v, want no lookup for the link operation", adapter.lookups)
+		}
 	}
 
 	// A resumed run reads the receipt instead of the live map, so it must skip the link too.

@@ -130,6 +130,13 @@ func (w *WorkBreakdown) Validate() error {
 		for _, dependency := range item.DependsOn {
 			if _, exists := byID[dependency]; !exists {
 				problems = append(problems, fmt.Sprintf("item %q references unknown dependency %q", item.ID, dependency))
+				continue
+			}
+			if isAncestor(byID, item, dependency) {
+				problems = append(
+					problems,
+					fmt.Sprintf("item %q cannot depend on its ancestor %q", item.ID, dependency),
+				)
 			}
 		}
 	}
@@ -142,6 +149,29 @@ func (w *WorkBreakdown) Validate() error {
 		return fmt.Errorf("invalid work breakdown:\n- %s", strings.Join(problems, "\n- "))
 	}
 	return nil
+}
+
+// isAncestor reports whether candidate sits on item's parent chain. Hierarchy already orders that
+// work, and providers publish dependencies as blocking links, so such an edge would make a parent
+// block its own child. The visited set keeps a parent cycle from looping here before
+// OrderedItems reports it.
+func isAncestor(byID map[ItemID]WorkItem, item WorkItem, candidate ItemID) bool {
+	visited := make(map[ItemID]bool, len(byID))
+	for parent := item.Parent; parent != ""; {
+		if visited[parent] {
+			return false
+		}
+		visited[parent] = true
+		if parent == candidate {
+			return true
+		}
+		next, exists := byID[parent]
+		if !exists {
+			return false
+		}
+		parent = next.Parent
+	}
+	return false
 }
 
 func (w *WorkBreakdown) OrderedItems() ([]WorkItem, error) {

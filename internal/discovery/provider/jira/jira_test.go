@@ -134,8 +134,10 @@ func TestPlanEmitsDependencyLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %#v, want none", warnings)
+	// Links depend on a Jira permission and link type that planning cannot check, so the plan
+	// has to say so before anything is created.
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "Link Issues") {
+		t.Fatalf("warnings = %#v", warnings)
 	}
 	if len(operations) != 3 {
 		t.Fatalf("operations = %d, want 3", len(operations))
@@ -152,7 +154,7 @@ func TestPlanEmitsDependencyLinks(t *testing.T) {
 
 	// Links follow every create so both issues exist before the relationship is published.
 	link := operations[2]
-	if link.Action != actionLinkIssues || link.ID != "link-WI-001-WI-002" {
+	if link.Action != actionLinkIssues || link.ID != "link-WI-001/WI-002" {
 		t.Fatalf("link = %#v", link)
 	}
 	if link.ItemID != "" {
@@ -211,6 +213,80 @@ func TestExecuteCreatesIssueLink(t *testing.T) {
 	}
 	if !created {
 		t.Fatal("issue link was not created")
+	}
+}
+
+// Hyphens are legal in item IDs, so the operation ID must separate the pair with a character
+// an ID cannot contain. Otherwise two edges collide on one receipt key and one is skipped.
+func TestLinkOperationIDsSurviveHyphenatedItemIDs(t *testing.T) {
+	first := linkOperation("audit", "API-GATEWAY", "AUTH", defaultLinkType)
+	second := linkOperation("audit", "GATEWAY", "AUTH-API", defaultLinkType)
+	if first.ID == second.ID {
+		t.Fatalf("operation IDs collide: %q", first.ID)
+	}
+	if first.IdempotencyKey == second.IdempotencyKey {
+		t.Fatalf("idempotency keys collide: %q", first.IdempotencyKey)
+	}
+}
+
+func TestExecuteLinkReusesCachedIssueLinks(t *testing.T) {
+	issueGets := 0
+	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
+		if request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/rest/api/3/issue/") {
+			issueGets++
+			return jiraJSONResponse(`{"fields":{"issuelinks":[]}}`)
+		}
+		return jiraJSONResponse(`{}`)
+	})}
+	adapter := NewWithClient(client, "user@example.com", "token")
+	resolved := map[domain.ItemID]provider.RemoteRef{
+		"WI-001": {Key: "DEVEX-7"},
+		"WI-002": {Key: "DEVEX-8"},
+		"WI-003": {Key: "DEVEX-9"},
+	}
+
+	// Both edges block the same issue, so the second must read the cache rather than refetch.
+	for _, dependency := range []domain.ItemID{"WI-001", "WI-002"} {
+		if _, err := adapter.Execute(
+			context.Background(),
+			jiraTarget("https://jira.test"),
+			linkOperation("audit", "WI-003", dependency, defaultLinkType),
+			resolved,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if issueGets != 1 {
+		t.Fatalf("issue reads = %d, want 1", issueGets)
+	}
+}
+
+func TestExecuteLinkReportsValidLinkTypes(t *testing.T) {
+	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
+		switch {
+		case request.URL.Path == "/rest/api/3/issueLinkType":
+			return jiraJSONResponse(`{"issueLinkTypes":[{"name":"Blocks"},{"name":"Relates"}]}`)
+		case request.Method == http.MethodPost:
+			return &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(strings.NewReader(`No issue link type with name 'blocks' found`)),
+			}
+		default:
+			return jiraJSONResponse(`{"fields":{"issuelinks":[]}}`)
+		}
+	})}
+
+	_, err := NewWithClient(client, "user@example.com", "token").Execute(
+		context.Background(),
+		jiraTarget("https://jira.test"),
+		linkOperation("audit", "WI-002", "WI-001", "blocks"),
+		map[domain.ItemID]provider.RemoteRef{
+			"WI-001": {Key: "DEVEX-7"},
+			"WI-002": {Key: "DEVEX-8"},
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "Blocks, Relates") {
+		t.Fatalf("err = %v, want the instance's link types", err)
 	}
 }
 

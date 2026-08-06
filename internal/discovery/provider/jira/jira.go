@@ -40,12 +40,15 @@ type Adapter struct {
 	token       string
 	lookupCache map[string]provider.RemoteRef
 	lookupDone  bool
+	// linkCache holds the links already recorded on an issue, keyed by issue key.
+	linkCache map[string]map[string]bool
 }
 
 func New(authenticated bool) (*Adapter, error) {
 	adapter := &Adapter{
 		client:      &http.Client{Timeout: 15 * time.Second},
 		lookupCache: make(map[string]provider.RemoteRef),
+		linkCache:   make(map[string]map[string]bool),
 	}
 	if authenticated {
 		adapter.email = os.Getenv("JIRA_EMAIL")
@@ -58,7 +61,13 @@ func New(authenticated bool) (*Adapter, error) {
 }
 
 func NewWithClient(client *http.Client, email string, token string) *Adapter {
-	return &Adapter{client: client, email: email, token: token, lookupCache: make(map[string]provider.RemoteRef)}
+	return &Adapter{
+		client:      client,
+		email:       email,
+		token:       token,
+		lookupCache: make(map[string]provider.RemoteRef),
+		linkCache:   make(map[string]map[string]bool),
+	}
 }
 
 func (a *Adapter) ID() string { return providerID }
@@ -108,11 +117,20 @@ func (a *Adapter) Plan(
 			},
 		})
 	}
-	return append(operations, links...), nil, nil
+	var warnings []string
+	if len(links) > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"Publishing %d dependency link(s) needs the Jira Link Issues permission and the %q link type.",
+			len(links),
+			linkType,
+		))
+	}
+	return append(operations, links...), warnings, nil
 }
 
 // linkOperation records that dependency blocks item. Link operations carry no ItemID because
-// they publish a relationship rather than a work item.
+// they publish a relationship rather than a work item. The slash separates the two IDs
+// unambiguously: item IDs may contain hyphens but never a slash.
 func linkOperation(
 	discoveryID string,
 	item domain.ItemID,
@@ -120,7 +138,7 @@ func linkOperation(
 	linkType string,
 ) provider.Operation {
 	return provider.Operation{
-		ID:             "link-" + string(dependency) + "-" + string(item),
+		ID:             "link-" + string(dependency) + "/" + string(item),
 		Action:         actionLinkIssues,
 		DependsOn:      []string{"create-" + string(dependency), "create-" + string(item)},
 		IdempotencyKey: discoveryID + "/link/" + string(dependency) + "/" + string(item),
@@ -328,14 +346,48 @@ func (a *Adapter) executeLink(
 			return provider.RemoteRef{}, err
 		}
 		if err := a.do(request, nil); err != nil {
-			return provider.RemoteRef{}, err
+			return provider.RemoteRef{}, a.describeLinkFailure(ctx, target, linkType, err)
 		}
+		a.rememberLink(blocked.Key, linkType, blocking.Key)
 	}
 	return provider.RemoteRef{Key: blocked.Key, URL: blocked.URL, Type: "issue_link"}, nil
 }
 
+// describeLinkFailure names the instance's link types when Jira rejects the request, because a
+// link type that does not exist fails only after every issue has been created.
+func (a *Adapter) describeLinkFailure(
+	ctx context.Context,
+	target config.Target,
+	linkType string,
+	cause error,
+) error {
+	statusError, ok := cause.(*httpStatusError)
+	if !ok || statusError.StatusCode != http.StatusBadRequest {
+		return cause
+	}
+	request, err := a.newRequest(ctx, target, http.MethodGet, "/rest/api/3/issueLinkType", nil)
+	if err != nil {
+		return cause
+	}
+	var response struct {
+		IssueLinkTypes []struct {
+			Name string `json:"name"`
+		} `json:"issueLinkTypes"`
+	}
+	if err := a.do(request, &response); err != nil {
+		return cause
+	}
+	names := make([]string, 0, len(response.IssueLinkTypes))
+	for _, linkTypeName := range response.IssueLinkTypes {
+		names = append(names, linkTypeName.Name)
+	}
+	sort.Strings(names)
+	return fmt.Errorf("%w; link type %q must be one of: %s", cause, linkType, strings.Join(names, ", "))
+}
+
 // linkExists reports whether issueKey already records linkType against blockingKey. Jira omits
-// the viewed issue from each link, so an existing blocker appears as the inward issue.
+// the viewed issue from each link, so an existing blocker appears as the inward issue. Results
+// are cached because an item with several dependencies asks about the same issue repeatedly.
 func (a *Adapter) linkExists(
 	ctx context.Context,
 	target config.Target,
@@ -343,6 +395,9 @@ func (a *Adapter) linkExists(
 	linkType string,
 	blockingKey string,
 ) (bool, error) {
+	if cached, exists := a.linkCache[issueKey]; exists {
+		return cached[linkKey(linkType, blockingKey)], nil
+	}
 	request, err := a.newRequest(
 		ctx,
 		target,
@@ -368,12 +423,33 @@ func (a *Adapter) linkExists(
 	if err := a.do(request, &issue); err != nil {
 		return false, err
 	}
+	existing := make(map[string]bool, len(issue.Fields.IssueLinks))
 	for _, link := range issue.Fields.IssueLinks {
-		if link.Type.Name == linkType && link.InwardIssue.Key == blockingKey {
-			return true, nil
+		if link.InwardIssue.Key != "" {
+			existing[linkKey(link.Type.Name, link.InwardIssue.Key)] = true
 		}
 	}
-	return false, nil
+	if a.linkCache == nil {
+		a.linkCache = make(map[string]map[string]bool)
+	}
+	a.linkCache[issueKey] = existing
+	return existing[linkKey(linkType, blockingKey)], nil
+}
+
+// rememberLink records a link this run created so a later edge onto the same issue does not
+// refetch it.
+func (a *Adapter) rememberLink(issueKey string, linkType string, blockingKey string) {
+	if a.linkCache == nil {
+		a.linkCache = make(map[string]map[string]bool)
+	}
+	if a.linkCache[issueKey] == nil {
+		a.linkCache[issueKey] = make(map[string]bool)
+	}
+	a.linkCache[issueKey][linkKey(linkType, blockingKey)] = true
+}
+
+func linkKey(linkType string, blockingKey string) string {
+	return linkType + "\x00" + blockingKey
 }
 
 func resolveItem(

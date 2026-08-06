@@ -16,7 +16,7 @@ func Apply(
 	ctx context.Context,
 	planPath string,
 	adapter provider.Adapter,
-	onProgress func(provider.OperationResult),
+	onProgress func(provider.Operation, provider.OperationResult),
 ) (*provider.Receipt, error) {
 	plan, err := LoadPlan(planPath)
 	if err != nil {
@@ -53,12 +53,20 @@ func Apply(
 			continue
 		}
 
-		remote, lookupErr := adapter.Lookup(ctx, plan.Target, operation.IdempotencyKey)
+		// Relationship operations publish an edge rather than a work item, so no remote
+		// carries their idempotency key and a lookup could only ever miss. Adapters keep
+		// them idempotent themselves.
+		var remote *provider.RemoteRef
+		var lookupErr error
+		if operation.ItemID != "" {
+			remote, lookupErr = adapter.Lookup(ctx, plan.Target, operation.IdempotencyKey)
+		}
 		result := provider.OperationResult{ItemID: operation.ItemID}
 		if lookupErr != nil {
 			result.Status = "failed"
 			result.Error = lookupErr.Error()
 		} else if remote != nil {
+			// Only item operations reach here, so the key is never empty.
 			result.Status = "reused"
 			result.Remote = remote
 			resolved[operation.ItemID] = *remote
@@ -85,7 +93,7 @@ func Apply(
 			return nil, err
 		}
 		if onProgress != nil {
-			onProgress(result)
+			onProgress(operation, result)
 		}
 		if result.Status == "failed" {
 			return receipt, fmt.Errorf("operation %s failed: %s", operation.ID, result.Error)
