@@ -43,6 +43,15 @@ func TestWorkBreakdownValidate(t *testing.T) {
 			},
 			wantError: "ancestor",
 		},
+		{
+			// The discovery ID is published as a Jira label, and Jira rejects whitespace in
+			// labels only after every issue has been created.
+			name: "discovery id is not label safe",
+			mutate: func(workBreakdown *WorkBreakdown) {
+				workBreakdown.Discovery.ID = "Audit Logs"
+			},
+			wantError: "discovery.id",
+		},
 	}
 
 	for _, test := range tests {

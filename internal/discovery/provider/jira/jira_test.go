@@ -143,12 +143,13 @@ func TestPlanEmitsDependencyLinks(t *testing.T) {
 		t.Fatalf("operations = %d, want 3", len(operations))
 	}
 
-	// Lookup finds published issues by this label, so planning must always attach it.
+	// Lookup narrows its search by both labels, so planning must always attach them: one
+	// marking the tool as author, one scoping the search to this bundle.
 	labels, err := fieldStringSlice(operations[0], "labels")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(labels) != 2 || labels[0] != generatedLabel || labels[1] != "security" {
+	if len(labels) != 3 || labels[0] != "audit" || labels[1] != generatedLabel || labels[2] != "security" {
 		t.Fatalf("labels = %#v", labels)
 	}
 
@@ -323,6 +324,45 @@ func TestExecuteLinkRequiresPublishedItems(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "WI-001") {
 		t.Fatalf("err = %v, want unpublished WI-001", err)
+	}
+}
+
+// Scoping the scan to one bundle keeps Lookup's cost proportional to the bundle rather than to
+// every issue this tool has created in the project.
+func TestLookupScopesSearchToTheDiscoveryBundle(t *testing.T) {
+	var queries []string
+	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
+		if request.URL.Path == "/rest/api/3/search/jql" {
+			queries = append(queries, request.URL.Query().Get("jql"))
+			return jiraJSONResponse(`{"issues":[],"isLast":true}`)
+		}
+		return jiraJSONResponse(`{}`)
+	})}
+	adapter := NewWithClient(client, "user@example.com", "token")
+	target := jiraTarget("https://jira.test")
+
+	if _, err := adapter.Lookup(context.Background(), target, "audit/WI-001"); err != nil {
+		t.Fatal(err)
+	}
+	if len(queries) != 1 || !strings.Contains(queries[0], `labels = "audit"`) {
+		t.Fatalf("queries = %#v", queries)
+	}
+	if !strings.Contains(queries[0], `labels = "`+generatedLabel+`"`) {
+		t.Fatalf("queries = %#v", queries)
+	}
+
+	// A key from the same bundle reuses the scan; a different bundle needs its own.
+	if _, err := adapter.Lookup(context.Background(), target, "audit/WI-002"); err != nil {
+		t.Fatal(err)
+	}
+	if len(queries) != 1 {
+		t.Fatalf("same-bundle lookup rescanned: %#v", queries)
+	}
+	if _, err := adapter.Lookup(context.Background(), target, "billing/WI-001"); err != nil {
+		t.Fatal(err)
+	}
+	if len(queries) != 2 || !strings.Contains(queries[1], `labels = "billing"`) {
+		t.Fatalf("queries = %#v", queries)
 	}
 }
 

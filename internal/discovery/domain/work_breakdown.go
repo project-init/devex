@@ -61,6 +61,10 @@ const (
 
 var idPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_-]*$`)
 
+// discoveryIDPattern keeps discovery.id usable as a work-tracker label. Jira rejects labels
+// containing whitespace, and a label is only applied once every issue has been created.
+var discoveryIDPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
 func (w *WorkBreakdown) Validate() error {
 	var problems []string
 	if w.SchemaVersion != SchemaVersion {
@@ -68,6 +72,14 @@ func (w *WorkBreakdown) Validate() error {
 	}
 	if strings.TrimSpace(w.Discovery.ID) == "" {
 		problems = append(problems, "discovery.id is required")
+	} else if !discoveryIDPattern.MatchString(w.Discovery.ID) {
+		problems = append(
+			problems,
+			fmt.Sprintf(
+				"discovery.id %q must be lowercase letters and digits separated by single hyphens",
+				w.Discovery.ID,
+			),
+		)
 	}
 	if strings.TrimSpace(w.Discovery.Title) == "" {
 		problems = append(problems, "discovery.title is required")

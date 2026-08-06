@@ -40,6 +40,8 @@ type Adapter struct {
 	token       string
 	lookupCache map[string]provider.RemoteRef
 	lookupDone  bool
+	// lookupScope records the discovery ID the cached scan covers.
+	lookupScope string
 	// linkCache holds the links already recorded on an issue, keyed by issue key.
 	linkCache map[string]map[string]bool
 }
@@ -93,8 +95,12 @@ func (a *Adapter) Plan(
 	links := make([]provider.Operation, 0, len(ordered))
 	for _, item := range ordered {
 		issueType := jiraIssueType(item.Kind, target.Jira.KindMapping)
-		labels := append([]string{generatedLabel}, item.Labels...)
-		sort.Strings(labels)
+		// The discovery ID scopes Lookup to one bundle, so the search cost tracks the bundle
+		// rather than every issue this tool has ever created in the project.
+		labels := uniqueSorted(append(
+			[]string{generatedLabel, workBreakdown.Discovery.ID},
+			item.Labels...,
+		))
 		marker := workBreakdown.Discovery.ID + "/" + string(item.ID)
 		for _, dependency := range item.DependsOn {
 			links = append(links, linkOperation(workBreakdown.Discovery.ID, item.ID, dependency, linkType))
@@ -152,17 +158,24 @@ func linkOperation(
 }
 
 func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyKey string) (*provider.RemoteRef, error) {
-	if a.lookupDone {
+	// The cached scan covers one bundle, so a key from another bundle needs its own scan.
+	scope := discoveryIDFromKey(idempotencyKey)
+	if a.lookupDone && a.lookupScope == scope {
 		if remote, exists := a.lookupCache[idempotencyKey]; exists {
 			return &remote, nil
 		}
 		return nil, nil
 	}
+	a.lookupCache = make(map[string]provider.RemoteRef)
 
+	jql := fmt.Sprintf(`project = %q AND labels = %q`, target.Jira.ProjectKey, generatedLabel)
+	if scope != "" {
+		jql += fmt.Sprintf(` AND labels = %q`, scope)
+	}
 	nextPageToken := ""
 	for {
 		query := url.Values{}
-		query.Set("jql", fmt.Sprintf(`project = %q AND labels = %q`, target.Jira.ProjectKey, generatedLabel))
+		query.Set("jql", jql)
 		query.Set("fields", "key")
 		query.Set("maxResults", "100")
 		if nextPageToken != "" {
@@ -220,6 +233,7 @@ func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyK
 		nextPageToken = result.NextPageToken
 	}
 	a.lookupDone = true
+	a.lookupScope = scope
 	if remote, exists := a.lookupCache[idempotencyKey]; exists {
 		return &remote, nil
 	}
@@ -450,6 +464,30 @@ func (a *Adapter) rememberLink(issueKey string, linkType string, blockingKey str
 
 func linkKey(linkType string, blockingKey string) string {
 	return linkType + "\x00" + blockingKey
+}
+
+func uniqueSorted(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	sort.Strings(unique)
+	return unique
+}
+
+// discoveryIDFromKey recovers the bundle scope from an idempotency key, which Plan builds as
+// "<discovery id>/<item id>".
+func discoveryIDFromKey(idempotencyKey string) string {
+	scope, _, found := strings.Cut(idempotencyKey, "/")
+	if !found {
+		return ""
+	}
+	return scope
 }
 
 func resolveItem(
