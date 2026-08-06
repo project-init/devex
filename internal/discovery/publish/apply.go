@@ -44,6 +44,11 @@ func Apply(
 		return nil, err
 	}
 
+	published, err := resolvePending(ctx, plan, adapter, receipt)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, operation := range plan.Operations {
 		previous, exists := receipt.Operations[operation.ID]
 		if exists && (previous.Status == "created" || previous.Status == "reused") && previous.Remote != nil {
@@ -53,23 +58,11 @@ func Apply(
 			continue
 		}
 
-		// Relationship operations publish an edge rather than a work item, so no remote
-		// carries their idempotency key and a lookup could only ever miss. Adapters keep
-		// them idempotent themselves.
-		var remote *provider.RemoteRef
-		var lookupErr error
-		if operation.ItemID != "" {
-			remote, lookupErr = adapter.Lookup(ctx, plan.Target, operation.IdempotencyKey)
-		}
 		result := provider.OperationResult{ItemID: operation.ItemID}
-		if lookupErr != nil {
-			result.Status = "failed"
-			result.Error = lookupErr.Error()
-		} else if remote != nil {
-			// Only item operations reach here, so the key is never empty.
+		if remote, found := published[operation.IdempotencyKey]; found && operation.ItemID != "" {
 			result.Status = "reused"
-			result.Remote = remote
-			resolved[operation.ItemID] = *remote
+			result.Remote = &remote
+			resolved[operation.ItemID] = remote
 		} else {
 			created, executeErr := adapter.Execute(ctx, plan.Target, operation, resolved)
 			if executeErr != nil {
@@ -105,6 +98,33 @@ func Apply(
 		return nil, err
 	}
 	return receipt, nil
+}
+
+// resolvePending asks the adapter which of the still-outstanding item operations already exist
+// remotely. Operations a receipt has settled are skipped, and relationship operations are never
+// offered because no remote carries their idempotency key. An empty set skips the call entirely,
+// so a resume that only has links left costs nothing.
+func resolvePending(
+	ctx context.Context,
+	plan *provider.Plan,
+	adapter provider.Adapter,
+	receipt *provider.Receipt,
+) (map[string]provider.RemoteRef, error) {
+	pending := make([]provider.Operation, 0, len(plan.Operations))
+	for _, operation := range plan.Operations {
+		if operation.ItemID == "" {
+			continue
+		}
+		previous, exists := receipt.Operations[operation.ID]
+		if exists && (previous.Status == "created" || previous.Status == "reused") && previous.Remote != nil {
+			continue
+		}
+		pending = append(pending, operation)
+	}
+	if len(pending) == 0 {
+		return nil, nil
+	}
+	return adapter.Resolve(ctx, plan.Target, plan, pending)
 }
 
 func existingReceipt(path string, plan *provider.Plan) (*provider.Receipt, error) {

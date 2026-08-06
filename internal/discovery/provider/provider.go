@@ -15,7 +15,10 @@ const SchemaVersion = "v1"
 type Adapter interface {
 	ID() string
 	Plan(context.Context, *domain.WorkBreakdown, []byte, config.Target) ([]Operation, []string, error)
-	Lookup(context.Context, config.Target, string) (*RemoteRef, error)
+	// Resolve reports which of the given operations already exist remotely, keyed by
+	// idempotency key. Apply calls it once with the operations a receipt has not already
+	// accounted for, so an adapter can search for exactly the work that remains.
+	Resolve(context.Context, config.Target, *Plan, []Operation) (map[string]RemoteRef, error)
 	Execute(context.Context, config.Target, Operation, map[domain.ItemID]RemoteRef) (RemoteRef, error)
 }
 
@@ -25,6 +28,7 @@ type Plan struct {
 	Provider      string        `yaml:"provider" json:"provider"`
 	TargetName    string        `yaml:"target" json:"target"`
 	Target        config.Target `yaml:"target_config" json:"target_config"`
+	DiscoveryID   string        `yaml:"discovery_id" json:"discovery_id"`
 	BundlePath    string        `yaml:"bundle_path" json:"bundle_path"`
 	SourceDigest  string        `yaml:"source_digest" json:"source_digest"`
 	PlanDigest    string        `yaml:"plan_digest" json:"plan_digest"`

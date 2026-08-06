@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/project-init/devex/internal/discovery/provider"
 	"gopkg.in/yaml.v3"
@@ -82,7 +83,10 @@ func LoadReceipt(path string) (*provider.Receipt, error) {
 func PlanDigest(plan *provider.Plan) (string, error) {
 	copy := *plan
 	copy.PlanDigest = ""
-	copy.GeneratedAt = copy.GeneratedAt.UTC()
+	// The digest identifies the work, not the run that produced it. Hashing the timestamp gave
+	// an unchanged bundle a new digest on every plan, which discarded a usable receipt and made
+	// plans generated on two machines incomparable.
+	copy.GeneratedAt = time.Time{}
 	copy.Operations = append([]provider.Operation(nil), plan.Operations...)
 	for index := range copy.Operations {
 		if copy.Operations[index].Fields == nil {

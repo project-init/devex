@@ -31,6 +31,7 @@ func CreatePlan(
 		Provider:      adapter.ID(),
 		TargetName:    targetName,
 		Target:        target,
+		DiscoveryID:   bundle.WorkBreakdown.Discovery.ID,
 		BundlePath:    bundle.Directory,
 		SourceDigest:  bundle.Digest(),
 		GeneratedAt:   time.Now().UTC(),

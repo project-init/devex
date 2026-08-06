@@ -15,10 +15,11 @@ import (
 )
 
 type fakeAdapter struct {
-	executions map[string]int
-	resolvedAt map[string][]domain.ItemID
-	lookups    []string
-	failOnce   string
+	executions   map[string]int
+	resolvedAt   map[string][]domain.ItemID
+	lookups      []string
+	resolveCalls int
+	failOnce     string
 }
 
 func (f *fakeAdapter) ID() string { return "fake" }
@@ -32,12 +33,16 @@ func (f *fakeAdapter) Plan(
 	return nil, nil, nil
 }
 
-func (f *fakeAdapter) Lookup(
+func (f *fakeAdapter) Resolve(
 	_ context.Context,
 	_ config.Target,
-	idempotencyKey string,
-) (*provider.RemoteRef, error) {
-	f.lookups = append(f.lookups, idempotencyKey)
+	_ *provider.Plan,
+	pending []provider.Operation,
+) (map[string]provider.RemoteRef, error) {
+	f.resolveCalls++
+	for _, operation := range pending {
+		f.lookups = append(f.lookups, operation.IdempotencyKey)
+	}
 	return nil, nil
 }
 
@@ -163,11 +168,16 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 		t.Fatalf("resolved items = %#v, want only WI-001", resolved)
 	}
 
-	// No remote carries a relationship operation's key, so looking it up could only ever miss.
+	// No remote carries a relationship operation's key, so offering it could only ever miss.
 	for _, idempotencyKey := range adapter.lookups {
 		if idempotencyKey == "link" {
-			t.Fatalf("lookups = %#v, want no lookup for the link operation", adapter.lookups)
+			t.Fatalf("resolved keys = %#v, want the link operation excluded", adapter.lookups)
 		}
+	}
+
+	// One batch resolve serves the whole run.
+	if adapter.resolveCalls != 1 {
+		t.Fatalf("resolve calls = %d, want 1", adapter.resolveCalls)
 	}
 
 	// A resumed run reads the receipt instead of the live map, so it must skip the link too.
@@ -177,6 +187,10 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 	}
 	if len(second.executions) != 0 {
 		t.Fatalf("resumed executions = %#v, want none", second.executions)
+	}
+	// A receipt that settles every operation leaves nothing to resolve.
+	if second.resolveCalls != 0 {
+		t.Fatalf("resumed resolve calls = %d, want 0", second.resolveCalls)
 	}
 }
 

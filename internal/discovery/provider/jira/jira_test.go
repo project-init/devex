@@ -60,7 +60,7 @@ func TestExecuteCreatesJiraIssue(t *testing.T) {
 	}
 }
 
-func TestLookupFindsJiraProperty(t *testing.T) {
+func TestResolveFindsJiraProperties(t *testing.T) {
 	searchRequests := 0
 	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
 		switch request.URL.Path {
@@ -78,31 +78,50 @@ func TestLookupFindsJiraProperty(t *testing.T) {
 			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("not found"))}
 		}
 	})}
-	adapter := NewWithClient(client, "user@example.com", "token")
-	remote, err := adapter.Lookup(
+	published, err := NewWithClient(client, "user@example.com", "token").Resolve(
 		context.Background(),
 		jiraTarget("https://jira.test"),
-		"audit/WI-001",
+		&provider.Plan{DiscoveryID: "audit"},
+		[]provider.Operation{
+			{ItemID: "WI-001", IdempotencyKey: "audit/WI-001"},
+			{ItemID: "WI-002", IdempotencyKey: "audit/WI-002"},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if remote == nil || remote.Key != "DEVEX-7" {
-		t.Fatalf("remote = %#v", remote)
+	if published["audit/WI-001"].Key != "DEVEX-7" || published["audit/WI-002"].Key != "DEVEX-8" {
+		t.Fatalf("published = %#v", published)
 	}
-	second, err := adapter.Lookup(
-		context.Background(),
-		jiraTarget("https://jira.test"),
-		"audit/WI-002",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second == nil || second.Key != "DEVEX-8" {
-		t.Fatalf("second = %#v", second)
-	}
+	// One paginated scan answers every pending operation.
 	if searchRequests != 2 {
-		t.Fatalf("search requests = %d, want 2", searchRequests)
+		t.Fatalf("search requests = %d, want 2 pages", searchRequests)
+	}
+}
+
+// An issue belonging to another bundle must not be reported as published for this one.
+func TestResolveIgnoresKeysOutsideThePendingSet(t *testing.T) {
+	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
+		switch request.URL.Path {
+		case "/rest/api/3/search/jql":
+			return jiraJSONResponse(`{"issues":[{"id":"10042","key":"DEVEX-7"}],"isLast":true}`)
+		case "/rest/api/3/issue/DEVEX-7/properties/devex.discovery":
+			return jiraJSONResponse(`{"value":{"id":"billing/WI-001"}}`)
+		default:
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("not found"))}
+		}
+	})}
+	published, err := NewWithClient(client, "user@example.com", "token").Resolve(
+		context.Background(),
+		jiraTarget("https://jira.test"),
+		&provider.Plan{DiscoveryID: "audit"},
+		[]provider.Operation{{ItemID: "WI-001", IdempotencyKey: "audit/WI-001"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(published) != 0 {
+		t.Fatalf("published = %#v, want empty", published)
 	}
 }
 
@@ -327,42 +346,31 @@ func TestExecuteLinkRequiresPublishedItems(t *testing.T) {
 	}
 }
 
-// Scoping the scan to one bundle keeps Lookup's cost proportional to the bundle rather than to
+// Scoping the scan to one bundle keeps the search cost proportional to the bundle rather than to
 // every issue this tool has created in the project.
-func TestLookupScopesSearchToTheDiscoveryBundle(t *testing.T) {
+func TestResolveScopesSearchToTheDiscoveryBundle(t *testing.T) {
 	var queries []string
 	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
 		if request.URL.Path == "/rest/api/3/search/jql" {
 			queries = append(queries, request.URL.Query().Get("jql"))
-			return jiraJSONResponse(`{"issues":[],"isLast":true}`)
 		}
-		return jiraJSONResponse(`{}`)
+		return jiraJSONResponse(`{"issues":[],"isLast":true}`)
 	})}
-	adapter := NewWithClient(client, "user@example.com", "token")
-	target := jiraTarget("https://jira.test")
 
-	if _, err := adapter.Lookup(context.Background(), target, "audit/WI-001"); err != nil {
-		t.Fatal(err)
-	}
-	if len(queries) != 1 || !strings.Contains(queries[0], `labels = "audit"`) {
-		t.Fatalf("queries = %#v", queries)
-	}
-	if !strings.Contains(queries[0], `labels = "`+generatedLabel+`"`) {
-		t.Fatalf("queries = %#v", queries)
-	}
-
-	// A key from the same bundle reuses the scan; a different bundle needs its own.
-	if _, err := adapter.Lookup(context.Background(), target, "audit/WI-002"); err != nil {
+	if _, err := NewWithClient(client, "user@example.com", "token").Resolve(
+		context.Background(),
+		jiraTarget("https://jira.test"),
+		&provider.Plan{DiscoveryID: "audit"},
+		[]provider.Operation{{ItemID: "WI-001", IdempotencyKey: "audit/WI-001"}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if len(queries) != 1 {
-		t.Fatalf("same-bundle lookup rescanned: %#v", queries)
+		t.Fatalf("queries = %#v, want one search", queries)
 	}
-	if _, err := adapter.Lookup(context.Background(), target, "billing/WI-001"); err != nil {
-		t.Fatal(err)
-	}
-	if len(queries) != 2 || !strings.Contains(queries[1], `labels = "billing"`) {
-		t.Fatalf("queries = %#v", queries)
+	if !strings.Contains(queries[0], `labels = "audit"`) ||
+		!strings.Contains(queries[0], `labels = "`+generatedLabel+`"`) {
+		t.Fatalf("jql = %q", queries[0])
 	}
 }
 

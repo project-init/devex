@@ -57,16 +57,17 @@ func TestLookupFindsIdempotencyMarker(t *testing.T) {
 			`[{"id":42,"number":7,"html_url":"https://github.test/issues/7","body":"` + idempotencyMarker + `"}]`,
 		)
 	})
-	remote, err := NewWithClient(client).Lookup(
+	published, err := NewWithClient(client).Resolve(
 		context.Background(),
 		githubTarget(),
-		idempotencyMarker,
+		&provider.Plan{},
+		[]provider.Operation{{ItemID: "WI-001", IdempotencyKey: idempotencyMarker}},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if remote == nil || remote.Key != "7" {
-		t.Fatalf("remote = %#v", remote)
+	if remote, found := published[idempotencyMarker]; !found || remote.Key != "7" {
+		t.Fatalf("published = %#v", published)
 	}
 }
 

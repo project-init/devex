@@ -19,7 +19,7 @@ import (
 const (
 	providerID = "github"
 
-	// generatedMarker hides the idempotency key in the issue body so Lookup can recognise
+	// generatedMarker hides the idempotency key in the issue body so Resolve can recognise
 	// issues this tool created when a local receipt is unavailable.
 	generatedMarker = "devex-generated-id"
 )
@@ -27,9 +27,7 @@ const (
 var markerPattern = regexp.MustCompile(`<!-- ` + generatedMarker + `: [^>]+ -->`)
 
 type Adapter struct {
-	client      *gh.Client
-	lookupCache map[string]provider.RemoteRef
-	lookupDone  bool
+	client *gh.Client
 }
 
 func New(authenticated bool, target config.Target) (*Adapter, error) {
@@ -48,11 +46,11 @@ func New(authenticated bool, target config.Target) (*Adapter, error) {
 		}
 		client.BaseURL = baseURL
 	}
-	return &Adapter{client: client, lookupCache: make(map[string]provider.RemoteRef)}, nil
+	return &Adapter{client: client}, nil
 }
 
 func NewWithClient(client *gh.Client) *Adapter {
-	return &Adapter{client: client, lookupCache: make(map[string]provider.RemoteRef)}
+	return &Adapter{client: client}
 }
 
 func (a *Adapter) ID() string { return providerID }
@@ -102,16 +100,21 @@ func (a *Adapter) Plan(
 	return operations, warnings, nil
 }
 
-func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyKey string) (*provider.RemoteRef, error) {
+func (a *Adapter) Resolve(
+	ctx context.Context,
+	target config.Target,
+	_ *provider.Plan,
+	pending []provider.Operation,
+) (map[string]provider.RemoteRef, error) {
 	if a.client == nil {
 		return nil, fmt.Errorf("github client is unavailable")
 	}
-	if a.lookupDone {
-		if remote, exists := a.lookupCache[idempotencyKey]; exists {
-			return &remote, nil
-		}
-		return nil, nil
+	wanted := make(map[string]bool, len(pending))
+	for _, operation := range pending {
+		wanted[operation.IdempotencyKey] = true
 	}
+	published := make(map[string]provider.RemoteRef, len(pending))
+
 	options := &gh.IssueListByRepoOptions{
 		State: "all",
 		ListOptions: gh.ListOptions{
@@ -128,21 +131,19 @@ func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyK
 				continue
 			}
 			for _, foundMarker := range markerPattern.FindAllString(issue.GetBody(), -1) {
-				remote := provider.RemoteRef{
+				if !wanted[foundMarker] {
+					continue
+				}
+				published[foundMarker] = provider.RemoteRef{
 					ID:   strconv.FormatInt(issue.GetID(), 10),
 					Key:  strconv.Itoa(issue.GetNumber()),
 					URL:  issue.GetHTMLURL(),
 					Type: "issue",
 				}
-				a.lookupCache[foundMarker] = remote
 			}
 		}
 		if response == nil || response.NextPage == 0 {
-			a.lookupDone = true
-			if remote, exists := a.lookupCache[idempotencyKey]; exists {
-				return &remote, nil
-			}
-			return nil, nil
+			return published, nil
 		}
 		options.ListOptions.Page = response.NextPage
 	}

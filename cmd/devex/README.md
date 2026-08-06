@@ -221,6 +221,8 @@ devex discovery publish apply docs/discoveries/audit-logs/.publish/github-projec
 
 `plan` performs no remote mutations. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.
 
+Planning is reproducible: an unchanged bundle and target produce the same operations and the same `plan_digest` on any machine. Only `generated_at` records the run, and it is excluded from the digest. `apply` never re-plans; it executes the frozen artifact and refuses to run against a bundle that changed after the plan was written.
+
 The generated `.gitignore` excludes `.publish/`. Receipts are small local YAML files that allow a later CLI session to resume an interrupted publication. Jira issue properties and hidden GitHub issue-body markers provide a secondary idempotency check if a receipt is lost.
 
 The tool deliberately does not prove or verify peer approval. Review and approval happen through the team's normal GitHub process; a human explicitly runs `publish apply` afterward.

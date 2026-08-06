@@ -23,7 +23,7 @@ const (
 	propertyKey = "devex.discovery"
 
 	// generatedLabel narrows the idempotency search to issues this tool created. Issue
-	// properties hold the identity, so removing the label from an issue hides it from Lookup.
+	// properties hold the identity, so removing the label from an issue hides it from Resolve.
 	generatedLabel = "devex-generated"
 
 	actionCreateIssue = "create_issue"
@@ -35,22 +35,17 @@ const (
 )
 
 type Adapter struct {
-	client      *http.Client
-	email       string
-	token       string
-	lookupCache map[string]provider.RemoteRef
-	lookupDone  bool
-	// lookupScope records the discovery ID the cached scan covers.
-	lookupScope string
+	client *http.Client
+	email  string
+	token  string
 	// linkCache holds the links already recorded on an issue, keyed by issue key.
 	linkCache map[string]map[string]bool
 }
 
 func New(authenticated bool) (*Adapter, error) {
 	adapter := &Adapter{
-		client:      &http.Client{Timeout: 15 * time.Second},
-		lookupCache: make(map[string]provider.RemoteRef),
-		linkCache:   make(map[string]map[string]bool),
+		client:    &http.Client{Timeout: 15 * time.Second},
+		linkCache: make(map[string]map[string]bool),
 	}
 	if authenticated {
 		adapter.email = os.Getenv("JIRA_EMAIL")
@@ -64,11 +59,10 @@ func New(authenticated bool) (*Adapter, error) {
 
 func NewWithClient(client *http.Client, email string, token string) *Adapter {
 	return &Adapter{
-		client:      client,
-		email:       email,
-		token:       token,
-		lookupCache: make(map[string]provider.RemoteRef),
-		linkCache:   make(map[string]map[string]bool),
+		client:    client,
+		email:     email,
+		token:     token,
+		linkCache: make(map[string]map[string]bool),
 	}
 }
 
@@ -95,7 +89,7 @@ func (a *Adapter) Plan(
 	links := make([]provider.Operation, 0, len(ordered))
 	for _, item := range ordered {
 		issueType := jiraIssueType(item.Kind, target.Jira.KindMapping)
-		// The discovery ID scopes Lookup to one bundle, so the search cost tracks the bundle
+		// The discovery ID scopes Resolve to one bundle, so the search cost tracks the bundle
 		// rather than every issue this tool has ever created in the project.
 		labels := uniqueSorted(append(
 			[]string{generatedLabel, workBreakdown.Discovery.ID},
@@ -157,20 +151,23 @@ func linkOperation(
 	}
 }
 
-func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyKey string) (*provider.RemoteRef, error) {
-	// The cached scan covers one bundle, so a key from another bundle needs its own scan.
-	scope := discoveryIDFromKey(idempotencyKey)
-	if a.lookupDone && a.lookupScope == scope {
-		if remote, exists := a.lookupCache[idempotencyKey]; exists {
-			return &remote, nil
-		}
-		return nil, nil
+func (a *Adapter) Resolve(
+	ctx context.Context,
+	target config.Target,
+	plan *provider.Plan,
+	pending []provider.Operation,
+) (map[string]provider.RemoteRef, error) {
+	wanted := make(map[string]bool, len(pending))
+	for _, operation := range pending {
+		wanted[operation.IdempotencyKey] = true
 	}
-	a.lookupCache = make(map[string]provider.RemoteRef)
+	published := make(map[string]provider.RemoteRef, len(pending))
 
+	// The discovery ID scopes the scan to one bundle, so the cost tracks the bundle rather
+	// than every issue this tool has created in the project.
 	jql := fmt.Sprintf(`project = %q AND labels = %q`, target.Jira.ProjectKey, generatedLabel)
-	if scope != "" {
-		jql += fmt.Sprintf(` AND labels = %q`, scope)
+	if plan.DiscoveryID != "" {
+		jql += fmt.Sprintf(` AND labels = %q`, plan.DiscoveryID)
 	}
 	nextPageToken := ""
 	for {
@@ -218,8 +215,8 @@ func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyK
 				}
 				return nil, err
 			}
-			if property.Value.ID != "" {
-				a.lookupCache[property.Value.ID] = provider.RemoteRef{
+			if wanted[property.Value.ID] {
+				published[property.Value.ID] = provider.RemoteRef{
 					ID:   issue.ID,
 					Key:  issue.Key,
 					URL:  strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + issue.Key,
@@ -232,12 +229,7 @@ func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyK
 		}
 		nextPageToken = result.NextPageToken
 	}
-	a.lookupDone = true
-	a.lookupScope = scope
-	if remote, exists := a.lookupCache[idempotencyKey]; exists {
-		return &remote, nil
-	}
-	return nil, nil
+	return published, nil
 }
 
 func (a *Adapter) Execute(
@@ -478,16 +470,6 @@ func uniqueSorted(values []string) []string {
 	}
 	sort.Strings(unique)
 	return unique
-}
-
-// discoveryIDFromKey recovers the bundle scope from an idempotency key, which Plan builds as
-// "<discovery id>/<item id>".
-func discoveryIDFromKey(idempotencyKey string) string {
-	scope, _, found := strings.Cut(idempotencyKey, "/")
-	if !found {
-		return ""
-	}
-	return scope
 }
 
 func resolveItem(
