@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/project-init/devex/internal/discovery/artifact"
 	"github.com/project-init/devex/internal/discovery/config"
@@ -191,6 +192,46 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 	// A receipt that settles every operation leaves nothing to resolve.
 	if second.resolveCalls != 0 {
 		t.Fatalf("resumed resolve calls = %d, want 0", second.resolveCalls)
+	}
+}
+
+// The digest names the work, so an unchanged bundle keeps its receipt no matter where or when it
+// was planned.
+func TestPlanDigestIgnoresRunAndLocation(t *testing.T) {
+	base := &provider.Plan{
+		SchemaVersion: provider.SchemaVersion,
+		ID:            "plan-test",
+		Provider:      "fake",
+		SourceDigest:  "sha256:abc",
+		BundlePath:    "/home/one/repo/docs/discoveries/audit",
+		GeneratedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Operations:    []provider.Operation{{ID: "create-WI-001", ItemID: "WI-001"}},
+	}
+	elsewhere := *base
+	elsewhere.BundlePath = "/ci/checkout/docs/discoveries/audit"
+	elsewhere.GeneratedAt = time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+
+	first, err := PlanDigest(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := PlanDigest(&elsewhere)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("digests differ across machine and run:\n%s\n%s", first, second)
+	}
+
+	// A bundle that genuinely changed must still invalidate the receipt.
+	changed := *base
+	changed.SourceDigest = "sha256:def"
+	third, err := PlanDigest(&changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third == first {
+		t.Fatal("a changed bundle produced an unchanged digest")
 	}
 }
 

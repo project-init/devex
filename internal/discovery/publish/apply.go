@@ -44,9 +44,15 @@ func Apply(
 		return nil, err
 	}
 
-	published, err := resolvePending(ctx, plan, adapter, receipt)
-	if err != nil {
-		return nil, err
+	// A failed search leaves the receipt on disk claiming it is mid-apply, so record the stop
+	// and hand the receipt back rather than returning nil and losing the trail.
+	published, resolveErr := resolvePending(ctx, plan, adapter, receipt)
+	if resolveErr != nil {
+		receipt.Status = "partial"
+		if err := saveReceipt(receiptPath, receipt); err != nil {
+			return nil, err
+		}
+		return receipt, fmt.Errorf("resolve already published work: %w", resolveErr)
 	}
 
 	for _, operation := range plan.Operations {
@@ -131,7 +137,11 @@ func existingReceipt(path string, plan *provider.Plan) (*provider.Receipt, error
 	receipt, err := LoadReceipt(path)
 	if err == nil {
 		if receipt.PlanDigest != plan.PlanDigest {
-			return nil, fmt.Errorf("existing receipt belongs to a different plan")
+			return nil, fmt.Errorf(
+				"existing receipt %s belongs to a different plan; delete it to apply this one, "+
+					"which republishes nothing already recorded remotely",
+				path,
+			)
 		}
 		return receipt, nil
 	}

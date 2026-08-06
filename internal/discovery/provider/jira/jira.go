@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
@@ -91,10 +92,21 @@ func (a *Adapter) Plan(
 		issueType := jiraIssueType(item.Kind, target.Jira.KindMapping)
 		// The discovery ID scopes Resolve to one bundle, so the search cost tracks the bundle
 		// rather than every issue this tool has ever created in the project.
-		labels := uniqueSorted(append(
+		labels := provider.UniqueSorted(append(
 			[]string{generatedLabel, workBreakdown.Discovery.ID},
 			item.Labels...,
 		))
+		// Jira rejects whitespace in labels, and labels are only applied once the issue is
+		// being created, so catch it here rather than part-way through publishing.
+		for _, label := range labels {
+			if strings.ContainsFunc(label, unicode.IsSpace) {
+				return nil, nil, fmt.Errorf(
+					"item %s has label %q; Jira labels cannot contain whitespace",
+					item.ID,
+					label,
+				)
+			}
+		}
 		marker := workBreakdown.Discovery.ID + "/" + string(item.ID)
 		for _, dependency := range item.DependsOn {
 			links = append(links, linkOperation(workBreakdown.Discovery.ID, item.ID, dependency, linkType))
@@ -224,7 +236,8 @@ func (a *Adapter) Resolve(
 				}
 			}
 		}
-		if result.IsLast || result.NextPageToken == "" {
+		// Every pending key is accounted for, so the remaining pages cannot add anything.
+		if len(published) == len(wanted) || result.IsLast || result.NextPageToken == "" {
 			break
 		}
 		nextPageToken = result.NextPageToken
@@ -310,6 +323,11 @@ func (a *Adapter) executeCreateIssue(
 	if err := a.do(request, &response); err != nil {
 		return provider.RemoteRef{}, err
 	}
+	// A just-created issue has no links, so record that rather than asking Jira for it.
+	if a.linkCache == nil {
+		a.linkCache = make(map[string]map[string]bool)
+	}
+	a.linkCache[response.Key] = make(map[string]bool)
 	return provider.RemoteRef{
 		ID:   response.ID,
 		Key:  response.Key,
@@ -456,20 +474,6 @@ func (a *Adapter) rememberLink(issueKey string, linkType string, blockingKey str
 
 func linkKey(linkType string, blockingKey string) string {
 	return linkType + "\x00" + blockingKey
-}
-
-func uniqueSorted(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	unique := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		unique = append(unique, value)
-	}
-	sort.Strings(unique)
-	return unique
 }
 
 func resolveItem(

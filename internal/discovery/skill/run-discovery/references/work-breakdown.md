@@ -32,7 +32,9 @@ items:
 
 ## Rules
 
+- Write `discovery.id` as lowercase letters and digits separated by single hyphens. Jira publishes it as a label, and labels reject whitespace.
 - Use stable uppercase IDs containing letters, digits, hyphens, or underscores.
+- Keep labels free of whitespace. Jira rejects such labels only once it starts creating issues.
 - Use one of: `initiative`, `feature`, `task`, `defect`, or `research`.
 - Give every item a nonempty title and description.
 - Give initiatives no parent.

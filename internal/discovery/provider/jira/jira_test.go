@@ -346,6 +346,68 @@ func TestExecuteLinkRequiresPublishedItems(t *testing.T) {
 	}
 }
 
+// Jira applies labels while creating an issue, so an unusable one must stop the plan instead of
+// stranding a half-published bundle.
+func TestPlanRejectsLabelsJiraCannotApply(t *testing.T) {
+	_, _, err := NewWithClient(nil, "user@example.com", "token").Plan(
+		context.Background(),
+		&domain.WorkBreakdown{
+			Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
+			Items: []domain.WorkItem{{
+				ID:          "WI-001",
+				Kind:        domain.KindTask,
+				Title:       "First",
+				Description: "First.",
+				Labels:      []string{"needs review"},
+			}},
+		},
+		nil,
+		jiraTarget("https://jira.test"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("err = %v, want a whitespace label rejection", err)
+	}
+}
+
+// An issue created in this run cannot already carry links, so no read should be spent on it.
+func TestExecuteLinkTrustsIssuesCreatedThisRun(t *testing.T) {
+	issueGets := 0
+	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
+		if request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/rest/api/3/issue/") {
+			issueGets++
+		}
+		if request.Method == http.MethodPost && request.URL.Path == "/rest/api/3/issue" {
+			return jiraJSONResponse(`{"id":"10042","key":"DEVEX-8"}`)
+		}
+		return jiraJSONResponse(`{"fields":{"issuelinks":[]}}`)
+	})}
+	adapter := NewWithClient(client, "user@example.com", "token")
+	target := jiraTarget("https://jira.test")
+
+	created, err := adapter.Execute(context.Background(), target, provider.Operation{
+		ID: "create-WI-002",
+		Fields: map[string]any{
+			"project_key": "DEVEX", "issue_type": "Task", "title": "Second",
+			"description": "Second.", "labels": []any{generatedLabel},
+			"parent_item_id": "", "idempotency_marker": "audit/WI-002",
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Execute(
+		context.Background(),
+		target,
+		linkOperation("audit", "WI-002", "WI-001", defaultLinkType),
+		map[domain.ItemID]provider.RemoteRef{"WI-001": {Key: "DEVEX-7"}, "WI-002": created},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if issueGets != 0 {
+		t.Fatalf("issue reads = %d, want none for an issue created this run", issueGets)
+	}
+}
+
 // Scoping the scan to one bundle keeps the search cost proportional to the bundle rather than to
 // every issue this tool has created in the project.
 func TestResolveScopesSearchToTheDiscoveryBundle(t *testing.T) {

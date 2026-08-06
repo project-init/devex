@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -76,7 +75,7 @@ func (a *Adapter) Plan(
 		if label := target.GitHub.KindLabels[item.Kind]; label != "" {
 			labels = append(labels, label)
 		}
-		labels = uniqueSorted(labels)
+		labels = provider.UniqueSorted(labels)
 		dependsOn := dependenciesFor(item)
 		operations = append(operations, provider.Operation{
 			ID:             "create-" + string(item.ID),
@@ -233,21 +232,7 @@ func dependenciesFor(item domain.WorkItem) []string {
 	for _, dependency := range item.DependsOn {
 		ids = append(ids, "create-"+string(dependency))
 	}
-	return uniqueSorted(ids)
-}
-
-func uniqueSorted(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if _, exists := seen[value]; value == "" || exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
+	return provider.UniqueSorted(ids)
 }
 
 func stringSlice(value any) ([]string, error) {

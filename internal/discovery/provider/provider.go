@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,6 +71,22 @@ type RemoteRef struct {
 	Key  string `yaml:"key,omitempty" json:"key,omitempty"`
 	URL  string `yaml:"url" json:"url"`
 	Type string `yaml:"type" json:"type"`
+}
+
+// UniqueSorted returns the distinct non-empty values in sorted order, so label sets stay stable
+// across plans and therefore keep the plan digest stable.
+func UniqueSorted(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; value == "" || exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func ResolveReferences(value string, resolved map[domain.ItemID]RemoteRef) (string, error) {
