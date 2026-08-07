@@ -116,13 +116,38 @@ func TestBodyLinksTheDiscoveryDocument(t *testing.T) {
 	}
 	documentURL := "https://github.com/project-init/devex/blob/main/docs/audit/discovery.md"
 
-	body := bodyForItem(item, documentURL, "<!-- marker -->")
+	input := provider.PlanInput{DocumentURL: documentURL}
+
+	body := bodyForItem(item, input, "<!-- marker -->")
 	if !strings.Contains(body, "Discovery: "+documentURL) {
 		t.Fatalf("body = %q, want the document URL", body)
 	}
 
 	// Without a URL the footer names a file the reader cannot open, so it is dropped entirely.
-	if body := bodyForItem(item, "", "<!-- marker -->"); strings.Contains(body, "Discovery:") {
+	if body := bodyForItem(item, provider.PlanInput{}, "<!-- marker -->"); strings.Contains(body, "Discovery:") {
 		t.Fatalf("body = %q, want no discovery footer", body)
+	}
+}
+
+// The initiative is the entry point a reader lands on, so it carries the link back to the request.
+func TestBodyLinksTheTrackingIssueFromInitiatives(t *testing.T) {
+	input := provider.PlanInput{TrackingURL: "https://jira.test/browse/DEVEX-42"}
+	initiative := domain.WorkItem{
+		ID:          "INIT-001",
+		Kind:        domain.KindInitiative,
+		Title:       "Deliver audit logs",
+		Description: "Deliver audit logs.",
+	}
+
+	body := bodyForItem(initiative, input, "<!-- marker -->")
+	if !strings.Contains(body, "Tracking issue: "+input.TrackingURL) {
+		t.Fatalf("body = %q, want the tracking issue", body)
+	}
+
+	task := initiative
+	task.ID = "WI-001"
+	task.Kind = domain.KindTask
+	if body := bodyForItem(task, input, "<!-- marker -->"); strings.Contains(body, "Tracking issue:") {
+		t.Fatalf("body = %q, want no tracking link on a task", body)
 	}
 }

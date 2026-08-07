@@ -229,7 +229,9 @@ The tool deliberately does not prove or verify peer approval. Review and approva
 
 GitHub initiatives are tracking issues, and hierarchy and dependencies are rendered as links in issue bodies. Jira kind and issue-type mappings are configured per target. Jira publishes every `depends_on` edge as a real issue link oriented so the dependency blocks the dependent item; set `link_type` on the target to use a link type other than `Blocks`.
 
-Write the discovery document's title as a Markdown link to the issue that prompted the investigation, as the template does. Jira relates every published epic back to that issue, so a reader who lands on the epic can reach the request behind it. A title linking another tracker is reported as a warning and skipped, because only an issue in the target instance can be linked.
+Write the discovery document's title as a Markdown link to the issue that prompted the investigation, as the template does. Jira relates every published epic back to that issue, and GitHub links it from the tracking issue's body, so a reader who lands there can reach the request behind it. A title linking another tracker is reported as a Jira warning and skipped, because only an issue in the target instance can be linked.
+
+Item descriptions and acceptance criteria are GitHub Flavored Markdown. GitHub renders them directly; Jira converts them to Atlassian Document Format, so headings, lists, tables, task lists, code, emphasis, strikethrough, and links survive rather than flattening into prose. Raw HTML has no ADF equivalent and is dropped, and an image becomes a link to its source because ADF images reference uploaded attachments.
 
 Published issues footer the discovery document as a URL on the repository's default branch, resolved from the `origin` remote. The link works once the branch carrying the bundle merges. A bundle outside a GitHub checkout has no such URL, and the footer is omitted rather than naming a path no reader can open.
 
