@@ -11,6 +11,7 @@ import (
 	"github.com/project-init/devex/internal/discovery/artifact"
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/provider"
+	"github.com/project-init/devex/internal/discovery/source"
 )
 
 func CreatePlan(
@@ -20,7 +21,12 @@ func CreatePlan(
 	target config.Target,
 	adapter provider.Adapter,
 ) (*provider.Plan, error) {
-	operations, warnings, err := adapter.Plan(ctx, bundle.WorkBreakdown, bundle.DiscoveryContent, target)
+	input := provider.PlanInput{
+		WorkBreakdown: bundle.WorkBreakdown,
+		DocumentURL:   source.DocumentURL(bundle.Directory, bundle.WorkBreakdown.Discovery.Document),
+		TrackingURL:   artifact.TrackingURL(bundle.DiscoveryContent),
+	}
+	operations, warnings, err := adapter.Plan(ctx, input, target)
 	if err != nil {
 		return nil, err
 	}
