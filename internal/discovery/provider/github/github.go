@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -16,14 +15,18 @@ import (
 	"github.com/project-init/devex/internal/discovery/provider"
 )
 
-const providerID = "github"
+const (
+	providerID = "github"
 
-var markerPattern = regexp.MustCompile(`<!-- devex-discovery-id: [^>]+ -->`)
+	// generatedMarker hides the idempotency key in the issue body so Resolve can recognise
+	// issues this tool created when a local receipt is unavailable.
+	generatedMarker = "devex-generated-id"
+)
+
+var markerPattern = regexp.MustCompile(`<!-- ` + generatedMarker + `: [^>]+ -->`)
 
 type Adapter struct {
-	client      *gh.Client
-	lookupCache map[string]provider.RemoteRef
-	lookupDone  bool
+	client *gh.Client
 }
 
 func New(authenticated bool, target config.Target) (*Adapter, error) {
@@ -42,11 +45,11 @@ func New(authenticated bool, target config.Target) (*Adapter, error) {
 		}
 		client.BaseURL = baseURL
 	}
-	return &Adapter{client: client, lookupCache: make(map[string]provider.RemoteRef)}, nil
+	return &Adapter{client: client}, nil
 }
 
 func NewWithClient(client *gh.Client) *Adapter {
-	return &Adapter{client: client, lookupCache: make(map[string]provider.RemoteRef)}
+	return &Adapter{client: client}
 }
 
 func (a *Adapter) ID() string { return providerID }
@@ -72,7 +75,7 @@ func (a *Adapter) Plan(
 		if label := target.GitHub.KindLabels[item.Kind]; label != "" {
 			labels = append(labels, label)
 		}
-		labels = uniqueSorted(labels)
+		labels = provider.UniqueSorted(labels)
 		dependsOn := dependenciesFor(item)
 		operations = append(operations, provider.Operation{
 			ID:             "create-" + string(item.ID),
@@ -96,16 +99,21 @@ func (a *Adapter) Plan(
 	return operations, warnings, nil
 }
 
-func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyKey string) (*provider.RemoteRef, error) {
+func (a *Adapter) Resolve(
+	ctx context.Context,
+	target config.Target,
+	_ *provider.Plan,
+	pending []provider.Operation,
+) (map[string]provider.RemoteRef, error) {
 	if a.client == nil {
 		return nil, fmt.Errorf("github client is unavailable")
 	}
-	if a.lookupDone {
-		if remote, exists := a.lookupCache[idempotencyKey]; exists {
-			return &remote, nil
-		}
-		return nil, nil
+	wanted := make(map[string]bool, len(pending))
+	for _, operation := range pending {
+		wanted[operation.IdempotencyKey] = true
 	}
+	published := make(map[string]provider.RemoteRef, len(pending))
+
 	options := &gh.IssueListByRepoOptions{
 		State: "all",
 		ListOptions: gh.ListOptions{
@@ -122,21 +130,19 @@ func (a *Adapter) Lookup(ctx context.Context, target config.Target, idempotencyK
 				continue
 			}
 			for _, foundMarker := range markerPattern.FindAllString(issue.GetBody(), -1) {
-				remote := provider.RemoteRef{
+				if !wanted[foundMarker] {
+					continue
+				}
+				published[foundMarker] = provider.RemoteRef{
 					ID:   strconv.FormatInt(issue.GetID(), 10),
 					Key:  strconv.Itoa(issue.GetNumber()),
 					URL:  issue.GetHTMLURL(),
 					Type: "issue",
 				}
-				a.lookupCache[foundMarker] = remote
 			}
 		}
 		if response == nil || response.NextPage == 0 {
-			a.lookupDone = true
-			if remote, exists := a.lookupCache[idempotencyKey]; exists {
-				return &remote, nil
-			}
-			return nil, nil
+			return published, nil
 		}
 		options.ListOptions.Page = response.NextPage
 	}
@@ -181,7 +187,7 @@ func (a *Adapter) Execute(
 }
 
 func marker(discoveryID string, itemID domain.ItemID) string {
-	return fmt.Sprintf("<!-- devex-discovery-id: %s/%s -->", discoveryID, itemID)
+	return fmt.Sprintf("<!-- %s: %s/%s -->", generatedMarker, discoveryID, itemID)
 }
 
 func bodyForItem(workBreakdown *domain.WorkBreakdown, item domain.WorkItem, idempotencyMarker string) string {
@@ -226,21 +232,7 @@ func dependenciesFor(item domain.WorkItem) []string {
 	for _, dependency := range item.DependsOn {
 		ids = append(ids, "create-"+string(dependency))
 	}
-	return uniqueSorted(ids)
-}
-
-func uniqueSorted(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if _, exists := seen[value]; value == "" || exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
+	return provider.UniqueSorted(ids)
 }
 
 func stringSlice(value any) ([]string, error) {

@@ -36,7 +36,7 @@ func TestExecuteCreatesIssue(t *testing.T) {
 		Fields: map[string]any{
 			"title":  "Implement audit logs",
 			"body":   "Parent: {{remote:INIT-001}}",
-			"labels": []any{"devex-discovery", "feature"},
+			"labels": []any{"security", "feature"},
 		},
 	}, map[domain.ItemID]provider.RemoteRef{
 		"INIT-001": {URL: "https://example.test/1"},
@@ -50,19 +50,24 @@ func TestExecuteCreatesIssue(t *testing.T) {
 }
 
 func TestLookupFindsIdempotencyMarker(t *testing.T) {
+	// Build the marker through the helper so the pattern and the format cannot drift apart.
+	idempotencyMarker := marker("audit", "WI-001")
 	client := newTestClient(t, func(_ *http.Request) *http.Response {
-		return jsonResponse(`[{"id":42,"number":7,"html_url":"https://github.test/issues/7","body":"<!-- devex-discovery-id: audit/WI-001 -->"}]`)
+		return jsonResponse(
+			`[{"id":42,"number":7,"html_url":"https://github.test/issues/7","body":"` + idempotencyMarker + `"}]`,
+		)
 	})
-	remote, err := NewWithClient(client).Lookup(
+	published, err := NewWithClient(client).Resolve(
 		context.Background(),
 		githubTarget(),
-		"<!-- devex-discovery-id: audit/WI-001 -->",
+		&provider.Plan{},
+		[]provider.Operation{{ItemID: "WI-001", IdempotencyKey: idempotencyMarker}},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if remote == nil || remote.Key != "7" {
-		t.Fatalf("remote = %#v", remote)
+	if remote, found := published[idempotencyMarker]; !found || remote.Key != "7" {
+		t.Fatalf("published = %#v", published)
 	}
 }
 

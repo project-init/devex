@@ -34,6 +34,24 @@ func TestWorkBreakdownValidate(t *testing.T) {
 			},
 			wantError: "duplicate",
 		},
+		{
+			// Hierarchy already orders this work, and providers publish dependencies as
+			// blocking links, so the edge would make a parent block its own child.
+			name: "depends on parent",
+			mutate: func(workBreakdown *WorkBreakdown) {
+				workBreakdown.Items[1].DependsOn = []ItemID{workBreakdown.Items[1].Parent}
+			},
+			wantError: "ancestor",
+		},
+		{
+			// The discovery ID is published as a Jira label, and Jira rejects whitespace in
+			// labels only after every issue has been created.
+			name: "discovery id is not label safe",
+			mutate: func(workBreakdown *WorkBreakdown) {
+				workBreakdown.Discovery.ID = "Audit Logs"
+			},
+			wantError: "discovery.id",
+		},
 	}
 
 	for _, test := range tests {

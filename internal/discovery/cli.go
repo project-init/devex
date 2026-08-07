@@ -252,11 +252,28 @@ func applyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			receipt, err := publish.Apply(cmd.Context(), args[0], adapter, func(result provider.OperationResult) {
-				if result.Remote != nil {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s: %s\n", result.Status, result.ItemID, result.Remote.URL)
-				}
-			})
+			receipt, err := publish.Apply(
+				cmd.Context(),
+				args[0],
+				adapter,
+				func(operation provider.Operation, result provider.OperationResult) {
+					if result.Remote == nil {
+						return
+					}
+					// Relationship operations carry no item, so name them by operation.
+					name := string(result.ItemID)
+					if name == "" {
+						name = operation.ID
+					}
+					_, _ = fmt.Fprintf(
+						cmd.OutOrStdout(),
+						"%s %s: %s\n",
+						result.Status,
+						name,
+						result.Remote.URL,
+					)
+				},
+			)
 			if receipt != nil {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Receipt: %s\n", publish.DefaultReceiptPath(args[0]))
 			}

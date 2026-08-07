@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,7 +16,10 @@ const SchemaVersion = "v1"
 type Adapter interface {
 	ID() string
 	Plan(context.Context, *domain.WorkBreakdown, []byte, config.Target) ([]Operation, []string, error)
-	Lookup(context.Context, config.Target, string) (*RemoteRef, error)
+	// Resolve reports which of the given operations already exist remotely, keyed by
+	// idempotency key. Apply calls it once with the operations a receipt has not already
+	// accounted for, so an adapter can search for exactly the work that remains.
+	Resolve(context.Context, config.Target, *Plan, []Operation) (map[string]RemoteRef, error)
 	Execute(context.Context, config.Target, Operation, map[domain.ItemID]RemoteRef) (RemoteRef, error)
 }
 
@@ -25,6 +29,7 @@ type Plan struct {
 	Provider      string        `yaml:"provider" json:"provider"`
 	TargetName    string        `yaml:"target" json:"target"`
 	Target        config.Target `yaml:"target_config" json:"target_config"`
+	DiscoveryID   string        `yaml:"discovery_id" json:"discovery_id"`
 	BundlePath    string        `yaml:"bundle_path" json:"bundle_path"`
 	SourceDigest  string        `yaml:"source_digest" json:"source_digest"`
 	PlanDigest    string        `yaml:"plan_digest" json:"plan_digest"`
@@ -66,6 +71,22 @@ type RemoteRef struct {
 	Key  string `yaml:"key,omitempty" json:"key,omitempty"`
 	URL  string `yaml:"url" json:"url"`
 	Type string `yaml:"type" json:"type"`
+}
+
+// UniqueSorted returns the distinct non-empty values in sorted order, so label sets stay stable
+// across plans and therefore keep the plan digest stable.
+func UniqueSorted(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; value == "" || exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func ResolveReferences(value string, resolved map[domain.ItemID]RemoteRef) (string, error) {

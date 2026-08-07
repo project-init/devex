@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/project-init/devex/internal/discovery/provider"
 	"gopkg.in/yaml.v3"
@@ -82,7 +83,12 @@ func LoadReceipt(path string) (*provider.Receipt, error) {
 func PlanDigest(plan *provider.Plan) (string, error) {
 	copy := *plan
 	copy.PlanDigest = ""
-	copy.GeneratedAt = copy.GeneratedAt.UTC()
+	// The digest identifies the work, not the run that produced it. Hashing the timestamp gave
+	// an unchanged bundle a new digest on every plan, and hashing the bundle's absolute path
+	// gave it a different digest on every machine; both discarded a usable receipt. SourceDigest
+	// already identifies the bundle's content, so its location adds nothing.
+	copy.GeneratedAt = time.Time{}
+	copy.BundlePath = ""
 	copy.Operations = append([]provider.Operation(nil), plan.Operations...)
 	for index := range copy.Operations {
 		if copy.Operations[index].Fields == nil {
