@@ -13,9 +13,20 @@ import (
 
 const SchemaVersion = "v1"
 
+// PlanInput carries the bundle and everything derived from its surroundings that planning needs.
+// The derived fields are best-effort: a bundle outside a GitHub checkout has no document URL, and
+// a discovery document that links no tracking issue has no tracking URL.
+type PlanInput struct {
+	WorkBreakdown *domain.WorkBreakdown
+	// DocumentURL resolves the discovery document for a reader, empty when no URL can be built.
+	DocumentURL string
+	// TrackingURL is the issue the discovery document links from its title, empty when absent.
+	TrackingURL string
+}
+
 type Adapter interface {
 	ID() string
-	Plan(context.Context, *domain.WorkBreakdown, []byte, config.Target) ([]Operation, []string, error)
+	Plan(context.Context, PlanInput, config.Target) ([]Operation, []string, error)
 	// Resolve reports which of the given operations already exist remotely, keyed by
 	// idempotency key. Apply calls it once with the operations a receipt has not already
 	// accounted for, so an adapter can search for exactly the work that remains.

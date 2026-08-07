@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -33,7 +34,15 @@ const (
 	// defaultLinkType expresses depends_on as a blocking relationship. Jira orients a link
 	// so that inwardIssue holds the blocker and outwardIssue holds the blocked issue.
 	defaultLinkType = "Blocks"
+
+	// trackingLinkType ties an epic back to the issue that prompted the investigation. The
+	// relationship is informational, so it stays "Relates" rather than following link_type.
+	trackingLinkType = "Relates"
 )
+
+// browsePattern extracts the issue key from a Jira browse URL, the form the discovery skill
+// writes into a document title.
+var browsePattern = regexp.MustCompile(`^/browse/([A-Z][A-Z0-9_]*-\d+)$`)
 
 type Adapter struct {
 	client *http.Client
@@ -71,13 +80,13 @@ func (a *Adapter) ID() string { return providerID }
 
 func (a *Adapter) Plan(
 	_ context.Context,
-	workBreakdown *domain.WorkBreakdown,
-	_ []byte,
+	input provider.PlanInput,
 	target config.Target,
 ) ([]provider.Operation, []string, error) {
 	if err := target.Validate(); err != nil {
 		return nil, nil, err
 	}
+	workBreakdown := input.WorkBreakdown
 	ordered, err := workBreakdown.OrderedItems()
 	if err != nil {
 		return nil, nil, err
@@ -86,6 +95,7 @@ func (a *Adapter) Plan(
 	if linkType == "" {
 		linkType = defaultLinkType
 	}
+	trackingKey := trackingIssueKey(input.TrackingURL, target.Jira.BaseURL)
 	operations := make([]provider.Operation, 0, len(ordered))
 	links := make([]provider.Operation, 0, len(ordered))
 	for _, item := range ordered {
@@ -111,6 +121,11 @@ func (a *Adapter) Plan(
 		for _, dependency := range item.DependsOn {
 			links = append(links, linkOperation(workBreakdown.Discovery.ID, item.ID, dependency, linkType))
 		}
+		// Epics carry the relationship because they are what a reader lands on from a board;
+		// repeating it on every task would bury the tracking issue in noise.
+		if trackingKey != "" && item.Kind == domain.KindInitiative {
+			links = append(links, trackingOperation(workBreakdown.Discovery.ID, item.ID, trackingKey))
+		}
 		operations = append(operations, provider.Operation{
 			ID:             "create-" + string(item.ID),
 			Action:         actionCreateIssue,
@@ -119,25 +134,78 @@ func (a *Adapter) Plan(
 			IdempotencyKey: marker,
 			Summary:        fmt.Sprintf("Create Jira %s for %s", issueType, item.ID),
 			Fields: map[string]any{
-				"project_key":        target.Jira.ProjectKey,
-				"issue_type":         issueType,
-				"title":              item.Title,
-				"description":        jiraDescription(item, workBreakdown.Discovery.Document),
-				"labels":             labels,
-				"parent_item_id":     string(item.Parent),
-				"idempotency_marker": marker,
+				"project_key":         target.Jira.ProjectKey,
+				"issue_type":          issueType,
+				"title":               item.Title,
+				"description":         item.Description,
+				"acceptance_criteria": item.AcceptanceCriteria,
+				"document_url":        input.DocumentURL,
+				"labels":              labels,
+				"parent_item_id":      string(item.Parent),
+				"idempotency_marker":  marker,
 			},
 		})
 	}
 	var warnings []string
 	if len(links) > 0 {
+		types := []string{linkType}
+		if trackingKey != "" {
+			types = append(types, trackingLinkType)
+		}
 		warnings = append(warnings, fmt.Sprintf(
-			"Publishing %d dependency link(s) needs the Jira Link Issues permission and the %q link type.",
+			"Publishing %d issue link(s) needs the Jira Link Issues permission and these link types: %s.",
 			len(links),
-			linkType,
+			strings.Join(provider.UniqueSorted(types), ", "),
+		))
+	}
+	if input.TrackingURL != "" && trackingKey == "" {
+		warnings = append(warnings, fmt.Sprintf(
+			"The discovery document links %s, which is not an issue in %s; epics will not relate back to it.",
+			input.TrackingURL,
+			target.Jira.BaseURL,
 		))
 	}
 	return append(operations, links...), warnings, nil
+}
+
+// trackingIssueKey reports the issue the discovery document links from its title, empty unless
+// that link addresses the instance being published to. A document may reference any tracker, and
+// only an issue in this instance can be linked.
+func trackingIssueKey(trackingURL string, baseURL string) string {
+	if trackingURL == "" {
+		return ""
+	}
+	tracking, err := url.Parse(trackingURL)
+	if err != nil {
+		return ""
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil || !strings.EqualFold(tracking.Host, base.Host) {
+		return ""
+	}
+	match := browsePattern.FindStringSubmatch(strings.TrimSuffix(tracking.Path, "/"))
+	if match == nil {
+		return ""
+	}
+
+	return match[1]
+}
+
+// trackingOperation relates an epic back to the issue that prompted the investigation. The issue
+// exists already, so the operation carries its key rather than an item ID to resolve.
+func trackingOperation(discoveryID string, item domain.ItemID, trackingKey string) provider.Operation {
+	return provider.Operation{
+		ID:             "link-" + trackingKey + "/" + string(item),
+		Action:         actionLinkIssues,
+		DependsOn:      []string{"create-" + string(item)},
+		IdempotencyKey: discoveryID + "/link/" + trackingKey + "/" + string(item),
+		Summary:        fmt.Sprintf("Link Jira %s: %s relates to %s", trackingLinkType, item, trackingKey),
+		Fields: map[string]any{
+			"link_type":       trackingLinkType,
+			"blocking_key":    trackingKey,
+			"blocked_item_id": string(item),
+		},
+	}
 }
 
 // linkOperation records that dependency blocks item. Link operations carry no ItemID because
@@ -283,6 +351,11 @@ func (a *Adapter) executeCreateIssue(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
+	acceptanceCriteria, err := fieldStringSlice(operation, "acceptance_criteria")
+	if err != nil {
+		return provider.RemoteRef{}, err
+	}
+	documentURL, _ := operation.Fields["document_url"].(string)
 	labels, err := fieldStringSlice(operation, "labels")
 	if err != nil {
 		return provider.RemoteRef{}, err
@@ -296,7 +369,7 @@ func (a *Adapter) executeCreateIssue(
 		"project":     map[string]string{"key": projectKey},
 		"issuetype":   map[string]string{"name": issueType},
 		"summary":     title,
-		"description": adfDocument(description),
+		"description": adfDescription(description, acceptanceCriteria, documentURL),
 		"labels":      labels,
 	}
 	if parentID, _ := operation.Fields["parent_item_id"].(string); parentID != "" {
@@ -346,23 +419,29 @@ func (a *Adapter) executeLink(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	blocking, err := resolveItem(operation, resolved, "blocking_item_id")
-	if err != nil {
-		return provider.RemoteRef{}, err
+	// A tracking link names an issue that already exists, so it carries a key outright; a
+	// dependency link names an item this run published and resolves it.
+	blockingKey, _ := operation.Fields["blocking_key"].(string)
+	if blockingKey == "" {
+		blocking, err := resolveItem(operation, resolved, "blocking_item_id")
+		if err != nil {
+			return provider.RemoteRef{}, err
+		}
+		blockingKey = blocking.Key
 	}
 	blocked, err := resolveItem(operation, resolved, "blocked_item_id")
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
 
-	linked, err := a.linkExists(ctx, target, blocked.Key, linkType, blocking.Key)
+	linked, err := a.linkExists(ctx, target, blocked.Key, linkType, blockingKey)
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
 	if !linked {
 		body := map[string]any{
 			"type":         map[string]string{"name": linkType},
-			"inwardIssue":  map[string]string{"key": blocking.Key},
+			"inwardIssue":  map[string]string{"key": blockingKey},
 			"outwardIssue": map[string]string{"key": blocked.Key},
 		}
 		request, err := a.newRequest(ctx, target, http.MethodPost, "/rest/api/3/issueLink", body)
@@ -372,7 +451,7 @@ func (a *Adapter) executeLink(
 		if err := a.do(request, nil); err != nil {
 			return provider.RemoteRef{}, a.describeLinkFailure(ctx, target, linkType, err)
 		}
-		a.rememberLink(blocked.Key, linkType, blocking.Key)
+		a.rememberLink(blocked.Key, linkType, blockingKey)
 	}
 	return provider.RemoteRef{Key: blocked.Key, URL: blocked.URL, Type: "issue_link"}, nil
 }
@@ -563,36 +642,79 @@ func jiraIssueType(kind domain.ItemKind, mappings map[domain.ItemKind]string) st
 	}
 }
 
-func jiraDescription(item domain.WorkItem, document string) string {
-	var description strings.Builder
-	description.WriteString(item.Description)
-	if len(item.AcceptanceCriteria) > 0 {
-		description.WriteString("\n\nAcceptance criteria\n")
-		for _, criterion := range item.AcceptanceCriteria {
-			description.WriteString("- ")
-			description.WriteString(criterion)
-			description.WriteString("\n")
-		}
+// adfDescription renders a work item as an Atlassian Document Format document. ADF has no
+// Markdown fallback: a heading is a heading node and a bullet is a list node, so building the
+// text first and splitting it into paragraphs loses both.
+func adfDescription(description string, acceptanceCriteria []string, documentURL string) map[string]any {
+	content := adfParagraphs(description)
+	if len(acceptanceCriteria) > 0 {
+		content = append(content, adfHeading("Acceptance criteria"), adfBulletList(acceptanceCriteria))
 	}
-	description.WriteString("\nDiscovery: ")
-	description.WriteString(document)
-	return description.String()
+	if documentURL != "" {
+		content = append(content, adfDocumentLink(documentURL))
+	}
+
+	return map[string]any{"type": "doc", "version": 1, "content": content}
 }
 
-func adfDocument(text string) map[string]any {
-	content := make([]map[string]any, 0)
-	for _, line := range strings.Split(text, "\n") {
-		if strings.TrimSpace(line) == "" {
+// adfParagraphs splits on blank lines, the only paragraph break Markdown and ADF agree on. A
+// single newline inside a paragraph is wrapping rather than structure, so it becomes a space.
+func adfParagraphs(text string) []map[string]any {
+	paragraphs := make([]map[string]any, 0)
+	for _, block := range strings.Split(text, "\n\n") {
+		joined := strings.Join(strings.Fields(block), " ")
+		if joined == "" {
 			continue
 		}
-		content = append(content, map[string]any{
-			"type": "paragraph",
-			"content": []map[string]any{
-				{"type": "text", "text": strings.TrimPrefix(line, "- ")},
-			},
+		paragraphs = append(paragraphs, adfParagraph(joined))
+	}
+
+	return paragraphs
+}
+
+func adfParagraph(text string) map[string]any {
+	return map[string]any{
+		"type":    "paragraph",
+		"content": []map[string]any{{"type": "text", "text": text}},
+	}
+}
+
+// adfHeading builds the one heading depth a description uses. Level 3 sits below the issue
+// summary Jira renders above it.
+func adfHeading(text string) map[string]any {
+	return map[string]any{
+		"type":    "heading",
+		"attrs":   map[string]any{"level": 3},
+		"content": []map[string]any{{"type": "text", "text": text}},
+	}
+}
+
+func adfBulletList(items []string) map[string]any {
+	listItems := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		listItems = append(listItems, map[string]any{
+			"type":    "listItem",
+			"content": []map[string]any{adfParagraph(item)},
 		})
 	}
-	return map[string]any{"type": "doc", "version": 1, "content": content}
+
+	return map[string]any{"type": "bulletList", "content": listItems}
+}
+
+// adfDocumentLink footers the issue with the discovery document. The URL is a link mark rather
+// than bare text, because a path a reader cannot click is worth less than no footer at all.
+func adfDocumentLink(documentURL string) map[string]any {
+	return map[string]any{
+		"type": "paragraph",
+		"content": []map[string]any{
+			{"type": "text", "text": "Discovery: "},
+			{
+				"type":  "text",
+				"text":  documentURL,
+				"marks": []map[string]any{{"type": "link", "attrs": map[string]any{"href": documentURL}}},
+			},
+		},
+	}
 }
 
 func dependenciesFor(item domain.WorkItem) []string {
@@ -617,6 +739,10 @@ func fieldString(operation provider.Operation, name string) (string, error) {
 
 func fieldStringSlice(operation provider.Operation, name string) ([]string, error) {
 	switch values := operation.Fields[name].(type) {
+	case nil:
+		// An absent list and an empty one mean the same thing: an item with no acceptance
+		// criteria writes no key, and YAML reads an empty list back as nil.
+		return nil, nil
 	case []string:
 		return values, nil
 	case []any:

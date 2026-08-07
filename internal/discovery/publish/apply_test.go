@@ -27,8 +27,7 @@ func (f *fakeAdapter) ID() string { return "fake" }
 
 func (f *fakeAdapter) Plan(
 	context.Context,
-	*domain.WorkBreakdown,
-	[]byte,
+	provider.PlanInput,
 	config.Target,
 ) ([]provider.Operation, []string, error) {
 	return nil, nil, nil

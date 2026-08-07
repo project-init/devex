@@ -105,3 +105,24 @@ func githubTarget() config.Target {
 		},
 	}
 }
+
+func TestBodyLinksTheDiscoveryDocument(t *testing.T) {
+	item := domain.WorkItem{
+		ID:                 "WI-001",
+		Kind:               domain.KindTask,
+		Title:              "First",
+		Description:        "First.",
+		AcceptanceCriteria: []string{"It works."},
+	}
+	documentURL := "https://github.com/project-init/devex/blob/main/docs/audit/discovery.md"
+
+	body := bodyForItem(item, documentURL, "<!-- marker -->")
+	if !strings.Contains(body, "Discovery: "+documentURL) {
+		t.Fatalf("body = %q, want the document URL", body)
+	}
+
+	// Without a URL the footer names a file the reader cannot open, so it is dropped entirely.
+	if body := bodyForItem(item, "", "<!-- marker -->"); strings.Contains(body, "Discovery:") {
+		t.Fatalf("body = %q, want no discovery footer", body)
+	}
+}

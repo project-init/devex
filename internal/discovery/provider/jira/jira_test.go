@@ -128,7 +128,7 @@ func TestResolveIgnoresKeysOutsideThePendingSet(t *testing.T) {
 func TestPlanEmitsDependencyLinks(t *testing.T) {
 	operations, warnings, err := NewWithClient(nil, "user@example.com", "token").Plan(
 		context.Background(),
-		&domain.WorkBreakdown{
+		provider.PlanInput{WorkBreakdown: &domain.WorkBreakdown{
 			Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
 			Items: []domain.WorkItem{
 				{
@@ -146,8 +146,7 @@ func TestPlanEmitsDependencyLinks(t *testing.T) {
 					DependsOn:   []domain.ItemID{"WI-001"},
 				},
 			},
-		},
-		nil,
+		}},
 		jiraTarget("https://jira.test"),
 	)
 	if err != nil {
@@ -351,7 +350,7 @@ func TestExecuteLinkRequiresPublishedItems(t *testing.T) {
 func TestPlanRejectsLabelsJiraCannotApply(t *testing.T) {
 	_, _, err := NewWithClient(nil, "user@example.com", "token").Plan(
 		context.Background(),
-		&domain.WorkBreakdown{
+		provider.PlanInput{WorkBreakdown: &domain.WorkBreakdown{
 			Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
 			Items: []domain.WorkItem{{
 				ID:          "WI-001",
@@ -360,8 +359,7 @@ func TestPlanRejectsLabelsJiraCannotApply(t *testing.T) {
 				Description: "First.",
 				Labels:      []string{"needs review"},
 			}},
-		},
-		nil,
+		}},
 		jiraTarget("https://jira.test"),
 	)
 	if err == nil || !strings.Contains(err.Error(), "whitespace") {
@@ -457,5 +455,171 @@ func jiraTarget(baseURL string) config.Target {
 			BaseURL:    baseURL,
 			ProjectKey: "DEVEX",
 		},
+	}
+}
+
+// Jira renders structure from ADF nodes alone, so acceptance criteria must arrive as a heading
+// and a bullet list rather than as text that merely looks like Markdown.
+func TestDescriptionCarriesHeadingAndBullets(t *testing.T) {
+	document := adfDescription(
+		"First paragraph.\n\nSecond paragraph\nwrapped by the author.",
+		[]string{"Criterion one.", "Criterion two."},
+		"https://github.com/project-init/devex/blob/main/docs/audit/discovery.md",
+	)
+
+	content := document["content"].([]map[string]any)
+	types := make([]string, 0, len(content))
+	for _, node := range content {
+		types = append(types, node["type"].(string))
+	}
+	want := []string{"paragraph", "paragraph", "heading", "bulletList", "paragraph"}
+	if strings.Join(types, ",") != strings.Join(want, ",") {
+		t.Fatalf("node types = %v, want %v", types, want)
+	}
+
+	// Author wrapping is not structure; a hard-wrapped paragraph must survive as one paragraph.
+	wrapped := content[1]["content"].([]map[string]any)[0]["text"]
+	if wrapped != "Second paragraph wrapped by the author." {
+		t.Fatalf("wrapped paragraph = %q", wrapped)
+	}
+
+	heading := content[2]
+	if heading["attrs"].(map[string]any)["level"] != 3 {
+		t.Fatalf("heading = %#v, want level 3", heading)
+	}
+	if text := heading["content"].([]map[string]any)[0]["text"]; text != "Acceptance criteria" {
+		t.Fatalf("heading text = %q", text)
+	}
+
+	bullets := content[3]["content"].([]map[string]any)
+	if len(bullets) != 2 || bullets[0]["type"] != "listItem" {
+		t.Fatalf("bullets = %#v", bullets)
+	}
+
+	// The footer is worth publishing only because it is clickable.
+	footer := content[4]["content"].([]map[string]any)
+	marks := footer[1]["marks"].([]map[string]any)
+	if marks[0]["type"] != "link" {
+		t.Fatalf("footer = %#v, want a link mark", footer)
+	}
+}
+
+// A bundle outside a GitHub checkout has no document URL, and a filename a reader cannot open is
+// worth less than no footer.
+func TestDescriptionOmitsFooterWithoutURL(t *testing.T) {
+	document := adfDescription("Only a description.", nil, "")
+
+	content := document["content"].([]map[string]any)
+	if len(content) != 1 || content[0]["type"] != "paragraph" {
+		t.Fatalf("content = %#v, want the description alone", content)
+	}
+}
+
+func TestPlanRelatesEpicsToTheTrackingIssue(t *testing.T) {
+	operations, warnings, err := NewWithClient(nil, "user@example.com", "token").Plan(
+		context.Background(),
+		provider.PlanInput{
+			WorkBreakdown: &domain.WorkBreakdown{
+				Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
+				Items: []domain.WorkItem{
+					{
+						ID:          "INIT-001",
+						Kind:        domain.KindInitiative,
+						Title:       "Deliver audit logs",
+						Description: "Deliver audit logs.",
+					},
+					{
+						ID:          "WI-001",
+						Kind:        domain.KindTask,
+						Parent:      "INIT-001",
+						Title:       "First",
+						Description: "First.",
+					},
+				},
+			},
+			TrackingURL: "https://jira.test/browse/DEVEX-42",
+		},
+		jiraTarget("https://jira.test"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var tracking []provider.Operation
+	for _, operation := range operations {
+		if operation.Action == actionLinkIssues {
+			tracking = append(tracking, operation)
+		}
+	}
+	// The epic relates back; the task does not, or every issue would repeat the same edge.
+	if len(tracking) != 1 {
+		t.Fatalf("link operations = %#v, want only the epic", tracking)
+	}
+	if tracking[0].Fields["blocking_key"] != "DEVEX-42" {
+		t.Fatalf("fields = %#v, want the tracking key", tracking[0].Fields)
+	}
+	if tracking[0].Fields["link_type"] != trackingLinkType {
+		t.Fatalf("link type = %#v, want %q", tracking[0].Fields["link_type"], trackingLinkType)
+	}
+	// The epic must exist before it can be linked, and nothing else gates the edge.
+	if len(tracking[0].DependsOn) != 1 || tracking[0].DependsOn[0] != "create-INIT-001" {
+		t.Fatalf("depends on = %#v", tracking[0].DependsOn)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], trackingLinkType) {
+		t.Fatalf("warnings = %#v, want the Relates type named", warnings)
+	}
+}
+
+// A discovery document may cite an issue in another tracker. Only an issue in the instance being
+// published to can be linked, and silently dropping the rest would hide the reason.
+func TestPlanWarnsWhenTheTrackingIssueIsElsewhere(t *testing.T) {
+	operations, warnings, err := NewWithClient(nil, "user@example.com", "token").Plan(
+		context.Background(),
+		provider.PlanInput{
+			WorkBreakdown: &domain.WorkBreakdown{
+				Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
+				Items: []domain.WorkItem{{
+					ID:          "INIT-001",
+					Kind:        domain.KindInitiative,
+					Title:       "Deliver audit logs",
+					Description: "Deliver audit logs.",
+				}},
+			},
+			TrackingURL: "https://github.com/project-init/devex/issues/12",
+		},
+		jiraTarget("https://jira.test"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range operations {
+		if operation.Action == actionLinkIssues {
+			t.Fatalf("operations = %#v, want no link to another tracker", operations)
+		}
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "not an issue") {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+}
+
+func TestTrackingIssueKey(t *testing.T) {
+	tests := []struct {
+		name        string
+		trackingURL string
+		want        string
+	}{
+		{name: "browse url", trackingURL: "https://jira.test/browse/DEVEX-42", want: "DEVEX-42"},
+		{name: "trailing slash", trackingURL: "https://jira.test/browse/DEVEX-42/", want: "DEVEX-42"},
+		{name: "other host", trackingURL: "https://other.test/browse/DEVEX-42"},
+		{name: "not an issue", trackingURL: "https://jira.test/wiki/DEVEX-42"},
+		{name: "absent", trackingURL: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := trackingIssueKey(test.trackingURL, "https://jira.test"); got != test.want {
+				t.Fatalf("trackingIssueKey(%q) = %q, want %q", test.trackingURL, got, test.want)
+			}
+		})
 	}
 }

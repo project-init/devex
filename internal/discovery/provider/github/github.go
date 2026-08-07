@@ -56,13 +56,13 @@ func (a *Adapter) ID() string { return providerID }
 
 func (a *Adapter) Plan(
 	_ context.Context,
-	workBreakdown *domain.WorkBreakdown,
-	_ []byte,
+	input provider.PlanInput,
 	target config.Target,
 ) ([]provider.Operation, []string, error) {
 	if err := target.Validate(); err != nil {
 		return nil, nil, err
 	}
+	workBreakdown := input.WorkBreakdown
 	ordered, err := workBreakdown.OrderedItems()
 	if err != nil {
 		return nil, nil, err
@@ -70,7 +70,7 @@ func (a *Adapter) Plan(
 	operations := make([]provider.Operation, 0, len(ordered))
 	for _, item := range ordered {
 		marker := marker(workBreakdown.Discovery.ID, item.ID)
-		body := bodyForItem(workBreakdown, item, marker)
+		body := bodyForItem(item, input.DocumentURL, marker)
 		labels := append([]string(nil), item.Labels...)
 		if label := target.GitHub.KindLabels[item.Kind]; label != "" {
 			labels = append(labels, label)
@@ -190,7 +190,7 @@ func marker(discoveryID string, itemID domain.ItemID) string {
 	return fmt.Sprintf("<!-- %s: %s/%s -->", generatedMarker, discoveryID, itemID)
 }
 
-func bodyForItem(workBreakdown *domain.WorkBreakdown, item domain.WorkItem, idempotencyMarker string) string {
+func bodyForItem(item domain.WorkItem, documentURL string, idempotencyMarker string) string {
 	var body strings.Builder
 	body.WriteString(item.Description)
 	body.WriteString("\n\n")
@@ -217,9 +217,13 @@ func bodyForItem(workBreakdown *domain.WorkBreakdown, item domain.WorkItem, idem
 		}
 		body.WriteString("\n")
 	}
-	body.WriteString("Discovery: `")
-	body.WriteString(workBreakdown.Discovery.Document)
-	body.WriteString("`\n\n")
+	// A bare filename tells a reader nothing they can act on, so the footer appears only when
+	// the document has a URL to point at.
+	if documentURL != "" {
+		body.WriteString("Discovery: ")
+		body.WriteString(documentURL)
+		body.WriteString("\n\n")
+	}
 	body.WriteString(idempotencyMarker)
 	return body.String()
 }
