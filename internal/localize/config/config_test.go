@@ -11,6 +11,8 @@ func TestLoadConfigMobileIOS(t *testing.T) {
 	path := filepath.Join(configDir, "localize.yaml")
 	data := []byte(`localize:
   localesDir: internal/translations/locales
+  html:
+    outputPath: build/translations.html
   mobile:
     sourceLanguage: en-US
     registryPath: internal/translations/mobileregistry/registry.go
@@ -39,5 +41,8 @@ func TestLoadConfigMobileIOS(t *testing.T) {
 	}
 	if mobile.IOS.OutputDir != "ios/ProjectInit/Resources/l10n" {
 		t.Errorf("IOS.OutputDir = %q", mobile.IOS.OutputDir)
+	}
+	if cfg.Localize.HTML.OutputPath != "build/translations.html" {
+		t.Errorf("HTML.OutputPath = %q", cfg.Localize.HTML.OutputPath)
 	}
 }

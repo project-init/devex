@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Translations</title>
+    <style>
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #ccc;
+        padding: 0.5rem;
+        text-align: left;
+        vertical-align: top;
+        white-space: normal;
+      }
+      thead th {
+        background: #fff;
+        position: sticky;
+        top: 0;
+      }
+      tbody tr:nth-child(even) {
+        background: #f6f6f6;
+      }
+    </style>
+  </head>
+  <body>
+    <table>
+      <thead>
+        <tr>
+          <th>English</th>
+          {{- range .Locales}}
+          <th>{{.}}</th>
+          {{- end}}
+        </tr>
+      </thead>
+      <tbody>
+        {{- range .Rows}}
+        <tr>
+          <td>{{.English}}</td>
+          {{- range .Translations}}
+          <td>{{.}}</td>
+          {{- end}}
+        </tr>
+        {{- end}}
+      </tbody>
+    </table>
+  </body>
+</html>

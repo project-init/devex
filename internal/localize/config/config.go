@@ -23,6 +23,14 @@ type LocalizeConfiguration struct {
 
 	// Mobile configures generation of platform localization bundles from gotext catalogs.
 	Mobile MobileConfiguration `yaml:"mobile"`
+
+	// HTML configures generation of a combined English -> locale translation report.
+	HTML HTMLConfiguration `yaml:"html"`
+}
+
+type HTMLConfiguration struct {
+	// OutputPath is the file path the combined translation report is written to.
+	OutputPath string `yaml:"outputPath"`
 }
 
 type MobileConfiguration struct {
