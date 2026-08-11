@@ -21,7 +21,7 @@ Write with vigor. Omit needless words. Be specific. A discovery is read by someo
 
 - **`discovery.md`** — narrative, but dense. Benefits, considerations, alternatives, assumptions, and unknowns stay as concise bullets, never paragraphs wearing bullet points.
 - **`work-breakdown.yaml`** — titles are imperative and specific: "Delete the SPA fallback handler", not "SPA work". Descriptions say what changes and why. Acceptance criteria are observable and testable: state the condition a reviewer can check, not an intention. "CI passes with no Build SPA step" beats "CI should be updated".
-- **Pull request body** — say what changed and what the reviewer must decide. Do not restate the discovery; link it. Surface the decisions in the conversation, not only in the body.
+- **Pull request body** — say what changed and why, following the repo's pull request template if one exists. Do not restate the discovery; a brief summary and link is sufficient. This is not a place to surface open questions/decisions - iron those out in the conversation.
 
 ## Revising
 
