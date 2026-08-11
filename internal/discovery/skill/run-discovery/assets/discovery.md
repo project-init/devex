@@ -48,3 +48,5 @@ This should include details about **WHO** (person or team) has ownership of the 
 ## Unknowns
 
 - Things that may require additional research or validation
+- Only what the reader deferred, or what the breakdown schedules as research
+- Never a decision you found and chose not to raise — take those to the reader instead
