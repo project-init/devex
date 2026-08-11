@@ -40,6 +40,9 @@ go.work.sum
 cmd/devex/contributions/prs
 cmd/devex/contributions/signals
 
+# Generated localization report
+.localize/translations.html
+
 # Prettier configuration files
 # These are intentionally left untracked since `mise format` will pull down the latest version
 .prettierignore

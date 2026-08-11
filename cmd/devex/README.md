@@ -41,6 +41,7 @@ Manage gotext translations and generate platform localization bundles.
 
 ```shell
 devex localize audit
+devex localize html
 devex localize mobile
 devex localize translate
 ```
@@ -50,11 +51,20 @@ configuration. The currently supported iOS generator distills registered strings
 `out.gotext.json` catalog into an `l10n-<locale>.json` bundle. It also validates registry
 coverage, placeholders, and Swift translation-key usage before replacing existing bundles.
 
+The `html` command reads each locale's curated `messages.gotext.json` catalog and writes a
+single combined HTML report to `localize.html.outputPath`, with one column per locale and one
+row per message id, so English source strings and their translations can be reviewed side by
+side in a browser. The report includes the full set of ids found across all catalogs, including
+new English ids that do not yet exist in another locale; their missing translations appear as
+empty cells.
+
 Configure repository paths under `.localize/*.yaml`:
 
 ```yaml
 localize:
   localesDir: internal/translations/locales
+  html:
+    outputPath: build/translations.html
   mobile:
     sourceLanguage: en-US
     registryPath: internal/translations/mobileregistry/registry.go
