@@ -25,6 +25,16 @@ Announce: "I'm using the run-discovery skill to understand your intent and produ
 5. Focus on purpose, constraints, evidence, success criteria, ownership, and consequential unknowns. Avoid speculative rabbit holes.
 6. Label statements as known, assumed, or unknown when their status matters.
 
+## Surface every fork and every correction
+
+Later passes routinely overturn earlier ones. Take each reversal back to the user; never absorb it silently.
+
+1. Ask any decision that appears after the first question round. A fork found late is still the user's to make, and an early question round buys no license to decide the rest alone.
+2. When evidence contradicts an assessment you already gave, say so plainly, state what it changes, and re-ask every question whose premise it invalidated. Answers collected under a false premise are void.
+3. Never park a decision in the bundle or a pull request body as an "open question" instead of asking it. That shifts the choice onto whoever reads the document and buries it where it is easy to miss.
+4. Record in **Unknowns** only what the user explicitly deferred, or what the breakdown schedules as research. Unknowns is not an inbox for decisions you declined to raise.
+5. Verify a claim before it becomes a premise. Read whole files rather than truncated output, and treat a conclusion drawn from a partial read as unverified.
+
 ## Compare approaches
 
 1. Present two or three viable approaches with trade-offs.
@@ -48,6 +58,8 @@ devex discovery init <directory> <name>
 Populate `discovery.md` using the accepted design and populate `work-breakdown.yaml` using [references/work-breakdown.md](references/work-breakdown.md). Read `default_labels` from the discovery configuration (`.sre/discovery.yaml` unless `--config` selected another file) and include every configured default on every work item, merging them with item-specific labels without duplicates. The CLI seeds its starter items with these defaults. If the CLI is unavailable, use the templates in `assets/` as fallbacks and apply the defaults manually.
 
 Keep narrative reasoning in `discovery.md`. Keep executable scope, hierarchy, dependencies, acceptance criteria, and estimates in `work-breakdown.yaml`; do not duplicate the entire discovery narrative in every work item.
+
+Write every word a human will read — `discovery.md`, `work-breakdown.yaml`, and the pull request body that carries them — to [references/prose-style.md](references/prose-style.md).
 
 Run:
 
