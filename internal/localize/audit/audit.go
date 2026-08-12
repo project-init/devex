@@ -21,9 +21,30 @@ type catalog struct {
 	Messages []message `json:"messages"`
 }
 
+// gotextID handles the gotext format where "id" may be a plain string or a
+// [key, fallbackText] array; we always use the first element as the ID.
+type gotextID string
+
+func (g *gotextID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*g = gotextID(s)
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return err
+	}
+	if len(arr) == 0 {
+		return fmt.Errorf("gotext id array is empty")
+	}
+	*g = gotextID(arr[0])
+	return nil
+}
+
 type message struct {
-	ID          string `json:"id"`
-	Translation string `json:"translation"`
+	ID          gotextID `json:"id"`
+	Translation string   `json:"translation"`
 }
 
 func loadCatalog(path string) (*catalog, error) {
@@ -61,7 +82,7 @@ func audit(localesDir string) error {
 
 			for _, m := range c.Messages {
 				if m.Translation == "" {
-					missingTranslations = append(missingTranslations, fmt.Sprintf("  [%s} %v", c.Language, m.ID))
+					missingTranslations = append(missingTranslations, fmt.Sprintf("  [%s} %v", c.Language, string(m.ID)))
 				}
 			}
 
@@ -79,12 +100,12 @@ func audit(localesDir string) error {
 
 			known := make(map[string]struct{}, len(msgs.Messages))
 			for _, m := range msgs.Messages {
-				known[m.ID] = struct{}{}
+				known[string(m.ID)] = struct{}{}
 			}
 
 			for _, m := range out.Messages {
-				if _, ok := known[m.ID]; !ok {
-					uncopied = append(uncopied, fmt.Sprintf("  [%s] %v", out.Language, m.ID))
+				if _, ok := known[string(m.ID)]; !ok {
+					uncopied = append(uncopied, fmt.Sprintf("  [%s] %v", out.Language, string(m.ID)))
 				}
 			}
 		}

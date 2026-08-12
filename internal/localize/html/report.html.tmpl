@@ -4,48 +4,114 @@
     <meta charset="utf-8" />
     <title>Translations</title>
     <style>
+      *, *::before, *::after { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 0.875rem;
+        color: #1a1a1a;
+        background: #f0f2f5;
+      }
+
+      header {
+        background: #fff;
+        border-bottom: 1px solid #d9dde3;
+        padding: 1rem 1.5rem;
+        display: flex;
+        align-items: baseline;
+        gap: 0.75rem;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #111;
+      }
+      header .meta {
+        font-size: 0.8rem;
+        color: #6b7280;
+      }
+
+      .wrapper {
+        padding: 1.25rem 1.5rem;
+      }
+
       table {
         border-collapse: collapse;
         width: 100%;
-      }
-      th,
-      td {
-        border: 1px solid #ccc;
-        padding: 0.5rem;
-        text-align: left;
-        vertical-align: top;
-        white-space: normal;
-      }
-      thead th {
         background: #fff;
+        border: 1px solid #d9dde3;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      th {
+        background: #f8f9fb;
+        border-bottom: 2px solid #d9dde3;
+        border-right: 1px solid #d9dde3;
+        padding: 0.6rem 0.875rem;
+        text-align: left;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #4b5563;
         position: sticky;
-        top: 0;
+        top: 49px;
+        white-space: nowrap;
       }
-      tbody tr:nth-child(even) {
-        background: #f6f6f6;
+      th:last-child { border-right: none; }
+
+      td {
+        border-bottom: 1px solid #e5e7eb;
+        border-right: 1px solid #e5e7eb;
+        padding: 0.55rem 0.875rem;
+        vertical-align: top;
+        line-height: 1.45;
       }
+      td:last-child { border-right: none; }
+
+      tbody tr:last-child td { border-bottom: none; }
+
+      td:first-child {
+        background: #fafbff;
+        color: #374151;
+        border-right-color: #d9dde3;
+      }
+      tbody tr:hover td { background: #f0f4ff; }
+      tbody tr:hover td:first-child { background: #e8eeff; }
     </style>
   </head>
   <body>
-    <table>
-      <thead>
-        <tr>
-          <th>English</th>
-          {{- range .Locales}}
-          <th>{{.}}</th>
+    <header>
+      <h1>Translations</h1>
+      <span class="meta">{{len .Rows}} strings &middot; {{len .Locales}} {{if eq (len .Locales) 1}}locale{{else}}locales{{end}}</span>
+    </header>
+    <div class="wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>English</th>
+            {{- range .Locales}}
+            <th>{{.}}</th>
+            {{- end}}
+          </tr>
+        </thead>
+        <tbody>
+          {{- range .Rows}}
+          <tr>
+            <td>{{.English}}</td>
+            {{- range .Translations}}
+            <td>{{.}}</td>
+            {{- end}}
+          </tr>
           {{- end}}
-        </tr>
-      </thead>
-      <tbody>
-        {{- range .Rows}}
-        <tr>
-          <td>{{.English}}</td>
-          {{- range .Translations}}
-          <td>{{.}}</td>
-          {{- end}}
-        </tr>
-        {{- end}}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
   </body>
 </html>
