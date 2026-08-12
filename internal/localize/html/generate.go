@@ -26,9 +26,31 @@ type catalog struct {
 	Messages []message `json:"messages"`
 }
 
+// gotextID handles the gotext format where "id" may be a plain string or a
+// [key, fallbackText] array; we always use the first element as the ID.
+type gotextID string
+
+func (g *gotextID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*g = gotextID(s)
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return err
+	}
+	if len(arr) == 0 {
+		return fmt.Errorf("gotext id array is empty")
+	}
+	*g = gotextID(arr[0])
+	return nil
+}
+
 type message struct {
-	ID          string `json:"id"`
-	Translation any    `json:"translation"`
+	ID          gotextID `json:"id"`
+	Message     string   `json:"message"`
+	Translation any      `json:"translation"`
 }
 
 type reportRow struct {
@@ -59,6 +81,9 @@ func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.
 
 	// locale -> id -> translation
 	translations := make(map[string]map[string]string)
+	// id -> English message text (from en-US "message" field)
+	englishText := make(map[string]string)
+	// all known ids across every locale
 	ids := make(map[string]struct{})
 
 	for _, directory := range directories {
@@ -80,10 +105,13 @@ func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.
 		}
 
 		for _, msg := range cat.Messages {
-			ids[msg.ID] = struct{}{}
+			ids[string(msg.ID)] = struct{}{}
 		}
 
 		if locale == baseLocale {
+			for _, msg := range cat.Messages {
+				englishText[string(msg.ID)] = msg.Message
+			}
 			continue
 		}
 
@@ -100,7 +128,7 @@ func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.
 				)
 				translation = nonStringTranslationMarker
 			}
-			byID[msg.ID] = translation
+			byID[string(msg.ID)] = translation
 		}
 		translations[locale] = byID
 	}
@@ -123,9 +151,21 @@ func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.
 
 	rows := make([]reportRow, 0, len(sortedIDs))
 	for _, id := range sortedIDs {
-		row := reportRow{English: id, Translations: make([]string, len(locales))}
+		english := englishText[id]
+		if english == "" {
+			english = id
+		}
+		row := reportRow{English: english, Translations: make([]string, len(locales))}
+		allMatch := true
 		for i, locale := range locales {
-			row.Translations[i] = translations[locale][id]
+			t := translations[locale][id]
+			row.Translations[i] = t
+			if t != english {
+				allMatch = false
+			}
+		}
+		if allMatch {
+			continue
 		}
 		rows = append(rows, row)
 	}

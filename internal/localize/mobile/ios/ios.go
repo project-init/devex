@@ -34,9 +34,30 @@ type catalog struct {
 	Messages []message `json:"messages"`
 }
 
+// gotextID handles the gotext format where "id" may be a plain string or a
+// [key, fallbackText] array; we always use the first element as the ID.
+type gotextID string
+
+func (g *gotextID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*g = gotextID(s)
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return err
+	}
+	if len(arr) == 0 {
+		return fmt.Errorf("gotext id array is empty")
+	}
+	*g = gotextID(arr[0])
+	return nil
+}
+
 type message struct {
-	ID          string `json:"id"`
-	Translation any    `json:"translation"`
+	ID          gotextID `json:"id"`
+	Translation any      `json:"translation"`
 }
 
 type bundle struct {
@@ -105,8 +126,8 @@ func Generate(
 			if !ok || translation == "" {
 				continue
 			}
-			if _, registered := ids[msg.ID]; registered {
-				messages = append(messages, localizedMessage{id: msg.ID, translation: translation})
+			if _, registered := ids[string(msg.ID)]; registered {
+				messages = append(messages, localizedMessage{id: string(msg.ID), translation: translation})
 			}
 		}
 
@@ -235,7 +256,7 @@ func validateCatalog(path string, cat *catalog, ids map[string]struct{}, source 
 	if source {
 		have := make(map[string]struct{}, len(cat.Messages))
 		for _, msg := range cat.Messages {
-			have[msg.ID] = struct{}{}
+			have[string(msg.ID)] = struct{}{}
 		}
 
 		missing := difference(ids, have)
@@ -255,10 +276,10 @@ func validateCatalog(path string, cat *catalog, ids map[string]struct{}, source 
 			continue
 		}
 
-		allowed := toSet(placeholderPattern.FindAllString(msg.ID, -1))
+		allowed := toSet(placeholderPattern.FindAllString(string(msg.ID), -1))
 		unexpected := difference(toSet(placeholderPattern.FindAllString(translation, -1)), allowed)
 		if len(unexpected) > 0 {
-			badTokens = append(badTokens, fmt.Sprintf("%s -> %v", msg.ID, unexpected))
+			badTokens = append(badTokens, fmt.Sprintf("%s -> %v", string(msg.ID), unexpected))
 		}
 	}
 	if len(badTokens) > 0 {
