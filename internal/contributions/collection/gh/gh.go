@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/google/go-github/v74/github"
+
+	"github.com/project-init/devex/internal/githubclient"
 )
 
 type GH struct {
@@ -18,8 +20,13 @@ func New(organization string) (*GH, error) {
 		return nil, errors.New("GITHUB_TOKEN environment variable not set")
 	}
 
+	ghClient, err := githubclient.New(ghToken, "")
+	if err != nil {
+		return nil, err
+	}
+
 	return &GH{
-		ghClient:     github.NewClient(nil).WithAuthToken(ghToken),
+		ghClient:     ghClient,
 		organization: organization,
 	}, nil
 }

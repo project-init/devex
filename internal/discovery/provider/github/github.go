@@ -3,7 +3,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
+	"github.com/project-init/devex/internal/githubclient"
 )
 
 const (
@@ -30,22 +30,25 @@ type Adapter struct {
 }
 
 func New(authenticated bool, target config.Target) (*Adapter, error) {
-	client := gh.NewClient(nil)
+	token := ""
 	if authenticated {
-		token := os.Getenv("GITHUB_TOKEN")
+		token = os.Getenv("GITHUB_TOKEN")
 		if token == "" {
 			return nil, fmt.Errorf("GITHUB_TOKEN environment variable not set")
 		}
-		client = client.WithAuthToken(token)
 	}
-	if target.GitHub != nil && target.GitHub.APIURL != "" {
-		baseURL, err := url.Parse(strings.TrimSuffix(target.GitHub.APIURL, "/") + "/")
-		if err != nil {
-			return nil, fmt.Errorf("parse github.api_url: %w", err)
-		}
-		client.BaseURL = baseURL
+
+	baseURL := ""
+	if target.GitHub != nil {
+		baseURL = target.GitHub.APIURL
 	}
-	return &Adapter{client: client}, nil
+
+	ghClient, err := githubclient.New(token, baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("create github client: %w", err)
+	}
+
+	return &Adapter{client: ghClient}, nil
 }
 
 func NewWithClient(client *gh.Client) *Adapter {

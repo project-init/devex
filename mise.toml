@@ -1,4 +1,5 @@
 [tools]
+"github:project-init/devex" = "latest"
 go = "1.26.5"
 golangci-lint = "2.12.2"
 awscli = "2.34.57"
