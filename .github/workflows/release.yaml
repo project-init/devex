@@ -37,7 +37,7 @@ jobs:
         with:
           fetch-depth: 0 # GoReleaser needs the full git history for changelogs
 
-      - uses: jdx/mise-action@v4.2.3
+      - uses: jdx/mise-action@v4.3.0
         with:
           install: true
           experimental: true
