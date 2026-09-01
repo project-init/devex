@@ -1,10 +1,10 @@
 [tools]
-go = "1.26.5"
-golangci-lint = "2.12.2"
-awscli = "2.34.57"
-node = "26.2.0"
-prettier = "3.8.3"
-goreleaser = "2.16.0"
+go = "1.27.0"
+golangci-lint = "2.13.2"
+awscli = "2.36.36"
+node = "26.8.1"
+prettier = "3.9.6"
+goreleaser = "2.18.0"
 
 [settings]
 experimental = true
