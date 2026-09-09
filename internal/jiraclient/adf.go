@@ -1,4 +1,4 @@
-package jira
+package jiraclient
 
 import (
 	"reflect"
@@ -28,7 +28,7 @@ var blockquoteContent = map[string]bool{
 // adfDescription renders a work item as an Atlassian Document Format document. ADF has no
 // Markdown fallback: a heading is a heading node and a bullet is a list node, so the same prose
 // that renders on GitHub has to be translated rather than passed through.
-func adfDescription(description string, acceptanceCriteria []string, documentURL string) map[string]any {
+func ADFDescription(description string, acceptanceCriteria []string, documentURL string) map[string]any {
 	renderer := &adfRenderer{}
 	content := renderer.blocks(description)
 	if len(acceptanceCriteria) > 0 {

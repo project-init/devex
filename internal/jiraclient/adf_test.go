@@ -1,4 +1,4 @@
-package jira
+package jiraclient
 
 import (
 	"encoding/json"
@@ -104,7 +104,7 @@ func TestAdfRendersMarkdownStructure(t *testing.T) {
 
 // Jira rejects a document with no content, so an item that says nothing still needs a body.
 func TestAdfDescriptionIsNeverEmpty(t *testing.T) {
-	document := adfDescription("", nil, "")
+	document := ADFDescription("", nil, "")
 
 	content := document["content"].([]map[string]any)
 	if len(content) != 1 || content[0]["type"] != "paragraph" {

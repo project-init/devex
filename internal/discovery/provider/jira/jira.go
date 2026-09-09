@@ -1,11 +1,8 @@
 package jira
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,44 +15,41 @@ import (
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
+	"github.com/project-init/devex/internal/jiraclient"
 )
 
 const (
 	providerID  = "jira"
 	propertyKey = "devex.discovery"
 
-	// generatedLabel narrows the idempotency search to issues this tool created. Issue
-	// properties hold the identity, so removing the label from an issue hides it from Resolve.
 	generatedLabel = "devex-generated"
 
 	actionCreateIssue = "create_issue"
 	actionLinkIssues  = "link_issues"
 
-	// defaultLinkType expresses depends_on as a blocking relationship. Jira orients a link
-	// so that inwardIssue holds the blocker and outwardIssue holds the blocked issue.
 	defaultLinkType = "Blocks"
 
-	// trackingLinkType ties an epic back to the issue that prompted the investigation. The
-	// relationship is informational, so it stays "Relates" rather than following link_type.
 	trackingLinkType = "Relates"
 )
 
-// browsePattern extracts the issue key from a Jira browse URL, the form the discovery skill
-// writes into a document title.
 var browsePattern = regexp.MustCompile(`^/browse/([A-Z][A-Z0-9_]*-\d+)$`)
 
 type Adapter struct {
-	client *http.Client
-	email  string
-	token  string
-	// linkCache holds the links already recorded on an issue, keyed by issue key.
-	linkCache map[string]map[string]bool
+	httpClient *http.Client
+	email      string
+	token      string
+	linkCache  map[string]map[string]bool
+}
+
+// getClient instantiates our generic client for a specific target base URL dynamically.
+func (a *Adapter) getClient(baseURL string) *jiraclient.Client {
+	return jiraclient.NewClient(a.httpClient, baseURL, a.email, a.token)
 }
 
 func New(authenticated bool) (*Adapter, error) {
 	adapter := &Adapter{
-		client:    &http.Client{Timeout: 15 * time.Second},
-		linkCache: make(map[string]map[string]bool),
+		httpClient: &http.Client{Timeout: 15 * time.Second},
+		linkCache:  make(map[string]map[string]bool),
 	}
 	if authenticated {
 		adapter.email = os.Getenv("JIRA_EMAIL")
@@ -69,10 +63,10 @@ func New(authenticated bool) (*Adapter, error) {
 
 func NewWithClient(client *http.Client, email string, token string) *Adapter {
 	return &Adapter{
-		client:    client,
-		email:     email,
-		token:     token,
-		linkCache: make(map[string]map[string]bool),
+		httpClient: client,
+		email:      email,
+		token:      token,
+		linkCache:  make(map[string]map[string]bool),
 	}
 }
 
@@ -100,29 +94,19 @@ func (a *Adapter) Plan(
 	links := make([]provider.Operation, 0, len(ordered))
 	for _, item := range ordered {
 		issueType := jiraIssueType(item.Kind, target.Jira.KindMapping)
-		// The discovery ID scopes Resolve to one bundle, so the search cost tracks the bundle
-		// rather than every issue this tool has ever created in the project.
 		labels := provider.UniqueSorted(append(
 			[]string{generatedLabel, workBreakdown.Discovery.ID},
 			item.Labels...,
 		))
-		// Jira rejects whitespace in labels, and labels are only applied once the issue is
-		// being created, so catch it here rather than part-way through publishing.
 		for _, label := range labels {
 			if strings.ContainsFunc(label, unicode.IsSpace) {
-				return nil, nil, fmt.Errorf(
-					"item %s has label %q; Jira labels cannot contain whitespace",
-					item.ID,
-					label,
-				)
+				return nil, nil, fmt.Errorf("item %s has label %q; Jira labels cannot contain whitespace", item.ID, label)
 			}
 		}
 		marker := workBreakdown.Discovery.ID + "/" + string(item.ID)
 		for _, dependency := range item.DependsOn {
 			links = append(links, linkOperation(workBreakdown.Discovery.ID, item.ID, dependency, linkType))
 		}
-		// Epics carry the relationship because they are what a reader lands on from a board;
-		// repeating it on every task would bury the tracking issue in noise.
 		if trackingKey != "" && item.Kind == domain.KindInitiative {
 			links = append(links, trackingOperation(workBreakdown.Discovery.ID, item.ID, trackingKey))
 		}
@@ -168,9 +152,6 @@ func (a *Adapter) Plan(
 	return append(operations, links...), warnings, nil
 }
 
-// trackingIssueKey reports the issue the discovery document links from its title, empty unless
-// that link addresses the instance being published to. A document may reference any tracker, and
-// only an issue in this instance can be linked.
 func trackingIssueKey(trackingURL string, baseURL string) string {
 	if trackingURL == "" {
 		return ""
@@ -191,8 +172,6 @@ func trackingIssueKey(trackingURL string, baseURL string) string {
 	return match[1]
 }
 
-// trackingOperation relates an epic back to the issue that prompted the investigation. The issue
-// exists already, so the operation carries its key rather than an item ID to resolve.
 func trackingOperation(discoveryID string, item domain.ItemID, trackingKey string) provider.Operation {
 	return provider.Operation{
 		ID:             "link-" + trackingKey + "/" + string(item),
@@ -208,9 +187,6 @@ func trackingOperation(discoveryID string, item domain.ItemID, trackingKey strin
 	}
 }
 
-// linkOperation records that dependency blocks item. Link operations carry no ItemID because
-// they publish a relationship rather than a work item. The slash separates the two IDs
-// unambiguously: item IDs may contain hyphens but never a slash.
 func linkOperation(
 	discoveryID string,
 	item domain.ItemID,
@@ -243,60 +219,32 @@ func (a *Adapter) Resolve(
 	}
 	published := make(map[string]provider.RemoteRef, len(pending))
 
-	// The discovery ID scopes the scan to one bundle, so the cost tracks the bundle rather
-	// than every issue this tool has created in the project.
 	jql := fmt.Sprintf(`project = %q AND labels = %q`, target.Jira.ProjectKey, generatedLabel)
 	if plan.DiscoveryID != "" {
 		jql += fmt.Sprintf(` AND labels = %q`, plan.DiscoveryID)
 	}
+	
 	nextPageToken := ""
+	client := a.getClient(target.Jira.BaseURL)
+	
 	for {
-		query := url.Values{}
-		query.Set("jql", jql)
-		query.Set("fields", "key")
-		query.Set("maxResults", "100")
-		if nextPageToken != "" {
-			query.Set("nextPageToken", nextPageToken)
-		}
-		request, err := a.newRequest(ctx, target, http.MethodGet, "/rest/api/3/search/jql?"+query.Encode(), nil)
+		result, err := client.SearchJQL(ctx, jql, 100, nextPageToken)
 		if err != nil {
 			return nil, err
 		}
-		var result struct {
-			Issues []struct {
-				ID  string `json:"id"`
-				Key string `json:"key"`
-			} `json:"issues"`
-			NextPageToken string `json:"nextPageToken"`
-			IsLast        bool   `json:"isLast"`
-		}
-		if err := a.do(request, &result); err != nil {
-			return nil, err
-		}
+		
 		for _, issue := range result.Issues {
-			propertyRequest, err := a.newRequest(
-				ctx,
-				target,
-				http.MethodGet,
-				"/rest/api/3/issue/"+url.PathEscape(issue.Key)+"/properties/"+url.PathEscape(propertyKey),
-				nil,
-			)
+			propertyID, err := client.GetIssueProperty(ctx, issue.Key, propertyKey)
 			if err != nil {
-				return nil, err
-			}
-			var property struct {
-				Value struct {
-					ID string `json:"id"`
-				} `json:"value"`
-			}
-			if err := a.do(propertyRequest, &property); err != nil {
-				if statusError, ok := err.(*httpStatusError); ok && statusError.StatusCode == http.StatusNotFound {
+				// We expect a literal 404 response body or status code string block from our Do wrapper
+				if strings.Contains(err.Error(), "HTTP 404") {
 					continue
 				}
 				return nil, err
 			}
-			if wanted[property.Value.ID] {
-				published[property.Value.ID] = provider.RemoteRef{
+			
+			if wanted[propertyID] {
+				published[propertyID] = provider.RemoteRef{
 					ID:   issue.ID,
 					Key:  issue.Key,
 					URL:  strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + issue.Key,
@@ -304,7 +252,6 @@ func (a *Adapter) Resolve(
 				}
 			}
 		}
-		// Every pending key is accounted for, so the remaining pages cannot add anything.
 		if len(published) == len(wanted) || result.IsLast || result.NextPageToken == "" {
 			break
 		}
@@ -369,7 +316,8 @@ func (a *Adapter) executeCreateIssue(
 		"project":     map[string]string{"key": projectKey},
 		"issuetype":   map[string]string{"name": issueType},
 		"summary":     title,
-		"description": adfDescription(description, acceptanceCriteria, documentURL),
+		// Using exported jiraclient.ADFDescription!
+		"description": jiraclient.ADFDescription(description, acceptanceCriteria, documentURL),
 		"labels":      labels,
 	}
 	if parentID, _ := operation.Fields["parent_item_id"].(string); parentID != "" {
@@ -385,22 +333,18 @@ func (a *Adapter) executeCreateIssue(
 			{"key": propertyKey, "value": map[string]string{"id": marker}},
 		},
 	}
-	request, err := a.newRequest(ctx, target, http.MethodPost, "/rest/api/3/issue", body)
+	
+	client := a.getClient(target.Jira.BaseURL)
+	response, err := client.CreateIssue(ctx, body)
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	var response struct {
-		ID  string `json:"id"`
-		Key string `json:"key"`
-	}
-	if err := a.do(request, &response); err != nil {
-		return provider.RemoteRef{}, err
-	}
-	// A just-created issue has no links, so record that rather than asking Jira for it.
+	
 	if a.linkCache == nil {
 		a.linkCache = make(map[string]map[string]bool)
 	}
 	a.linkCache[response.Key] = make(map[string]bool)
+	
 	return provider.RemoteRef{
 		ID:   response.ID,
 		Key:  response.Key,
@@ -419,8 +363,6 @@ func (a *Adapter) executeLink(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	// A tracking link names an issue that already exists, so it carries a key outright; a
-	// dependency link names an item this run published and resolves it.
 	blockingKey, _ := operation.Fields["blocking_key"].(string)
 	if blockingKey == "" {
 		blocking, err := resolveItem(operation, resolved, "blocking_item_id")
@@ -439,16 +381,8 @@ func (a *Adapter) executeLink(
 		return provider.RemoteRef{}, err
 	}
 	if !linked {
-		body := map[string]any{
-			"type":         map[string]string{"name": linkType},
-			"inwardIssue":  map[string]string{"key": blockingKey},
-			"outwardIssue": map[string]string{"key": blocked.Key},
-		}
-		request, err := a.newRequest(ctx, target, http.MethodPost, "/rest/api/3/issueLink", body)
-		if err != nil {
-			return provider.RemoteRef{}, err
-		}
-		if err := a.do(request, nil); err != nil {
+		client := a.getClient(target.Jira.BaseURL)
+		if err := client.CreateIssueLink(ctx, linkType, blockingKey, blocked.Key); err != nil {
 			return provider.RemoteRef{}, a.describeLinkFailure(ctx, target, linkType, err)
 		}
 		a.rememberLink(blocked.Key, linkType, blockingKey)
@@ -456,41 +390,25 @@ func (a *Adapter) executeLink(
 	return provider.RemoteRef{Key: blocked.Key, URL: blocked.URL, Type: "issue_link"}, nil
 }
 
-// describeLinkFailure names the instance's link types when Jira rejects the request, because a
-// link type that does not exist fails only after every issue has been created.
 func (a *Adapter) describeLinkFailure(
 	ctx context.Context,
 	target config.Target,
 	linkType string,
 	cause error,
 ) error {
-	statusError, ok := cause.(*httpStatusError)
-	if !ok || statusError.StatusCode != http.StatusBadRequest {
+	if !strings.Contains(cause.Error(), "HTTP 400") {
 		return cause
 	}
-	request, err := a.newRequest(ctx, target, http.MethodGet, "/rest/api/3/issueLinkType", nil)
+	
+	client := a.getClient(target.Jira.BaseURL)
+	names, err := client.GetIssueLinkTypes(ctx)
 	if err != nil {
 		return cause
-	}
-	var response struct {
-		IssueLinkTypes []struct {
-			Name string `json:"name"`
-		} `json:"issueLinkTypes"`
-	}
-	if err := a.do(request, &response); err != nil {
-		return cause
-	}
-	names := make([]string, 0, len(response.IssueLinkTypes))
-	for _, linkTypeName := range response.IssueLinkTypes {
-		names = append(names, linkTypeName.Name)
 	}
 	sort.Strings(names)
 	return fmt.Errorf("%w; link type %q must be one of: %s", cause, linkType, strings.Join(names, ", "))
 }
 
-// linkExists reports whether issueKey already records linkType against blockingKey. Jira omits
-// the viewed issue from each link, so an existing blocker appears as the inward issue. Results
-// are cached because an item with several dependencies asks about the same issue repeatedly.
 func (a *Adapter) linkExists(
 	ctx context.Context,
 	target config.Target,
@@ -501,37 +419,18 @@ func (a *Adapter) linkExists(
 	if cached, exists := a.linkCache[issueKey]; exists {
 		return cached[linkKey(linkType, blockingKey)], nil
 	}
-	request, err := a.newRequest(
-		ctx,
-		target,
-		http.MethodGet,
-		"/rest/api/3/issue/"+url.PathEscape(issueKey)+"?fields=issuelinks",
-		nil,
-	)
+	
+	client := a.getClient(target.Jira.BaseURL)
+	existingLinks, err := client.GetIssueLinks(ctx, issueKey)
 	if err != nil {
 		return false, err
 	}
-	var issue struct {
-		Fields struct {
-			IssueLinks []struct {
-				Type struct {
-					Name string `json:"name"`
-				} `json:"type"`
-				InwardIssue struct {
-					Key string `json:"key"`
-				} `json:"inwardIssue"`
-			} `json:"issuelinks"`
-		} `json:"fields"`
+	
+	existing := make(map[string]bool, len(existingLinks))
+	for _, link := range existingLinks {
+		existing[linkKey(link.Type, link.InwardIssue)] = true
 	}
-	if err := a.do(request, &issue); err != nil {
-		return false, err
-	}
-	existing := make(map[string]bool, len(issue.Fields.IssueLinks))
-	for _, link := range issue.Fields.IssueLinks {
-		if link.InwardIssue.Key != "" {
-			existing[linkKey(link.Type.Name, link.InwardIssue.Key)] = true
-		}
-	}
+	
 	if a.linkCache == nil {
 		a.linkCache = make(map[string]map[string]bool)
 	}
@@ -539,8 +438,6 @@ func (a *Adapter) linkExists(
 	return existing[linkKey(linkType, blockingKey)], nil
 }
 
-// rememberLink records a link this run created so a later edge onto the same issue does not
-// refetch it.
 func (a *Adapter) rememberLink(issueKey string, linkType string, blockingKey string) {
 	if a.linkCache == nil {
 		a.linkCache = make(map[string]map[string]bool)
@@ -569,61 +466,6 @@ func resolveItem(
 		return provider.RemoteRef{}, fmt.Errorf("item %q has not been published", itemID)
 	}
 	return remote, nil
-}
-
-func (a *Adapter) newRequest(
-	ctx context.Context,
-	target config.Target,
-	method string,
-	path string,
-	body any,
-) (*http.Request, error) {
-	var reader io.Reader
-	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reader = bytes.NewReader(encoded)
-	}
-	request, err := http.NewRequestWithContext(ctx, method, strings.TrimSuffix(target.Jira.BaseURL, "/")+path, reader)
-	if err != nil {
-		return nil, err
-	}
-	request.SetBasicAuth(a.email, a.token)
-	request.Header.Set("Accept", "application/json")
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
-	}
-	return request, nil
-}
-
-func (a *Adapter) do(request *http.Request, target any) error {
-	response, err := a.client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 32*1024))
-		return &httpStatusError{StatusCode: response.StatusCode, Body: string(body)}
-	}
-	if target == nil || response.StatusCode == http.StatusNoContent {
-		return nil
-	}
-	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
-		return fmt.Errorf("decode Jira response: %w", err)
-	}
-	return nil
-}
-
-type httpStatusError struct {
-	StatusCode int
-	Body       string
-}
-
-func (e *httpStatusError) Error() string {
-	return fmt.Sprintf("Jira returned HTTP %d: %s", e.StatusCode, e.Body)
 }
 
 func jiraIssueType(kind domain.ItemKind, mappings map[domain.ItemKind]string) string {
@@ -665,8 +507,6 @@ func fieldString(operation provider.Operation, name string) (string, error) {
 func fieldStringSlice(operation provider.Operation, name string) ([]string, error) {
 	switch values := operation.Fields[name].(type) {
 	case nil:
-		// An absent list and an empty one mean the same thing: an item with no acceptance
-		// criteria writes no key, and YAML reads an empty list back as nil.
 		return nil, nil
 	case []string:
 		return values, nil
