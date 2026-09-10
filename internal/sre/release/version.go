@@ -91,14 +91,21 @@ func bump(v version, bump bumpType) version {
 	}
 }
 
-func selectBumpType() (bumpType, error) {
+func selectBumpType(allowMajor bool) (bumpType, error) {
+
+	items := []string{
+		"patch (bug fixes)",
+		"minor (new features, backward compatible)",
+	}
+
+	// Only add the major option if the config explicitly allows it
+	if allowMajor{
+		items = append(items, "major (breaking changes)")
+	}
+
 	prompt := promptui.Select{
 		Label: "Select version bump type",
-		Items: []string{
-			"patch  (bug fixes)",
-			"minor  (new features, backward compatible)",
-			"major  (breaking changes)",
-		},
+		Items: items,
 	}
 
 	idx, _, err := prompt.Run()
@@ -112,7 +119,10 @@ func selectBumpType() (bumpType, error) {
 	case 1:
 		return BumpMinor, nil
 	case 2:
-		return BumpMajor, nil
+		if allowMajor {
+			return BumpMajor, nil
+		}
+		return 0, fmt.Errorf("invalid selection")
 	default:
 		return 0, fmt.Errorf("invalid selection")
 	}
