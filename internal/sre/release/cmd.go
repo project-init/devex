@@ -6,14 +6,13 @@ import (
 
 	"github.com/project-init/devex/internal/sre/config"
 	"github.com/spf13/cobra"
-
 )
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "release",
+		Use:   "release",
 		Short: "Fetches the latest git tag, prompts for a version bump type\n\t(major/minor/patch), and creates + pushes the new tag.",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			current, err := fetchLatestTag()
 			if err != nil {

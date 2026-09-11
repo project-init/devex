@@ -99,7 +99,7 @@ func selectBumpType(allowMajor bool) (bumpType, error) {
 	}
 
 	// Only add the major option if the config explicitly allows it
-	if allowMajor{
+	if allowMajor {
 		items = append(items, "major (breaking changes)")
 	}
 
