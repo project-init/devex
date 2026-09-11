@@ -21,7 +21,7 @@ func TestLiveJiraAPI(t *testing.T) {
 
 	// Wait up to 10 seconds per request
 	client := jiraclient.NewClient(&http.Client{Timeout: 10 * time.Second}, baseURL, email, apiKey)
-	
+
 	ctx := context.Background()
 
 	// Simple read-only check: Fetch link types

@@ -8,15 +8,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
 )
 
 // Client handles communication with Jira Rest API
 type Client struct {
-	client *http.Client
-	email  	string
+	client  *http.Client
+	email   string
 	baseURL string
-	token  	string
+	token   string
 }
 
 // NewClient creates new Jira API client
@@ -26,10 +25,10 @@ func NewClient(httpClient *http.Client, baseURL string, email string, token stri
 		httpClient = http.DefaultClient
 	}
 	return &Client{
-		client: httpClient,
+		client:  httpClient,
 		baseURL: strings.TrimSuffix(baseURL, "/"),
-		email: email,
-		token: token,
+		email:   email,
+		token:   token,
 	}
 }
 
@@ -44,19 +43,19 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body any) 
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	
+
 	reqURL := c.baseURL + path
 	request, err := http.NewRequestWithContext(ctx, method, reqURL, reader)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	request.SetBasicAuth(c.email, c.token)
 	request.Header.Set("Accept", "application/json")
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	
+
 	return request, nil
 }
 
@@ -67,16 +66,16 @@ func (c *Client) Do(request *http.Request, responseTarget any) error {
 		return err
 	}
 	defer func() { _ = response.Body.Close() }()
-	
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(response.Body, 32*1024))
 		return &httpStatusError{StatusCode: response.StatusCode, Body: string(bodyBytes)}
 	}
-	
+
 	if responseTarget == nil || response.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	
+
 	if err := json.NewDecoder(response.Body).Decode(responseTarget); err != nil {
 		return fmt.Errorf("decode Jira response: %w", err)
 	}
@@ -91,5 +90,3 @@ type httpStatusError struct {
 func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("Jira returned HTTP %d: %s", e.StatusCode, e.Body)
 }
-
-

@@ -7,15 +7,15 @@ import (
 
 // IssueResponse is a basic representation of a created / fetched Jira issue
 type IssueResponse struct {
-	ID 	string `json:"id"`
+	ID  string `json:"id"`
 	Key string `json:"key"`
 }
 
 // SearchResult is a response from JQL search
 type SearchResult struct {
-	Issues 			[]IssueResponse `json:"issues"`
-	NextPageToken 	string 
-	IsLast 			bool
+	Issues        []IssueResponse `json:"issues"`
+	NextPageToken string
+	IsLast        bool
 }
 
 // SearchJQL executes a JQL query and returns SearchResult
@@ -33,7 +33,7 @@ func (c *Client) SearchJQL(ctx context.Context, jql string, maxResults int, next
 	}
 
 	req, err := c.NewRequest(ctx, "GET", "/rest/api/3/search/jql?"+query.Encode(), nil)
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -51,13 +51,13 @@ func (c *Client) GetIssueProperty(ctx context.Context, issueKey, propertyKey str
 	if err != nil {
 		return "", err
 	}
-	
+
 	var property struct {
 		Value struct {
 			ID string `json:"id"`
 		} `json:"value"`
 	}
-	
+
 	if err := c.Do(req, &property); err != nil {
 		return "", err // Will return httpStatusError if 404 Not Found
 	}
@@ -70,7 +70,7 @@ func (c *Client) CreateIssue(ctx context.Context, body map[string]any) (*IssueRe
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var response IssueResponse
 	if err := c.Do(req, &response); err != nil {
 		return nil, err
@@ -85,12 +85,12 @@ func (c *Client) CreateIssueLink(ctx context.Context, linkType, inwardIssueKey, 
 		"inwardIssue":  map[string]string{"key": inwardIssueKey},
 		"outwardIssue": map[string]string{"key": outwardIssueKey},
 	}
-	
+
 	req, err := c.NewRequest(ctx, "POST", "/rest/api/3/issueLink", body)
 	if err != nil {
 		return err
 	}
-	
+
 	return c.Do(req, nil)
 }
 
@@ -106,7 +106,7 @@ func (c *Client) GetIssueLinks(ctx context.Context, issueKey string) ([]IssueLin
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var issue struct {
 		Fields struct {
 			IssueLinks []struct {
@@ -119,11 +119,11 @@ func (c *Client) GetIssueLinks(ctx context.Context, issueKey string) ([]IssueLin
 			} `json:"issuelinks"`
 		} `json:"fields"`
 	}
-	
+
 	if err := c.Do(req, &issue); err != nil {
 		return nil, err
 	}
-	
+
 	var links []IssueLink
 	for _, l := range issue.Fields.IssueLinks {
 		if l.InwardIssue.Key != "" {

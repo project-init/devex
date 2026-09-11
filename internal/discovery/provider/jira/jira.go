@@ -223,16 +223,16 @@ func (a *Adapter) Resolve(
 	if plan.DiscoveryID != "" {
 		jql += fmt.Sprintf(` AND labels = %q`, plan.DiscoveryID)
 	}
-	
+
 	nextPageToken := ""
 	client := a.getClient(target.Jira.BaseURL)
-	
+
 	for {
 		result, err := client.SearchJQL(ctx, jql, 100, nextPageToken)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		for _, issue := range result.Issues {
 			propertyID, err := client.GetIssueProperty(ctx, issue.Key, propertyKey)
 			if err != nil {
@@ -242,7 +242,7 @@ func (a *Adapter) Resolve(
 				}
 				return nil, err
 			}
-			
+
 			if wanted[propertyID] {
 				published[propertyID] = provider.RemoteRef{
 					ID:   issue.ID,
@@ -313,9 +313,9 @@ func (a *Adapter) executeCreateIssue(
 	}
 
 	fields := map[string]any{
-		"project":     map[string]string{"key": projectKey},
-		"issuetype":   map[string]string{"name": issueType},
-		"summary":     title,
+		"project":   map[string]string{"key": projectKey},
+		"issuetype": map[string]string{"name": issueType},
+		"summary":   title,
 		// Using exported jiraclient.ADFDescription!
 		"description": jiraclient.ADFDescription(description, acceptanceCriteria, documentURL),
 		"labels":      labels,
@@ -333,18 +333,18 @@ func (a *Adapter) executeCreateIssue(
 			{"key": propertyKey, "value": map[string]string{"id": marker}},
 		},
 	}
-	
+
 	client := a.getClient(target.Jira.BaseURL)
 	response, err := client.CreateIssue(ctx, body)
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	
+
 	if a.linkCache == nil {
 		a.linkCache = make(map[string]map[string]bool)
 	}
 	a.linkCache[response.Key] = make(map[string]bool)
-	
+
 	return provider.RemoteRef{
 		ID:   response.ID,
 		Key:  response.Key,
@@ -399,7 +399,7 @@ func (a *Adapter) describeLinkFailure(
 	if !strings.Contains(cause.Error(), "HTTP 400") {
 		return cause
 	}
-	
+
 	client := a.getClient(target.Jira.BaseURL)
 	names, err := client.GetIssueLinkTypes(ctx)
 	if err != nil {
@@ -419,18 +419,18 @@ func (a *Adapter) linkExists(
 	if cached, exists := a.linkCache[issueKey]; exists {
 		return cached[linkKey(linkType, blockingKey)], nil
 	}
-	
+
 	client := a.getClient(target.Jira.BaseURL)
 	existingLinks, err := client.GetIssueLinks(ctx, issueKey)
 	if err != nil {
 		return false, err
 	}
-	
+
 	existing := make(map[string]bool, len(existingLinks))
 	for _, link := range existingLinks {
 		existing[linkKey(link.Type, link.InwardIssue)] = true
 	}
-	
+
 	if a.linkCache == nil {
 		a.linkCache = make(map[string]map[string]bool)
 	}
