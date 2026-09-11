@@ -1,0 +1,31 @@
+name: Reusable Dependency Update
+on:
+  workflow_call:
+    inputs:
+      reviewers:
+        description: "Comma separated list of GitHub handles to request review from"
+        required: false
+        type: string
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: jdx/mise-action@v2
+
+      - name: Run update routine
+        run: mise run update-deps
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(deps): automated dependency updates"
+          title: "chore(deps): automated dependency updates"
+          body: "This PR was generated automatically by the reusable dependency update workflow."
+          branch: "chore/automated-update-deps"
+          delete-branch: true
+          reviewers: ${{ inputs.reviewers }}

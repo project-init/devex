@@ -1,0 +1,8 @@
+[tasks.update-deps]
+description = "Update all dependencies (Go modules and local mise tools)"
+run = [
+    "mise upgrade --bump",
+    "go get -u ./...",
+    "go mod tidy"
+]
+
