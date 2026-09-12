@@ -12,7 +12,7 @@ import (
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
 
-	"github.com/project-init/devex/internal/jiraclient"
+	"github.com/project-init/gommon/pkg/jiraclient"
 )
 
 func TestExecuteCreatesJiraIssue(t *testing.T) {
