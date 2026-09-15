@@ -11,6 +11,8 @@ import (
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
+
+	"github.com/project-init/gommon/pkg/jiraclient"
 )
 
 func TestExecuteCreatesJiraIssue(t *testing.T) {
@@ -461,7 +463,7 @@ func jiraTarget(baseURL string) config.Target {
 // Jira renders structure from ADF nodes alone, so acceptance criteria must arrive as a heading
 // and a bullet list rather than as text that merely looks like Markdown.
 func TestDescriptionCarriesHeadingAndBullets(t *testing.T) {
-	document := adfDescription(
+	document := jiraclient.ADFDescription(
 		"First paragraph.\n\nSecond paragraph\nwrapped by the author.",
 		[]string{"Criterion one.", "Criterion two."},
 		"https://github.com/project-init/devex/blob/main/docs/audit/discovery.md",
@@ -507,7 +509,7 @@ func TestDescriptionCarriesHeadingAndBullets(t *testing.T) {
 // A bundle outside a GitHub checkout has no document URL, and a filename a reader cannot open is
 // worth less than no footer.
 func TestDescriptionOmitsFooterWithoutURL(t *testing.T) {
-	document := adfDescription("Only a description.", nil, "")
+	document := jiraclient.ADFDescription("Only a description.", nil, "")
 
 	content := document["content"].([]map[string]any)
 	if len(content) != 1 || content[0]["type"] != "paragraph" {

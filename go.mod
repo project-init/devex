@@ -10,9 +10,8 @@ require (
 	github.com/google/go-github/v74 v74.0.0
 	github.com/jszwec/csvutil v1.10.0
 	github.com/manifoldco/promptui v0.9.0
-	github.com/project-init/gommon v0.6.2
+	github.com/project-init/gommon v0.7.1-0.20260912214826-5a0b190b4508
 	github.com/spf13/cobra v1.10.2
-	github.com/yuin/goldmark v1.8.6
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -42,6 +41,7 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/yuin/goldmark v1.8.6 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
