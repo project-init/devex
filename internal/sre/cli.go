@@ -6,6 +6,7 @@ import (
 
 	"github.com/project-init/devex/internal/sre/analyze"
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/sre/dependencies"
 	"github.com/project-init/devex/internal/sre/keygen"
 	"github.com/project-init/devex/internal/sre/postgres"
 	"github.com/project-init/devex/internal/sre/release"
@@ -46,6 +47,7 @@ func Command() *cobra.Command {
 
 	// Sub Commands (Tools)
 	rootCmd.AddCommand(analyze.Command())
+	rootCmd.AddCommand(dependencies.Command())
 	rootCmd.AddCommand(keygen.Command())
 	rootCmd.AddCommand(postgres.Command())
 	rootCmd.AddCommand(release.Command())
