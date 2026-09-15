@@ -1,3 +1,5 @@
 package config
 
-type ReleaseConfiguration struct{}
+type ReleaseConfiguration struct {
+	AllowMajorVersionBump *bool `yaml:"allowMajorVersionBump"`
+}
