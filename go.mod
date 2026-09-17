@@ -10,7 +10,7 @@ require (
 	github.com/google/go-github/v74 v74.0.0
 	github.com/jszwec/csvutil v1.10.0
 	github.com/manifoldco/promptui v0.9.0
-	github.com/project-init/gommon v0.7.1-0.20260912214826-5a0b190b4508
+	github.com/project-init/gommon v0.8.1
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )
