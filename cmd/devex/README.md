@@ -84,6 +84,7 @@ Site Reliability Engineering toolbox for common operational tasks.
 - [keygen](../../internal/sre/keygen/README.md) - Generate API keys based on configuration
 - [postgres](../../internal/sre/postgres/README.md) - PostgreSQL operations and access management
 - [release](../../internal/sre/release/README.md) - Git tag and release management
+- [dependencies](#dependencies) - Manage and upgrade dependencies
 - analyze - Code analysis operations
 - echo - Print and transform arguments
 
@@ -117,6 +118,48 @@ devex sre postgres access
 
 # Create a new release
 devex sre release
+```
+
+#### Dependencies
+
+Manage and upgrade dependencies across your project (Go modules, mise tools, and Buf remote plugins).
+
+**Usage:**
+
+```shell
+devex sre dependencies upgrade [flags]
+```
+
+**Flags:**
+
+- `--go` - Upgrade native Go dependencies (`go get -u ./...` and `go mod tidy`)
+- `--mise` - Upgrade global/local mise tools (`mise upgrade --bump`)
+- `--buf` - Upgrade Buf remote plugins (`buf dep update`)
+- `--all` - Upgrade intelligently based on `.sre/deps.yaml` configuration
+- `--show-commands` - Print commands without actually executing them
+
+**Configuration:**
+
+Create a `.sre/deps.yaml` file to configure which dependency types to upgrade:
+
+```yaml
+dependencies:
+  go: true
+  mise: true
+  buf: false
+```
+
+**Examples:**
+
+```shell
+# Upgrade Go dependencies only
+devex sre dependencies upgrade --go
+
+# Upgrade based on configuration
+devex sre dependencies upgrade --all
+
+# See what commands would be run
+devex sre dependencies upgrade --all --show-commands
 ```
 
 ---
