@@ -33,6 +33,12 @@ devex <subcommand> [options]
   devex sre <tool> [args]
   ```
 
+  Includes:
+  - keygen - Generate API keys
+  - postgres - PostgreSQL operations
+  - release - Git tag and release management
+  - dependencies - Manage and upgrade dependencies
+
 - **[localize](cmd/devex/README.md#localize)** - Audit translations and generate mobile localization bundles
 
   ```bash
