@@ -1,0 +1,8 @@
+name: CI
+jobs:
+  test:
+    steps:
+      # Matches mise.toml.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.9"

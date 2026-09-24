@@ -1,0 +1,6 @@
+dependencies:
+  upgrade: [mise, go]
+  go:
+    # go.mod holds the minor line's floor (1.27.0); mise pins the patch.
+    target: patch
+    directive: minor

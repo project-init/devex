@@ -27,6 +27,10 @@ func Command() *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			path, err := resolveConfigPath(sreConfigFile)
 			if err != nil {
+				if sreConfigFile == "" && configOptional(cmd) {
+					return nil
+				}
+
 				return err
 			}
 
@@ -66,6 +70,16 @@ func Execute() error {
 		return err
 	}
 	return nil
+}
+
+func configOptional(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Annotations[config.OptionalAnnotation] == "true" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func resolveConfigPath(explicit string) (string, error) {

@@ -84,7 +84,7 @@ Site Reliability Engineering toolbox for common operational tasks.
 - [keygen](../../internal/sre/keygen/README.md) - Generate API keys based on configuration
 - [postgres](../../internal/sre/postgres/README.md) - PostgreSQL operations and access management
 - [release](../../internal/sre/release/README.md) - Git tag and release management
-- [dependencies](#dependencies) - Manage and upgrade dependencies
+- [dependencies](../../internal/sre/dependencies/README.md) - Upgrade dependencies and keep every Go version pin in step
 - analyze - Code analysis operations
 - echo - Print and transform arguments
 
@@ -122,45 +122,32 @@ devex sre release
 
 #### Dependencies
 
-Manage and upgrade dependencies across your project (Go modules, mise tools, and Buf remote plugins).
-
-**Usage:**
+Upgrade mise tools, Go modules, and Buf dependencies. `--go` moves every Go version pin (mise,
+`go.mod`, `go.work`, Dockerfile golang images, `setup-go`, `.go-version`, and `.tool-versions`) to one
+version, verifies each new image tag against its registry, and upgrades modules under exactly
+that toolchain. `check` fails on drift without network access. A `.sre` directory is optional.
 
 ```shell
-devex sre dependencies upgrade [flags]
+# Move every Go pin to the latest patch and upgrade modules.
+devex sre dependencies upgrade --go
+
+# Upgrade the ecosystems listed in dependencies.upgrade, printing the plan without writing.
+devex sre dependencies upgrade --all --show-commands
+
+# Fail when Go pins disagree; run in pull request CI.
+devex sre dependencies check
 ```
-
-**Flags:**
-
-- `--go` - Upgrade native Go dependencies (`go get -u ./...` and `go mod tidy`)
-- `--mise` - Upgrade global/local mise tools (`mise upgrade --bump`)
-- `--buf` - Upgrade Buf remote plugins (`buf dep update`)
-- `--all` - Upgrade intelligently based on `.sre/deps.yaml` configuration
-- `--show-commands` - Print commands without actually executing them
-
-**Configuration:**
-
-Create a `.sre/deps.yaml` file to configure which dependency types to upgrade:
 
 ```yaml
 dependencies:
-  go: true
-  mise: true
-  buf: false
+  upgrade: [mise, go, buf]
+  go:
+    target: patch # patch | latest
+    directive: none # none | minor | exact
 ```
 
-**Examples:**
-
-```shell
-# Upgrade Go dependencies only
-devex sre dependencies upgrade --go
-
-# Upgrade based on configuration
-devex sre dependencies upgrade --all
-
-# See what commands would be run
-devex sre dependencies upgrade --all --show-commands
-```
+See the [dependencies README](../../internal/sre/dependencies/README.md) for every flag, config
+field, and failure mode.
 
 ---
 
