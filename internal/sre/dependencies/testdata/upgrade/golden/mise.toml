@@ -1,0 +1,6 @@
+[tools]
+
+# Golang
+# Matches the go directive in go.mod and GO_IMAGE_TAG in the docker/*/Dockerfile builders.
+go = "1.26.9"
+jq = "latest"   # trailing comment

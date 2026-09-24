@@ -17,6 +17,10 @@ type Configuration struct {
 	Release      ReleaseConfiguration      `yaml:"release"`
 }
 
+// OptionalAnnotation marks a command that runs without a config directory, applying its own
+// defaults when GetConfig finds none. The sre root checks the command and each parent.
+const OptionalAnnotation = "devex.sre/config-optional"
+
 type configKey struct{}
 
 func WithConfig(ctx context.Context, cfg *Configuration) context.Context {
