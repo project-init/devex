@@ -655,3 +655,23 @@ func TestMiseInstallCoversPinsMiseReads(t *testing.T) {
 		t.Errorf("MiseInstall = %q, want nil with no changes", got)
 	}
 }
+
+func TestExecRunnerDropsInheritedGOROOT(t *testing.T) {
+	t.Setenv("GOROOT", "/leaked/toolchain")
+	for _, tc := range []struct {
+		env  []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"GOROOT=/explicit"}, "/explicit"},
+	} {
+		var out strings.Builder
+		run := ExecRunner{Stdout: &out}
+		if err := run.Run(context.Background(), t.TempDir(), tc.env, "sh", "-c", `printf %s "$GOROOT"`); err != nil {
+			t.Fatal(err)
+		}
+		if out.String() != tc.want {
+			t.Errorf("env %q: child GOROOT = %q, want %q", tc.env, out.String(), tc.want)
+		}
+	}
+}

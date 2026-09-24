@@ -22,7 +22,8 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-// Runner executes an external command in dir with env added to the inherited environment.
+// Runner executes an external command in dir with the inherited environment, minus GOROOT,
+// plus env.
 type Runner interface {
 	Run(ctx context.Context, dir string, env []string, name string, args ...string) error
 }
@@ -53,7 +54,10 @@ func (r ExecRunner) Run(ctx context.Context, dir string, env []string, name stri
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	// An empty GOROOT discards an inherited one, such as the root go run exports after switching
+	// toolchains. Left in place, it pairs every go a child runs, mise's included, with another
+	// release's compiler.
+	cmd.Env = slices.Concat(os.Environ(), []string{"GOROOT="}, env)
 	cmd.Stdout, cmd.Stderr = r.Stdout, &stderr
 	if r.Stderr != nil {
 		cmd.Stderr = io.MultiWriter(r.Stderr, &stderr)

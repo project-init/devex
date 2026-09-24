@@ -172,6 +172,9 @@ a pin, so each mention produces a warning.
 5. **Verify.** Run `check`; any drift fails the run.
 6. **`--buf`.** Run `buf dep update`.
 
+Every command runs with an empty `GOROOT`, so a root the caller exports, such as `go run`'s,
+cannot pair a child's `go` with another release's compiler.
+
 A failure after step 2 leaves the written files in place. In CI the job fails and no pull
 request opens; locally, git is the rollback.
 
