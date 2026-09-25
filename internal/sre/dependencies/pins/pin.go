@@ -143,15 +143,15 @@ func numberedLines(data []byte) iter.Seq[textLine] {
 	}
 }
 
-// lineAt returns the 1-based line holding offset, given lineOffsets' result.
+// lineAt returns the 1-based line holding offset, given LineOffsets' result.
 func lineAt(offsets []int, offset int) int {
 	i, _ := slices.BinarySearch(offsets, offset+1)
 
 	return i - 1
 }
 
-// lineOffsets returns the byte offset at which each line begins, indexed from 1.
-func lineOffsets(data []byte) []int {
+// LineOffsets returns the byte offset at which each line begins, indexed from 1.
+func LineOffsets(data []byte) []int {
 	offsets := []int{0, 0}
 	for i, b := range data {
 		if b == '\n' {

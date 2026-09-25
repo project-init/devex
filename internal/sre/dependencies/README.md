@@ -37,8 +37,8 @@ below.
 | Flag              | Effect                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------- |
 | `--go`            | Sync every Go pin, then run `go get -u ./...` and `go mod tidy` in each module                    |
-| `--mise`          | Run `mise upgrade --bump --exclude go`; only `--go` moves Go                                      |
-| `--buf`           | Run `buf dep update`                                                                              |
+| `--mise`          | Upgrade mise tools within their policies; only `--go` moves Go                                    |
+| `--buf`           | Move `buf.gen.yaml` plugins and inputs within their policies, regenerate, and refresh `buf.lock`  |
 | `--all`           | Enable the ecosystems in `dependencies.upgrade`                                                   |
 | `--go-version`    | Move Go to this published release, ignoring `target` and waiving existing drift                   |
 | `--show-commands` | Resolve the target and verify image tags, then print each change and command without running them |
@@ -56,6 +56,10 @@ dependencies:
     images: [golang] # images that carry the Go toolchain
     exclude: [] # globs skipped on top of .gitignore
     pins: [] # locations the finders cannot recognize
+  mise:
+    policies: {} # tool key → latest | minor | patch | pin
+  buf:
+    policies: {} # remote plugin or git_repo → latest | minor | patch | pin
 ```
 
 ### `target`
@@ -116,6 +120,71 @@ dependencies:
         pattern: 'ENV GO_VERSION=(?P<version>\S+)'
 ```
 
+### Policies
+
+A policy bounds how far one version may move. Every entry without a policy takes `latest`.
+
+| Policy   | Moves to                                    |
+| -------- | ------------------------------------------- |
+| `latest` | the newest release, across majors           |
+| `minor`  | the newest release within the current major |
+| `patch`  | the newest release within the current minor |
+| `pin`    | nothing; devex never touches it             |
+
+A policy naming nothing in the repository fails the run, so a typo cannot leave a pin on
+`latest`. A `mise.policies` entry named only by configs mise does not load here, such as
+`mise.ci.toml` without `MISE_ENV=ci`, warns instead. No version ever moves backwards.
+
+### `mise.policies`
+
+Key each tool as a mise config at the repository root writes it. devex asks `mise config ls`
+which configs mise loads there, so the set matches what `mise upgrade` acts on: set `MISE_ENV`
+and environment configs such as `mise.ci.toml` join it. Global configs and those of parent
+directories stay out, and so does `.tool-versions`, whose tools cannot take a policy.
+
+```yaml
+dependencies:
+  mise:
+    policies:
+      node: minor
+      ruby: pin
+      aqua:golangci/golangci-lint: minor
+```
+
+No key may name Go, whether `go`, `golang`, or `core:go`: `go.target` and `go.directive`
+govern it. A tool capped at `minor`
+or `patch` moves to what `mise latest <tool>@<major>` or `@<major.minor>` reports, written at
+the pin's own precision and prefix, so `26.8.2` becomes `26.10.0` and `v1.72.0` becomes
+`v1.73.0`. A pin with exactly the precision the policy holds, such as `node = "26"` under
+`minor`, already names its range, so it stays as written and only its install moves. A pin with
+less, such as `node = "26"` under `patch`, spans more than the policy allows, and a version that
+is not a release, such as `latest` or `lts`, cannot be capped at all; devex warns about both and
+leaves them pinned.
+
+### `buf.policies`
+
+Key each remote plugin by its name without a version, under `remote` in a v2 template or
+`plugin` in a v1 one, and each git input by its `git_repo`:
+
+```yaml
+dependencies:
+  buf:
+    policies:
+      buf.build/apple/swift: pin
+      https://github.com/acme/protos.git: minor
+```
+
+Remote plugins take `latest` or `pin` only: the registry reports a plugin's newest version but
+lists no others. A plugin moves to that version exactly as published. Git inputs take any
+policy; devex reads their tags with `git ls-remote` and skips prereleases. A plugin without a
+version floats to the newest on every `buf generate`, so devex warns unless its policy is `pin`.
+More forms stay unmanaged and warn unless their policy is `pin`: a plugin with a `revision`,
+which belongs to one plugin version; a version or tag that is not a release, such as
+`proto/v1.8.2`; an input that follows a `branch`, `commit`, or `ref`; and a `module` input with
+a version, keyed by its name without that version; and a version devex cannot locate in its
+file, such as a block scalar. A failed registry or `git ls-remote` lookup
+stops the run before devex writes anything; a `pin` policy on that entry skips the lookup.
+
 ## What it finds
 
 | Pin                 | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -137,12 +206,13 @@ for that ARG's name. A `--build-arg` set in a compose file, workflow, or Makefil
 the Dockerfile default, and neither `upgrade` nor `check` can see it unless it is declared as
 a pin, so each mention produces a warning.
 
-## How `upgrade --go` runs
+## How `upgrade` runs
 
 1. **Plan, writing nothing.** Discover every pin, derive the current version, resolve the
    target from go.dev, and query the registry for each rewritten or digest-pinned image
-   tag. The planned versions must pass `check`. Pins that disagree, an unpublished tag, or a
-   floor above the target stop the run here, with every file untouched.
+   tag. The planned versions must pass `check`. The mise and buf plans resolve here too. Pins
+   that disagree, an unpublished tag, a failed lookup, a bad policy, or a floor above the
+   target stop the run here, with every file untouched.
 2. **Write.** When a pin mise reads moves, in a mise config or `.tool-versions`,
    `mise install go@<target>` runs first if mise is on `PATH`, so its shims can run the new
    Go; it writes no config. devex then confirms every planned edit against the
@@ -151,9 +221,11 @@ a pin, so each mention produces a warning.
    `go.work` that yields the line `go mod edit` would write. A mise lock file, such as
    `mise.lock` or `mise.ci.lock`, keeps the old Go, so devex warns; run `mise lock` to
    refresh it.
-3. **`--mise`.** Run `mise upgrade --bump --exclude go`, so Go moves only with every other
-   pin. It runs after the write because it can shift the text of files devex edits in place,
-   such as `.tool-versions`.
+3. **`--mise`.** Rewrite each tool capped at `minor` or `patch` in place, alongside the Go
+   pins, then run `mise upgrade --bump` with `--exclude` for Go and every tool whose policy is
+   not `latest`. A plain `mise upgrade` of the capped tools follows, installing each within the
+   range its config now names and refreshing `mise.lock`. The bump runs after the write
+   because it can shift the text of files devex edits in place, such as `.tool-versions`.
 4. **Upgrade modules.** Run `go get -u ./...` and `go mod tidy` in every module with
    `GOTOOLCHAIN=go<target>` and `GOWORK=off`, so each works on its own `go.mod`. A
    dependency whose latest release needs a newer Go is held at its current version,
@@ -170,7 +242,11 @@ a pin, so each mention produces a warning.
    the held one, and devex does not report those.
 
 5. **Verify.** Run `check`; any drift fails the run.
-6. **`--buf`.** Run `buf dep update`.
+6. **`--buf`.** Rewrite the plugin versions and input tags in each `buf.gen*.yaml`, run
+   `buf dep update` beside every `buf.yaml` that declares `deps`, then run `buf generate` from
+   the directory of every template that changed, so committed output follows. When a
+   `buf.lock` moved, every template regenerates instead. buf runs last, so it
+   generates with any buf CLI that mise just bumped.
 
 Every command runs with an empty `GOROOT`, so a root the caller exports, such as `go run`'s,
 cannot pair a child's `go` with another release's compiler.
@@ -206,8 +282,8 @@ does not hold. Run it in pull request CI:
 
 ## Tests
 
-Unit tests fake go.dev, registries, and every external command. A live check against go.dev
-and Docker Hub runs behind the `integration` build tag:
+Unit tests fake go.dev, registries, and every external command. Live checks against go.dev,
+Docker Hub, and buf.build run behind the `integration` build tag:
 
 ```shell
 go test -tags integration ./internal/sre/dependencies/...

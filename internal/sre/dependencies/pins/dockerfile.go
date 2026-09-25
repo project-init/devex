@@ -71,7 +71,7 @@ func findDockerfile(file string, data []byte, images []string) ([]Pin, []string)
 	f := &dockerfileFinder{
 		file:    file,
 		data:    data,
-		offsets: lineOffsets(data),
+		offsets: LineOffsets(data),
 		images:  images,
 		args:    map[string]dockerArg{},
 		pinAt:   map[int]int{},

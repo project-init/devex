@@ -4,3 +4,5 @@
 # Matches the go directive in go.mod and GO_IMAGE_TAG in the docker/*/Dockerfile builders.
 go = "1.26.6"
 jq = "latest"   # trailing comment
+node = "26.8.2" # LTS line
+awscli = { version = "2.36.43", symlink_bins = "true" }

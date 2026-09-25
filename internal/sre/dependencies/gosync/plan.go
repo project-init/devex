@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/project-init/devex/internal/sre/dependencies/edit"
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
@@ -24,14 +25,7 @@ type Registry interface {
 }
 
 // Change replaces the text at Span in File.
-type Change struct {
-	File string
-	Line int
-	Kind pins.Kind
-	Span pins.Span
-	From string
-	To   string
-}
+type Change = edit.Change
 
 // Plan is every change a Go upgrade makes, computed and verified before devex writes a file.
 type Plan struct {

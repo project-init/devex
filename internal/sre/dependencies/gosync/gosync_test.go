@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/sre/dependencies/edit"
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
@@ -404,7 +406,7 @@ func TestApplyWritesNothingWhenAnySpanIsStale(t *testing.T) {
 		{File: "a/Dockerfile", Line: 1, Kind: pins.KindDockerfile, Span: pins.Span{Start: 12, End: 18}, From: "1.26.6", To: "1.26.9"},
 		{File: "go.mod", Line: 3, Kind: pins.KindGoDirective, Span: pins.Span{Start: 15, End: 21}, From: "1.26.6", To: "1.26.9"},
 	}
-	err := Apply(root, changes)
+	err := edit.Apply(root, changes)
 	if err == nil || !strings.Contains(err.Error(), "changed since planning") {
 		t.Fatalf("err = %v, want the stale span refused", err)
 	}
@@ -422,7 +424,7 @@ func TestApplyWritesEveryChangeInAMixedFile(t *testing.T) {
 		{File: "mise.toml", Line: 2, Kind: pins.KindMise, Span: pins.Span{Start: miseStart, End: miseStart + 6}, From: "1.26.6", To: "1.26.9"},
 		{File: "mise.toml", Line: 3, Kind: pins.KindDeclared, Span: pins.Span{Start: declStart, End: declStart + 6}, From: "1.26.6", To: "1.26.9"},
 	}
-	if err := Apply(root, changes); err != nil {
+	if err := edit.Apply(root, changes); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(root, "mise.toml"))
@@ -436,7 +438,7 @@ func TestApplyWritesGoWork(t *testing.T) {
 	changes := []Change{
 		{File: "go.work", Line: 3, Kind: pins.KindWorkToolchain, Span: pins.Span{Start: 23, End: 29}, From: "1.26.6", To: "1.26.9"},
 	}
-	if err := Apply(root, changes); err != nil {
+	if err := edit.Apply(root, changes); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(root, "go.work"))
@@ -490,6 +492,10 @@ func (r *holdingRunner) Run(_ context.Context, _ string, _ []string, name string
 	}
 
 	return &CommandError{Command: "go get", Stderr: []byte(stderr.String()), Err: errors.New("exit status 1")}
+}
+
+func (r *holdingRunner) Output(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+	return nil, r.Run(ctx, dir, env, name, args...)
 }
 
 func TestUpdateModulesHoldsBackModulesNeedingNewerGo(t *testing.T) {
@@ -636,6 +642,10 @@ func (f runnerFunc) Run(_ context.Context, _ string, _ []string, name string, ar
 	return f(name, args...)
 }
 
+func (f runnerFunc) Output(_ context.Context, _ string, _ []string, name string, args ...string) ([]byte, error) {
+	return nil, f(name, args...)
+}
+
 func TestHighestNeedKeepsPrereleases(t *testing.T) {
 	if got := highestNeed([]Held{{NeedsGo: "1.26.9"}, {NeedsGo: "1.27rc1"}}); got != "1.27rc1" {
 		t.Errorf("highestNeed = %q, want 1.27rc1", got)
@@ -673,5 +683,24 @@ func TestExecRunnerDropsInheritedGOROOT(t *testing.T) {
 		if out.String() != tc.want {
 			t.Errorf("env %q: child GOROOT = %q, want %q", tc.env, out.String(), tc.want)
 		}
+	}
+}
+
+func TestExecRunnerStopsWaitingOnALeftoverChild(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	run, dir := ExecRunner{}, t.TempDir()
+	// The background sleep keeps stderr open after sh exits, as an ssh ControlMaster does.
+	const leftover = "sleep 5 >/dev/null & "
+	start := time.Now()
+	out, err := run.Output(ctx, dir, nil, "sh", "-c", leftover+"echo ok")
+	if err != nil || string(out) != "ok\n" {
+		t.Errorf("Output = %q, %v; want ok and no error", out, err)
+	}
+	if _, err := run.Output(ctx, dir, nil, "sh", "-c", leftover+"exit 3"); err == nil {
+		t.Error("exit 3 returned no error")
+	}
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Errorf("took %s, waiting on the leftover sleep", elapsed)
 	}
 }

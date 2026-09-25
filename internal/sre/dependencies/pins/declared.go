@@ -37,7 +37,7 @@ func CompileDeclared(files []string, pattern string) (Declared, error) {
 func findDeclared(file string, data []byte, d Declared) ([]Pin, []string) {
 	var pins []Pin
 	var warnings []string
-	offsets := lineOffsets(data)
+	offsets := LineOffsets(data)
 	for _, m := range d.pattern.FindAllSubmatchIndex(data, -1) {
 		start, end := m[2*d.version], m[2*d.version+1]
 		if start < 0 {

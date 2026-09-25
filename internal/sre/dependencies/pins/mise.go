@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// miseGoKey matches the go tool's key in any TOML quoting, and miseGoValue its value as a
+// miseGoKey matches the go tool's key in any TOML quoting, and miseValue any tool's value as a
 // string, as an inline table's own version key, or through a dotted .version key.
 const (
 	miseGoKey = `(?:go|"go"|'go')`
@@ -19,7 +19,7 @@ const (
 	miseGoAlias = `(?:[\w-]+:)?(?:[\w.-]+/)*(?:go|(?:[\w.-]*-)?golang)`
 	// miseGoAnyKey matches the go key or an alias, in any TOML quoting.
 	miseGoAnyKey = `(?:go(?:lang)?|"` + miseGoAlias + `"|'` + miseGoAlias + `')`
-	miseGoValue  = `(?:\.version)?\s*=\s*(?:\{(?:[^{}]*?,)?\s*version\s*=\s*)?` + tomlString
+	miseValue    = `(?:\.version)?\s*=\s*(?:\{(?:[^{}]*?,)?\s*version\s*=\s*)?` + tomlString
 	// miseGoAssign follows the go key when a line assigns it a version in any form.
 	miseGoAssign = `\s*(?:=|\.version\b)`
 	// miseVersion starts the version line of a [tools.go] table.
@@ -39,26 +39,36 @@ var (
 	// key at the root, a go key under [tools], and version under [tools.go].
 	miseGoTables = map[string]misePatterns{
 		"": {
-			regexp.MustCompile(`^\s*tools\.` + miseGoKey + miseGoValue),
+			regexp.MustCompile(`^\s*tools\.` + miseGoKey + miseValue),
 			regexp.MustCompile(`(?:^|[\s{,]|\btools\.)` + miseGoAnyKey + miseGoAssign),
 		},
 		"tools": {
-			regexp.MustCompile(`^\s*` + miseGoKey + miseGoValue),
+			regexp.MustCompile(`^\s*` + miseGoKey + miseValue),
 			regexp.MustCompile(`(?:^|[\s{,])` + miseGoAnyKey + miseGoAssign),
 		},
-		"tools.go": {regexp.MustCompile(miseVersion + `\s*` + tomlString), miseVersionKey},
+		"tools.go": {miseTableEntry, miseVersionKey},
 	}
+	// miseTableEntry matches the version line of a [tools.<key>] table.
+	miseTableEntry = regexp.MustCompile(miseVersion + `\s*` + tomlString)
 	miseVersionKey = regexp.MustCompile(miseVersion)
 	// miseAliasTable serves a [tools.<alias>] table, such as [tools.golang].
-	miseAliasTable     = misePatterns{mention: miseVersionKey}
-	miseAliasTableName = regexp.MustCompile(`^tools\.` + miseGoAlias + `$`)
+	miseAliasTable = misePatterns{mention: miseVersionKey}
+	miseGoToolKey  = regexp.MustCompile(`^` + miseGoAlias + `$`)
 	// miseConfigName and miseDirConfigName match the file names mise loads, including their
 	// environment and local variants, such as mise.ci.toml and config.ci.local.toml.
 	miseConfigName    = regexp.MustCompile(`^\.?mise(?:\.[A-Za-z0-9_-]+){0,2}\.toml$`)
 	miseDirConfigName = regexp.MustCompile(`^config(?:\.[A-Za-z0-9_-]+){0,2}\.toml$`)
 )
 
-func isMiseConfig(p string) bool {
+// IsMiseGoKey reports whether key, unquoted, names Go itself in mise, such as go, golang, or
+// core:go.
+func IsMiseGoKey(key string) bool {
+	return miseGoToolKey.MatchString(key)
+}
+
+// IsMiseConfig reports whether p names a file mise may load as config in some environment,
+// such as mise.toml, mise.ci.toml, or .config/mise/conf.d/tasks.toml.
+func IsMiseConfig(p string) bool {
 	base, dir := path.Base(p), path.Dir(p)
 	switch {
 	case miseConfigName.MatchString(base):
@@ -77,13 +87,88 @@ func isMiseConfig(p string) bool {
 func IsMiseLock(p string) bool {
 	lock, ok := strings.CutSuffix(p, ".lock")
 
-	return ok && isMiseConfig(lock+".toml")
+	return ok && IsMiseConfig(lock+".toml")
 }
 
 func isMiseDir(dir string) bool {
 	base := path.Base(dir)
 
 	return base == "mise" || base == ".mise"
+}
+
+// MiseTool is one tool entry in a mise config whose version is a single string.
+type MiseTool struct {
+	// File is the slash-separated path relative to the repository root.
+	File string
+	// Line is the 1-based line holding the version.
+	Line int
+	// Key is the tool's key without quotes, such as "node" or "aqua:golangci/golangci-lint".
+	Key string
+	// Version is the version as written, such as "26.8.2", "v1.72.0", or "latest".
+	Version string
+	// Span locates Version within File.
+	Span Span
+}
+
+// miseKey matches a TOML key in any quoting and captures it with its quotes.
+const miseKey = `([A-Za-z0-9_-]+|"[^"]+"|'[^']+')`
+
+var (
+	miseToolsEntry = regexp.MustCompile(`^\s*` + miseKey + miseValue)
+	miseRootEntry  = regexp.MustCompile(`^\s*tools\.` + miseKey + miseValue)
+)
+
+// MiseTools lists every tool entry in a mise config: keys under [tools], a root tools.<key>,
+// and version under a [tools.<key>] table. Entries whose value is an array or a multi-line
+// table are skipped, since no single string names their version.
+func MiseTools(file string, data []byte) []MiseTool {
+	var (
+		tools []MiseTool
+		state tomlState
+		table string
+	)
+	for l := range numberedLines(data) {
+		inherited := state
+		var code string
+		state, code = scanTOMLLine(l.text, state)
+		if inherited != (tomlState{}) {
+			continue
+		}
+		if m := tomlTableHeader.FindStringSubmatch(code); m != nil {
+			table = tomlKeyQuotes.Replace(m[1])
+
+			continue
+		}
+
+		// A [tools.<key>] table names its key in the header; the other forms name it on the line.
+		// Either way, the version is the last capture group.
+		re, key := miseToolsEntry, ""
+		switch {
+		case table == "":
+			re = miseRootEntry
+		case strings.HasPrefix(table, "tools."):
+			re, key = miseTableEntry, strings.TrimPrefix(table, "tools.")
+		case table != "tools":
+			continue
+		}
+		m := re.FindStringSubmatchIndex(code)
+		if m == nil {
+			continue
+		}
+		if key == "" {
+			key = tomlKeyQuotes.Replace(code[m[2]:m[3]])
+		}
+		start, end := m[len(m)-2], m[len(m)-1]
+		tools = append(tools, MiseTool{
+			File:    file,
+			Line:    l.no,
+			Key:     key,
+			Version: code[start:end],
+			Span:    Span{Start: l.start + start, End: l.start + end},
+		})
+	}
+
+	return tools
 }
 
 func findMise(file string, data []byte) ([]Pin, []string) {
@@ -132,7 +217,7 @@ func misePatternsFor(table string) (misePatterns, bool) {
 	if patterns, ok := miseGoTables[table]; ok {
 		return patterns, true
 	}
-	if miseAliasTableName.MatchString(table) {
+	if key, ok := strings.CutPrefix(table, "tools."); ok && IsMiseGoKey(key) {
 		return miseAliasTable, true
 	}
 
