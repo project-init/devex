@@ -2,13 +2,11 @@ package gosync
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"go/version"
 	"io"
-	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -16,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
@@ -26,6 +25,8 @@ import (
 // plus env.
 type Runner interface {
 	Run(ctx context.Context, dir string, env []string, name string, args ...string) error
+	// Output runs the command like Run and returns its stdout instead of streaming it.
+	Output(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error)
 }
 
 // ExecRunner runs commands as subprocesses, streaming their output.
@@ -51,18 +52,37 @@ func (e *CommandError) Unwrap() error {
 }
 
 func (r ExecRunner) Run(ctx context.Context, dir string, env []string, name string, args ...string) error {
+	return r.exec(ctx, dir, env, r.Stdout, name, args...)
+}
+
+func (r ExecRunner) Output(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+	var stdout bytes.Buffer
+	if err := r.exec(ctx, dir, env, &stdout, name, args...); err != nil {
+		return nil, err
+	}
+
+	return stdout.Bytes(), nil
+}
+
+func (r ExecRunner) exec(ctx context.Context, dir string, env []string, stdout io.Writer, name string, args ...string) error {
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	// A timed-out command's children, such as git's ssh, can hold its pipes open after it dies.
+	if _, ok := ctx.Deadline(); ok {
+		cmd.WaitDelay = time.Second
+	}
 	// An empty GOROOT discards an inherited one, such as the root go run exports after switching
 	// toolchains. Left in place, it pairs every go a child runs, mise's included, with another
 	// release's compiler.
 	cmd.Env = slices.Concat(os.Environ(), []string{"GOROOT="}, env)
-	cmd.Stdout, cmd.Stderr = r.Stdout, &stderr
+	cmd.Stdout, cmd.Stderr = stdout, &stderr
 	if r.Stderr != nil {
 		cmd.Stderr = io.MultiWriter(r.Stderr, &stderr)
 	}
-	if err := cmd.Run(); err != nil {
+	// ErrWaitDelay means the command succeeded while a child it left behind, such as an ssh
+	// ControlMaster, still held its pipes.
+	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return &CommandError{Command: fmt.Sprintf("%s %s (in %s)", name, strings.Join(args, " "), dir), Stderr: stderr.Bytes(), Err: err}
 	}
 
@@ -96,38 +116,6 @@ func MiseInstall(plan Plan) []string {
 	for _, c := range plan.Changes {
 		if c.Kind == pins.KindMise || c.Kind == pins.KindToolVersions {
 			return []string{"mise", "install", "go@" + plan.Target.Full()}
-		}
-	}
-
-	return nil
-}
-
-// Apply writes changes, replacing only each one's version digits, so comments, formatting,
-// and tool options survive. It confirms every change still matches its planned text before
-// writing anything, so a stale plan fails with the repository untouched.
-func Apply(root string, changes []Change) error {
-	byFile := map[string][]Change{}
-	for _, c := range changes {
-		byFile[c.File] = append(byFile[c.File], c)
-	}
-
-	type write struct {
-		path string
-		data []byte
-	}
-	var writes []write
-	for _, file := range slices.Sorted(maps.Keys(byFile)) {
-		abs := filepath.Join(root, filepath.FromSlash(file))
-		data, err := rewriteSpans(abs, byFile[file])
-		if err != nil {
-			return err
-		}
-		writes = append(writes, write{abs, data})
-	}
-	for _, w := range writes {
-		// WriteFile keeps an existing file's permissions.
-		if err := os.WriteFile(w.path, w.data, 0o644); err != nil {
-			return err
 		}
 	}
 
@@ -293,24 +281,4 @@ func requiredVersion(goMod, module string) (string, bool) {
 	}
 
 	return "", false
-}
-
-// rewriteSpans returns file's contents with each change applied, or an error when any span no
-// longer holds its planned text. It writes nothing.
-func rewriteSpans(file string, changes []Change) ([]byte, error) {
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return nil, err
-	}
-
-	// Rewrite from the end so earlier offsets stay valid.
-	slices.SortFunc(changes, func(a, b Change) int { return cmp.Compare(b.Span.Start, a.Span.Start) })
-	for _, c := range changes {
-		if c.Span.End > len(data) || string(data[c.Span.Start:c.Span.End]) != c.From {
-			return nil, fmt.Errorf("%s:%d changed since planning; expected %q there", file, c.Line, c.From)
-		}
-		data = slices.Replace(data, c.Span.Start, c.Span.End, []byte(c.To)...)
-	}
-
-	return data, nil
 }

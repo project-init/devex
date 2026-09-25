@@ -20,6 +20,47 @@ import (
 // not own.
 var DefaultExclude = []string{"testdata/", "vendor/"}
 
+// File is a candidate file and its contents.
+type File struct {
+	// Path is the slash-separated path relative to the repository root.
+	Path string
+	Data []byte
+}
+
+// ReadFiles returns every file list finds under root that match accepts, skipping
+// DefaultExclude and files deleted from the working tree. A nil list uses GitFiles.
+func ReadFiles(root string, list func(root string) ([]string, error), match func(path string) bool) ([]File, error) {
+	exclude, err := compileGlobs(DefaultExclude)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = GitFiles
+	}
+	paths, err := list(root)
+	if err != nil {
+		return nil, err
+	}
+
+	var files []File
+	for _, p := range paths {
+		if matchAny(exclude, p) || !match(p) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(p)))
+		if errors.Is(err, fs.ErrNotExist) {
+			// git ls-files still lists tracked files deleted from the working tree.
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, File{Path: p, Data: data})
+	}
+
+	return files, nil
+}
+
 // DefaultImages matches the official golang image under any registry prefix.
 var DefaultImages = []string{"golang"}
 
@@ -164,7 +205,7 @@ func findersFor(file string, images []string, declared []Declared) []finder {
 		finders = append(finders, lenient(findGoVersionFile))
 	case base == ".tool-versions":
 		finders = append(finders, lenient(findToolVersions))
-	case isMiseConfig(file):
+	case IsMiseConfig(file):
 		finders = append(finders, lenient(findMise))
 	case isDockerfile(file):
 		finders = append(finders, lenient(func(f string, d []byte) ([]Pin, []string) { return findDockerfile(f, d, images) }))

@@ -33,13 +33,13 @@ func findSetupGo(file string, data []byte) ([]Pin, []string) {
 
 	var pins []Pin
 	var warnings []string
-	offsets := lineOffsets(data)
+	offsets := LineOffsets(data)
 	walkMappings(&root, func(step *yaml.Node) {
-		uses := mappingValue(step, "uses")
+		uses := MappingValue(step, "uses")
 		if uses == nil || !strings.HasPrefix(uses.Value, "actions/setup-go@") {
 			return
 		}
-		version := mappingValue(mappingValue(step, "with"), "go-version")
+		version := MappingValue(MappingValue(step, "with"), "go-version")
 		if version == nil || version.Kind != yaml.ScalarNode {
 			return
 		}
@@ -54,20 +54,12 @@ func findSetupGo(file string, data []byte) ([]Pin, []string) {
 
 			return
 		}
-		// The column points at any anchor, tag, or quote before the value, so find the value
-		// itself on the rest of the line.
-		start := byteColumn(data, offsets[version.Line], version.Column)
-		end := len(data)
-		if version.Line+1 < len(offsets) {
-			end = offsets[version.Line+1]
-		}
-		at := strings.Index(string(data[start:end]), version.Value)
-		if at < 0 {
+		start, ok := LocateScalar(data, offsets, version)
+		if !ok {
 			warnings = append(warnings, fmt.Sprintf("%s:%d: cannot locate go-version %q; left unmanaged", file, version.Line, version.Value))
 
 			return
 		}
-		start += at
 		v, span, ok := parseVersionAt(strings.TrimSuffix(version.Value, ".x"), start)
 		if !ok {
 			warnings = append(warnings, fmt.Sprintf("%s:%d: go-version %q is not a release version; left unmanaged", file, version.Line, version.Value))
@@ -78,6 +70,24 @@ func findSetupGo(file string, data []byte) ([]Pin, []string) {
 	})
 
 	return pins, warnings
+}
+
+// LocateScalar returns the byte offset in data where node's value starts, given LineOffsets(data).
+// yaml's column points at any anchor, tag, or quote before the value, so the value is found on
+// the rest of its line. It reports false when the value is not on that line, as with a block
+// scalar.
+func LocateScalar(data []byte, offsets []int, node *yaml.Node) (int, bool) {
+	start := byteColumn(data, offsets[node.Line], node.Column)
+	end := len(data)
+	if node.Line+1 < len(offsets) {
+		end = offsets[node.Line+1]
+	}
+	at := strings.Index(string(data[start:end]), node.Value)
+	if at < 0 {
+		return 0, false
+	}
+
+	return start + at, true
 }
 
 // byteColumn converts yaml's 1-based character column on the line starting at lineStart into
@@ -108,7 +118,9 @@ func walkMappings(n *yaml.Node, visit func(*yaml.Node)) {
 	}
 }
 
-func mappingValue(n *yaml.Node, key string) *yaml.Node {
+// MappingValue returns the value of key in the mapping n, or nil when n is not a mapping or
+// lacks key.
+func MappingValue(n *yaml.Node, key string) *yaml.Node {
 	if n == nil || n.Kind != yaml.MappingNode {
 		return nil
 	}

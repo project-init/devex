@@ -5,6 +5,16 @@ type DependenciesConfiguration struct {
 	Upgrade []string `yaml:"upgrade"`
 	// Go configures how a Go upgrade keeps the repository's version pins in sync.
 	Go GoDependenciesConfiguration `yaml:"go"`
+	// Mise configures how far each mise tool may move, keyed as the mise config writes it.
+	Mise PolicyConfiguration `yaml:"mise"`
+	// Buf configures how far each buf.gen.yaml pin may move, keyed by remote plugin name
+	// without a version, or by git_repo URL.
+	Buf PolicyConfiguration `yaml:"buf"`
+}
+
+type PolicyConfiguration struct {
+	// Policies maps each entry to latest, minor, patch, or pin. Unlisted entries use latest.
+	Policies map[string]string `yaml:"policies"`
 }
 
 type GoDependenciesConfiguration struct {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/sre/dependencies/bsr"
 	"github.com/project-init/devex/internal/sre/dependencies/gosync"
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
@@ -40,7 +41,11 @@ func upgradeCommand() *cobra.Command {
 
 --go moves every Go version pin (mise, go.mod, go.work, Dockerfile golang images, setup-go,
 .go-version, .tool-versions, and declared pins) to one version, then runs go get -u and
-go mod tidy under exactly that toolchain. Configure it in .sre/dependencies.yaml.`,
+go mod tidy under exactly that toolchain.
+
+--mise bumps every mise tool except Go, and --buf moves the remote plugin versions and git
+input tags in buf.gen.yaml, then regenerates. A policy per tool or pin in
+.sre/dependencies.yaml caps each at minor or patch, or pins it.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := dependenciesConfig(cmd)
 			if o.all {
@@ -60,8 +65,8 @@ go mod tidy under exactly that toolchain. Configure it in .sre/dependencies.yaml
 	}
 
 	cmd.Flags().BoolVar(&o.goFlag, ecosystemGo, false, "Upgrade Go modules and sync every Go version pin")
-	cmd.Flags().BoolVar(&o.miseFlag, ecosystemMise, false, "Upgrade mise tools; Go stays put unless --go is also set")
-	cmd.Flags().BoolVar(&o.bufFlag, ecosystemBuf, false, "Upgrade Buf schema dependencies")
+	cmd.Flags().BoolVar(&o.miseFlag, ecosystemMise, false, "Upgrade mise tools within their policies; Go stays put unless --go is also set")
+	cmd.Flags().BoolVar(&o.bufFlag, ecosystemBuf, false, "Upgrade buf.gen.yaml plugins and inputs within their policies, regenerate, and refresh buf.lock")
 	cmd.Flags().BoolVar(&o.all, "all", false, "Upgrade the ecosystems listed in dependencies.upgrade")
 	cmd.Flags().StringVar(&o.goVersion, "go-version", "", "Move Go to this exact release, overriding the target and any existing drift")
 	cmd.Flags().BoolVar(&o.dryRun, "show-commands", false, "Plan and verify without writing: print each pin change and command")
@@ -124,8 +129,8 @@ func dependenciesConfig(cmd *cobra.Command) config.DependenciesConfiguration {
 	return config.DependenciesConfiguration{}
 }
 
-// networkTimeout bounds each go.dev and registry request, so a hung endpoint fails the run
-// instead of stalling CI.
+// networkTimeout bounds each go.dev, container registry, and Buf registry request and each git
+// tag listing, so a hung endpoint fails the run instead of stalling CI.
 const networkTimeout = 30 * time.Second
 
 func hasMise() bool {
@@ -142,6 +147,7 @@ func defaultEnvironment(cmd *cobra.Command) environment {
 		Run:      gosync.ExecRunner{Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr()},
 		Resolver: goversion.Resolver{Client: client},
 		Registry: registry.Client{HTTP: client},
+		Plugins:  bsr.Client{HTTP: client},
 		HasMise:  hasMise(),
 	}
 }

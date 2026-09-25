@@ -140,8 +140,8 @@ func TestIsMiseConfig(t *testing.T) {
 		"mise.toml.bak":               false,
 		"conf.d/go.toml":              false,
 	} {
-		if got := isMiseConfig(p); got != want {
-			t.Errorf("isMiseConfig(%q) = %v, want %v", p, got, want)
+		if got := IsMiseConfig(p); got != want {
+			t.Errorf("IsMiseConfig(%q) = %v, want %v", p, got, want)
 		}
 	}
 }
@@ -430,4 +430,41 @@ func TestFindMiseIgnoresOtherGoKeys(t *testing.T) {
 func TestFindMiseWarnsOnUnmanagedRootTable(t *testing.T) {
 	_, warnings := findMise("mise.toml", []byte("tools = { go = \"1.26.6\" }\n"))
 	assertWarning(t, warnings, "devex cannot manage this go pin")
+}
+
+func TestMiseToolsListsEveryForm(t *testing.T) {
+	data := `tools.jq = "1.7.1"
+
+[tools]
+go = "1.26.6"
+node = "26.8.2" # trailing comment
+"aqua:golangci/golangci-lint" = "2.13.2"
+awscli = { symlink_bins = "true", version = "2.36.43" }
+python.version = "3.14"
+air = "latest"
+multi = ["20", "22"]
+
+[tools."go:github.com/bufbuild/buf/cmd/buf"]
+version = "v1.72.0"
+
+[tasks.lint]
+run = """
+node = "0.0.0"
+"""
+`
+	tools := MiseTools("mise.toml", []byte(data))
+	var got []string
+	for _, tool := range tools {
+		got = append(got, fmt.Sprintf("%s=%s@%d", tool.Key, tool.Version, tool.Line))
+		if span := data[tool.Span.Start:tool.Span.End]; span != tool.Version {
+			t.Errorf("%s span covers %q, want %q", tool.Key, span, tool.Version)
+		}
+	}
+	want := []string{
+		"jq=1.7.1@1", "go=1.26.6@4", "node=26.8.2@5", "aqua:golangci/golangci-lint=2.13.2@6",
+		"awscli=2.36.43@7", "python=3.14@8", "air=latest@9", "go:github.com/bufbuild/buf/cmd/buf=v1.72.0@13",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("MiseTools =\n%q\nwant\n%q", got, want)
+	}
 }
