@@ -185,6 +185,22 @@ a version, keyed by its name without that version; and a version devex cannot lo
 file, such as a block scalar. A failed registry or `git ls-remote` lookup
 stops the run before devex writes anything; a `pin` policy on that entry skips the lookup.
 
+#### Git inputs that follow a Go module
+
+A git input whose repository a `go.mod` requires directly, at a release, follows that module
+instead of a policy. `https://github.com/acme/protos.git` or `git@github.com:acme/protos.git`
+matches `github.com/acme/protos`, or `github.com/acme/protos/v2` for a later major. The server
+and the generated clients then build from the same release: `upgrade --buf` moves the tag to the
+version `go.mod` requires once `--go` has upgraded modules, and `check` fails when the two
+differ, whichever of them moved. `upgrade --buf` and `check` reject a policy on a linked input,
+and `upgrade --go` without `--buf` warns about the policy and about each tag it leaves behind.
+The version comes from what the go command builds against: across `go.mod` files the highest
+wins, a `replace` naming another version of the same module sets it, and a `go.mod` that
+`go.exclude` matches counts for nothing. An indirect requirement, a pseudo-version, or a
+`replace` with a fork or a local path names no release to follow, so the input keeps its policy,
+as does one that matches both a `v1` and a `/v2` path, with a warning. devex reads no `use` or
+`replace` from `go.work`.
+
 ## What it finds
 
 | Pin                 | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -242,7 +258,8 @@ a pin, so each mention produces a warning.
    the held one, and devex does not report those.
 
 5. **Verify.** Run `check`; any drift fails the run.
-6. **`--buf`.** Rewrite the plugin versions and input tags in each `buf.gen*.yaml`, run
+6. **`--buf`.** Rewrite the plugin versions and input tags in each `buf.gen*.yaml`, with each
+   git input that follows a Go module moved to the version `go.mod` now requires, run
    `buf dep update` beside every `buf.yaml` that declares `deps`, then run `buf generate` from
    the directory of every template that changed, so committed output follows. When a
    `buf.lock` moved, every template regenerates instead. buf runs last, so it
@@ -273,8 +290,10 @@ warning.
 
 `check` makes no network calls. It fails when toolchain pins disagree, when any `go`
 directive sits above the toolchain, when a `go.work` `go` directive sits below that of a
-module it uses (the go command refuses to build that workspace), or when the `directive` policy
-does not hold. Run it in pull request CI:
+module it uses (the go command refuses to build that workspace), when the `directive` policy
+does not hold, or when a git input that follows a Go module sits on a tag other than the
+version `go.mod` requires. It skips a buf template it cannot parse, with a warning. Run it in
+pull request CI:
 
 ```yaml
 - run: devex sre dependencies check

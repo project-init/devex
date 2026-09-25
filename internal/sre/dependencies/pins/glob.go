@@ -212,6 +212,17 @@ func compileGlobs(patterns []string) ([]Glob, error) {
 	return globs, nil
 }
 
+// Matcher returns a function reporting whether a slash-separated path matches any of patterns,
+// in the syntax Options.Exclude takes.
+func Matcher(patterns []string) (func(string) bool, error) {
+	globs, err := compileGlobs(patterns)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(p string) bool { return matchAny(globs, p) }, nil
+}
+
 func matchAny(globs []Glob, p string) bool {
 	for _, g := range globs {
 		if g.Match(p) {

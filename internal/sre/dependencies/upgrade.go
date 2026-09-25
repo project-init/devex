@@ -50,7 +50,8 @@ type plans struct {
 // runUpgrade plans every ecosystem before anything runs, so a failed plan leaves the repository
 // untouched. Go pins then move to the target alongside capped mise pins, mise bumps every other
 // tool, modules update under the target toolchain, a check confirms the Go invariant, and buf
-// pins move last, so buf generate runs with any buf mise just bumped.
+// pins move last, so buf generate runs with any buf mise just bumped and git inputs that follow
+// a Go module land where go get -u left it.
 func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config.DependenciesConfiguration, env environment) error {
 	p, err := plan(ctx, out, o, cfg, env)
 	if err != nil {
@@ -106,10 +107,46 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 		if _, err := gosync.Check(found, p.goSettings.Directive); err != nil {
 			return fmt.Errorf("pins are out of step after the upgrade:\n%w", err)
 		}
+		// Without --buf nothing moves a linked tag go get -u left behind, and check would fail.
+		if !o.bufFlag {
+			// The Go upgrade already succeeded, so a failed read here only warns.
+			links, warnings, err := linkedInputs(env.Root, cfg, nil)
+			if err != nil {
+				warnings = append(warnings, "cannot check linked buf.gen tags: "+err.Error())
+			}
+			if err := bufsync.LinkedPolicy(links, cfg.Buf.Policies); err != nil {
+				warnings = append(warnings, err.Error()+"; remove the policy before upgrade --buf")
+			}
+			for _, d := range drift(links) {
+				warnings = append(warnings, d+"; run upgrade --buf to move it")
+			}
+			printWarnings(out, warnings)
+		}
 	}
 	if o.bufFlag {
 		_, _ = fmt.Fprintln(out, "Upgrading Buf dependencies...")
-		if err := edit.Apply(env.Root, p.buf.Changes); err != nil {
+		links := p.buf.Links
+		if o.goFlag {
+			// Read after the Go upgrade, with a fresh listing, so each linked tag lands where go
+			// get -u left its module.
+			var warnings []string
+			if links, warnings, err = linkedInputs(env.Root, cfg, nil); err != nil {
+				return err
+			}
+			// Planning already printed the warnings that still hold.
+			printWarnings(out, slices.DeleteFunc(warnings, func(w string) bool { return slices.Contains(p.buf.Warnings, w) }))
+			// Planning skipped a linked input, so one go get -u unlinked stays put until a rerun.
+			var unlinked []string
+			for _, planned := range p.buf.Links {
+				if !slices.ContainsFunc(links, func(l bufsync.Link) bool { return l.On(planned.Change) }) {
+					c := planned.Change
+					unlinked = append(unlinked, fmt.Sprintf("%s:%d: %s no longer follows a Go module after the upgrade; run upgrade --buf again to apply its policy", c.File, c.Line, planned.Key))
+				}
+			}
+			printWarnings(out, unlinked)
+		}
+		changes, templates := p.buf.With(links)
+		if err := edit.Apply(env.Root, changes); err != nil {
 			return err
 		}
 		// Deps move first, so generation sees them. A moved buf.lock can change what any template
@@ -120,7 +157,6 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 				return err
 			}
 		}
-		templates := p.buf.Templates
 		if !maps.Equal(before, readLocks(env.Root, p.buf.DepModules)) {
 			templates = p.buf.AllTemplates
 		}
@@ -137,8 +173,7 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 // plan resolves every enabled ecosystem. It writes nothing.
 func plan(ctx context.Context, out io.Writer, o upgradeOptions, cfg config.DependenciesConfiguration, env environment) (plans, error) {
 	// Every planner reads the same working tree, so one listing serves them all.
-	listFiles := sync.OnceValues(func() ([]string, error) { return pins.GitFiles(env.Root) })
-	list := func(string) ([]string, error) { return listFiles() }
+	list := sharedListing(env.Root)
 
 	var p plans
 	var err error
@@ -175,7 +210,7 @@ func plan(ctx context.Context, out io.Writer, o upgradeOptions, cfg config.Depen
 		printWarnings(out, p.mise.Warnings)
 	}
 	if o.bufFlag {
-		planner := bufsync.Planner{Root: env.Root, Policies: cfg.Buf.Policies, Registry: env.Plugins, Run: env.Run, Timeout: networkTimeout, ListFiles: list}
+		planner := bufsync.Planner{Root: env.Root, Policies: cfg.Buf.Policies, Registry: env.Plugins, Run: env.Run, Timeout: networkTimeout, ListFiles: list, GoExclude: cfg.Go.Exclude}
 		if p.buf, err = planner.Plan(ctx); err != nil {
 			return plans{}, err
 		}
@@ -190,6 +225,8 @@ func runCheck(out io.Writer, cfg config.DependenciesConfiguration, root string) 
 	if err != nil {
 		return err
 	}
+	// Go discovery and the buf drift check read the same tree, so one listing serves both.
+	settings.Discovery.ListFiles = sharedListing(root)
 	found, err := pins.Discover(settings.Discovery)
 	if err != nil {
 		return err
@@ -200,8 +237,44 @@ func runCheck(out io.Writer, cfg config.DependenciesConfiguration, root string) 
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "Go %s: %d pins in step (directive: %s)\n", current, len(found.Pins), settings.Directive)
+	links, warnings, err := linkedInputs(root, cfg, settings.Discovery.ListFiles)
+	if err != nil {
+		return err
+	}
+	printWarnings(out, warnings)
+	if err := bufsync.LinkedPolicy(links, cfg.Buf.Policies); err != nil {
+		return err
+	}
+	if lines := drift(links); len(lines) > 0 {
+		return fmt.Errorf("buf.gen git inputs are out of step with go.mod:\n  %s", strings.Join(lines, "\n  "))
+	}
 
 	return nil
+}
+
+// linkedInputs returns the buf.gen git inputs that follow a Go module and the link warnings. A
+// nil list uses pins.GitFiles.
+func linkedInputs(root string, cfg config.DependenciesConfiguration, list func(string) ([]string, error)) ([]bufsync.Link, []string, error) {
+	return bufsync.Planner{Root: root, ListFiles: list, GoExclude: cfg.Go.Exclude}.Links()
+}
+
+// drift describes each link whose tag differs from the version go.mod builds against.
+func drift(links []bufsync.Link) []string {
+	var lines []string
+	for _, link := range links {
+		if c := link.Change; link.Moves() {
+			lines = append(lines, fmt.Sprintf("%s:%d: tag %s, but go.mod builds against %s %s", c.File, c.Line, c.From, link.Module, link.Required))
+		}
+	}
+
+	return lines
+}
+
+// sharedListing lists root's files once, however many readers ask.
+func sharedListing(root string) func(string) ([]string, error) {
+	files := sync.OnceValues(func() ([]string, error) { return pins.GitFiles(root) })
+
+	return func(string) ([]string, error) { return files() }
 }
 
 // printDryRun prints the plan in the order runUpgrade executes it.
@@ -236,13 +309,29 @@ func printDryRun(out io.Writer, o upgradeOptions, p plans) {
 		}
 	}
 	if o.bufFlag {
-		printEdits(out, p.buf.Changes)
+		// Without --go, go.mod stays put, so the links resolve now; with it, they wait for the Go
+		// upgrade.
+		var links, following []bufsync.Link
+		if o.goFlag {
+			following = p.buf.Links
+		} else {
+			links = p.buf.Links
+		}
+		changes, templates := p.buf.With(links)
+		printEdits(out, changes)
+		for _, link := range following {
+			c := link.Change
+			_, _ = fmt.Fprintf(out, "  %s:%d  %s follows %s in go.mod after the Go upgrade, now %s\n", c.File, c.Line, c.From, link.Module, link.Required)
+		}
 		for _, dir := range p.buf.DepModules {
 			_, _ = fmt.Fprintf(out, "%s  (in %s)\n", strings.Join(bufDepUpdate, " "), dir)
 		}
-		for _, template := range p.buf.Templates {
+		for _, template := range templates {
 			dir, cmd := bufsync.GenerateCommand(template)
 			_, _ = fmt.Fprintf(out, "%s  (in %s)\n", strings.Join(cmd, " "), dir)
+		}
+		if len(following) > 0 {
+			_, _ = fmt.Fprintln(out, "  then buf generate beside each template whose linked tag moves")
 		}
 		if len(p.buf.DepModules) > 0 {
 			_, _ = fmt.Fprintln(out, "  then buf generate beside every other template if a buf.lock changes")
