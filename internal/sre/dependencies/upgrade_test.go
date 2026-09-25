@@ -315,6 +315,49 @@ func TestCheckPassesOnGoldenAndFailsOnDrift(t *testing.T) {
 	}
 }
 
+func TestUpgradeMovesALinkedTagWhereGoGetLeftItsModule(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/input")
+	goMod := filepath.Join(root, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module example.com/app\n\ngo 1.26.6\n\nrequire github.com/acme/protos v1.8.2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env, run := testEnvironment(root)
+	run.effects = map[string]func(string){"go get -u ./...": func(string) {
+		_ = os.WriteFile(goMod, []byte("module example.com/app\n\ngo 1.26.9\n\nrequire github.com/acme/protos v1.9.0\n"), 0o644)
+	}}
+
+	if err := runUpgrade(context.Background(), &bytes.Buffer{}, upgradeOptions{goFlag: true, bufFlag: true}, exactConfig, env); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "buf.gen.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "tag: v1.9.0 # the release this app builds against") {
+		t.Errorf("buf.gen.yaml =\n%s\nwant the tag at the go.mod version", data)
+	}
+	for _, call := range run.calls {
+		if strings.Contains(call, "ls-remote") {
+			t.Errorf("listed tags of a linked input: %q", call)
+		}
+	}
+}
+
+func TestCheckFailsWhenALinkedTagDriftsFromGoMod(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/golden")
+	goMod := filepath.Join(root, "go.mod")
+	data, err := os.ReadFile(goMod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goMod, append(data, "\nrequire github.com/acme/protos v1.9.1\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCheck(&bytes.Buffer{}, exactConfig, root); err == nil || !strings.Contains(err.Error(), "go.mod builds against github.com/acme/protos v1.9.1") {
+		t.Errorf("err = %v, want the linked tag's drift", err)
+	}
+}
+
 func TestUpgradeWithoutGoIgnoresGoConfig(t *testing.T) {
 	root := copyTree(t, "testdata/upgrade/input")
 	env, run := testEnvironment(root)
@@ -341,5 +384,42 @@ func TestEnableReadsUpgradeList(t *testing.T) {
 	}
 	if err := (&upgradeOptions{}).enable([]string{"npm"}); err == nil {
 		t.Error("an unknown ecosystem was accepted")
+	}
+}
+
+func TestCheckRejectsAPolicyOnALinkedInput(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/golden")
+	goMod := filepath.Join(root, "go.mod")
+	data, err := os.ReadFile(goMod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goMod, append(data, "\nrequire github.com/acme/protos v1.9.0\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := exactConfig
+	cfg.Buf.Policies = map[string]string{"https://github.com/acme/protos.git": "pin"}
+	if err := runCheck(&bytes.Buffer{}, cfg, root); err == nil || !strings.Contains(err.Error(), "takes no policy") {
+		t.Errorf("err = %v, want the linked policy rejected", err)
+	}
+}
+
+func TestUpgradeGoAloneWarnsWhenALinkedTagTrails(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/input")
+	goMod := filepath.Join(root, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module example.com/app\n\ngo 1.26.6\n\nrequire github.com/acme/protos v1.8.2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env, run := testEnvironment(root)
+	run.effects = map[string]func(string){"go get -u ./...": func(string) {
+		_ = os.WriteFile(goMod, []byte("module example.com/app\n\ngo 1.26.9\n\nrequire github.com/acme/protos v1.9.0\n"), 0o644)
+	}}
+
+	var out bytes.Buffer
+	if err := runUpgrade(context.Background(), &out, upgradeOptions{goFlag: true}, exactConfig, env); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "warning: buf.gen.yaml:4: tag v1.8.2, but go.mod builds against github.com/acme/protos v1.9.0; run upgrade --buf") {
+		t.Errorf("output =\n%s\nwant the trailing tag named", out.String())
 	}
 }

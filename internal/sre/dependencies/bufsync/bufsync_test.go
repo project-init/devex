@@ -131,8 +131,8 @@ func TestPlanMovesPluginsAndTags(t *testing.T) {
 	if got := describe(plan.Changes); !slices.Equal(got, want) {
 		t.Errorf("changes =\n%q\nwant\n%q", got, want)
 	}
-	if want := []string{"buf.gen.yaml", "protos/buf.gen.ts.yaml"}; !slices.Equal(plan.Templates, want) {
-		t.Errorf("templates = %q, want %q", plan.Templates, want)
+	if _, templates := plan.With(nil); !slices.Equal(templates, []string{"buf.gen.yaml", "protos/buf.gen.ts.yaml"}) {
+		t.Errorf("templates = %q", templates)
 	}
 	if want := []string{"buf.gen.yaml", "empty/buf.gen.yaml", "protos/buf.gen.ts.yaml"}; !slices.Equal(plan.AllTemplates, want) {
 		t.Errorf("all templates = %q, want %q", plan.AllTemplates, want)
@@ -354,5 +354,205 @@ func TestGenerateCommand(t *testing.T) {
 	}
 	if dir, cmd := GenerateCommand("protos/buf.gen.ts.yaml"); dir != "protos" || strings.Join(cmd, " ") != "buf generate --template buf.gen.ts.yaml" {
 		t.Errorf("GenerateCommand(protos/buf.gen.ts.yaml) = %q, %q", dir, cmd)
+	}
+}
+
+func TestModulePath(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/acme/protos.git":     "github.com/acme/protos",
+		"https://GitHub.com/acme/protos/":        "github.com/acme/protos",
+		"ssh://git@github.com/acme/protos.git":   "github.com/acme/protos",
+		"git@github.com:acme/protos.git":         "github.com/acme/protos",
+		"https://git.acme.dev:8443/team/api.git": "git.acme.dev/team/api",
+		"../protos":                              "",
+		"/srv/git/protos.git":                    "",
+		"file:///srv/git/protos.git":             "",
+	}
+	for repo, want := range cases {
+		if got := modulePath(repo); got != want {
+			t.Errorf("modulePath(%q) = %q, want %q", repo, got, want)
+		}
+	}
+}
+
+const linkedTemplate = "version: v2\ninputs:\n  - git_repo: https://github.com/acme/protos.git\n    tag: v1.8.2\n"
+
+func linkedPlanner(t *testing.T, goMod string, policies map[string]string) Planner {
+	t.Helper()
+	root := writeTree(t, map[string]string{"buf.gen.yaml": linkedTemplate, "go.mod": goMod})
+
+	// failedRunner proves a linked input needs no tag listing.
+	return Planner{Root: root, Policies: policies, Run: failedRunner{}, ListFiles: pins.WalkFiles}
+}
+
+func TestLinksFollowTheGoModuleOfTheSameRepository(t *testing.T) {
+	for _, tc := range []struct{ name, require, to string }{
+		{"same major", "github.com/acme/protos v1.9.0", "v1.9.0"},
+		{"major suffix", "github.com/acme/protos/v2 v2.1.0", "v2.1.0"},
+		{"two-digit major", "github.com/acme/protos/v12 v12.3.0", "v12.3.0"},
+		{"prerelease", "github.com/acme/protos v1.9.0-rc.1", "v1.9.0-rc.1"},
+	} {
+		p := linkedPlanner(t, "module example.com/app\n\nrequire "+tc.require+"\n", nil)
+		plan, err := p.Plan(context.Background())
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if len(plan.Changes) != 0 || len(plan.Links) != 1 {
+			t.Errorf("%s: plan = %v, %+v; want only a link", tc.name, plan.Changes, plan.Links)
+		}
+
+		links, _, err := p.Links()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(links) != 1 || !links[0].Moves() || describe([]edit.Change{links[0].Change})[0] != "buf.gen.yaml:4 v1.8.2→"+tc.to {
+			t.Errorf("%s: links = %+v", tc.name, links)
+		}
+	}
+}
+
+func TestLinksSkipAModuleOnAPseudoVersion(t *testing.T) {
+	p := linkedPlanner(t, "module example.com/app\n\nrequire github.com/acme/protos v1.8.3-0.20260901000000-abcdef123456\n", nil)
+	links, _, err := p.Links()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Errorf("links = %+v; want none, so the input keeps its policy", links)
+	}
+}
+
+func TestPlanRejectsAPolicyOnALinkedInput(t *testing.T) {
+	p := linkedPlanner(t, "module example.com/app\n\nrequire github.com/acme/protos v1.8.2\n", map[string]string{"https://github.com/acme/protos.git": "minor"})
+	if _, err := p.Plan(context.Background()); err == nil || !strings.Contains(err.Error(), "follows github.com/acme/protos in go.mod") {
+		t.Errorf("err = %v, want the link named", err)
+	}
+}
+
+func TestPlanWarnsWhenAnInputMatchesSeveralModules(t *testing.T) {
+	p := linkedPlanner(t, "module example.com/app\n\nrequire (\n\tgithub.com/acme/protos v1.8.2\n\tgithub.com/acme/protos/v2 v2.0.0\n)\n", nil)
+	p.Run = fakeRunner{"https://github.com/acme/protos.git": {"v1.8.2"}}
+	plan, err := p.Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	links, warnings, err := p.Links()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 || !slices.Equal(warnings, plan.Warnings) || len(warnings) != 1 || !strings.Contains(warnings[0], "links it to none") {
+		t.Errorf("links = %+v, warnings = %q, plan warnings = %q", links, warnings, plan.Warnings)
+	}
+}
+
+func TestLinksStopMovingOnceTheTagMatches(t *testing.T) {
+	p := linkedPlanner(t, "module example.com/app\n\nrequire github.com/acme/protos v1.8.2\n", nil)
+	links, _, err := p.Links()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].Moves() || links[0].Required != "v1.8.2" {
+		t.Errorf("links = %+v; want one link already in step", links)
+	}
+}
+
+func TestLinksFollowWhatGoBuildsAgainst(t *testing.T) {
+	cases := []struct{ name, goMod string }{
+		{"version replace", "module example.com/app\n\nrequire github.com/acme/protos v1.8.2\n\nreplace github.com/acme/protos => github.com/acme/protos v1.9.0\n"},
+		{"fork replace", "module example.com/app\n\nrequire github.com/acme/protos v1.8.2\n\nreplace github.com/acme/protos => github.com/fork/protos v1.9.5\n"},
+		{"local replace", "module example.com/app\n\nrequire github.com/acme/protos v1.9.0\n\nreplace github.com/acme/protos => ../protos\n"},
+		{"exact beats wildcard", "module example.com/app\n\nrequire github.com/acme/protos v1.8.2\n\nreplace github.com/acme/protos => ../protos\n\nreplace github.com/acme/protos v1.8.2 => github.com/acme/protos v1.9.0\n"},
+	}
+	want := map[string]string{"version replace": "v1.9.0", "fork replace": "", "local replace": "", "exact beats wildcard": "v1.9.0"}
+	for _, tc := range cases {
+		links, _, err := linkedPlanner(t, tc.goMod, nil).Links()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if to := want[tc.name]; to == "" && len(links) != 0 || to != "" && (len(links) != 1 || links[0].Change.To != to) {
+			t.Errorf("%s: links = %+v; want the tag moving to %q, or no link for \"\"", tc.name, links, to)
+		}
+	}
+}
+
+func TestLinksSkipGoModulesGoExcludes(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"buf.gen.yaml":         linkedTemplate,
+		"go.mod":               "module example.com/app\n\nrequire github.com/acme/protos v1.8.2\n",
+		"examples/demo/go.mod": "module example.com/demo\n\nrequire github.com/acme/protos v1.9.0\n",
+	})
+	p := Planner{Root: root, ListFiles: pins.WalkFiles, GoExclude: []string{"examples/"}}
+	links, _, err := p.Links()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].Required != "v1.8.2" || links[0].Moves() {
+		t.Errorf("links = %+v; want the excluded examples module ignored", links)
+	}
+}
+
+func TestWithLetsALinkReplaceAPlannedMoveOnTheSameSpan(t *testing.T) {
+	planned := edit.Change{File: "buf.gen.yaml", Line: 4, Span: pins.Span{Start: 78, End: 84}, From: "v1.8.2", To: "v1.9.0"}
+	link := Link{Change: edit.Change{File: "buf.gen.yaml", Line: 4, Span: planned.Span, From: "v1.8.2", To: "v1.9.1"}, Module: "github.com/acme/protos"}
+	changes, templates := Plan{Changes: []edit.Change{planned}}.With([]Link{link})
+	if len(changes) != 1 || changes[0].To != "v1.9.1" || !slices.Equal(templates, []string{"buf.gen.yaml"}) {
+		t.Errorf("With = %v, %q; want only the link's move", changes, templates)
+	}
+}
+
+func TestLinksSkipATemplateTheyCannotParse(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"buf.gen.yaml":          linkedTemplate,
+		"go.mod":                "module example.com/app\n\nrequire github.com/acme/protos v1.9.0\n",
+		"examples/buf.gen.yaml": "version: v2\nplugins:\n  - remote: [unclosed\n",
+	})
+	links, warnings, err := Planner{Root: root, ListFiles: pins.WalkFiles}.Links()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || len(warnings) != 1 || !strings.Contains(warnings[0], "examples/buf.gen.yaml") {
+		t.Errorf("links = %+v, warnings = %q; want the stray template skipped with a warning", links, warnings)
+	}
+}
+
+func TestWithDropsAPlannedMoveUnderALinkThatStays(t *testing.T) {
+	span := pins.Span{Start: 78, End: 84}
+	planned := edit.Change{File: "buf.gen.yaml", Line: 4, Span: span, From: "v1.8.2", To: "v1.9.0"}
+	link := Link{Change: edit.Change{File: "buf.gen.yaml", Line: 4, Span: span, From: "v1.8.2", To: "v1.8.2"}, Module: "github.com/acme/protos"}
+	changes, templates := Plan{Changes: []edit.Change{planned}}.With([]Link{link})
+	if len(changes) != 0 || len(templates) != 0 {
+		t.Errorf("With = %v, %q; want the planned move dropped and nothing to regenerate", changes, templates)
+	}
+}
+
+func TestPlanFailsOnAGoModItCannotParse(t *testing.T) {
+	p := linkedPlanner(t, "module example.com/app\n\nfrobnicate everything\n", nil)
+	if _, err := p.Plan(context.Background()); err == nil || !strings.Contains(err.Error(), "parse go.mod") {
+		t.Errorf("err = %v, want the go.mod parse error", err)
+	}
+}
+
+func TestLinksLeaveAnInputUnlinkedBehindANewerPseudoVersion(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"buf.gen.yaml": linkedTemplate,
+		"go.mod":       "module example.com/app\n\nrequire github.com/acme/protos v1.9.0\n",
+		"tools/go.mod": "module example.com/tools\n\nrequire github.com/acme/protos v1.9.1-0.20260901000000-abcdef123456\n",
+	})
+	links, _, err := Planner{Root: root, ListFiles: pins.WalkFiles}.Links()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Errorf("links = %+v; want the newer pseudo-version to win and leave the input unlinked", links)
+	}
+}
+
+func TestLinksIgnoreIndirectRequirements(t *testing.T) {
+	links, _, err := linkedPlanner(t, "module example.com/app\n\nrequire github.com/acme/protos v1.5.0 // indirect\n", nil).Links()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Errorf("links = %+v; want an indirect requirement ignored", links)
 	}
 }

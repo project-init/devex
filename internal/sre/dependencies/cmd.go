@@ -45,7 +45,8 @@ go mod tidy under exactly that toolchain.
 
 --mise bumps every mise tool except Go, and --buf moves the remote plugin versions and git
 input tags in buf.gen.yaml, then regenerates. A policy per tool or pin in
-.sre/dependencies.yaml caps each at minor or patch, or pins it.`,
+.sre/dependencies.yaml caps each at minor or patch, or pins it. A git input whose repository
+a go.mod requires follows that module's version instead.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := dependenciesConfig(cmd)
 			if o.all {
@@ -77,16 +78,17 @@ input tags in buf.gen.yaml, then regenerates. A policy per tool or pin in
 func checkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check",
-		Short: "Verify every Go version pin agrees, offline",
+		Short: "Verify Go version pins and linked buf.gen tags agree, offline",
 		Long: `Fail when Go version pins disagree, when a go.mod go directive sits above the
-toolchain, when a go.work go directive sits below a module it uses, or when the directive
-policy in .sre/dependencies.yaml does not hold. Run it in pull request CI to catch drift
-from Dependabot and hand edits.`,
+toolchain, when a go.work go directive sits below a module it uses, when the directive
+policy in .sre/dependencies.yaml does not hold, or when a buf.gen.yaml git input that
+follows a go.mod module sits on another tag or takes a policy. Run it in pull request CI to
+catch drift from Dependabot and hand edits.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCheck(cmd.OutOrStdout(), dependenciesConfig(cmd), ".")
 		},
 	}
-	// Go is the only ecosystem check covers, so --go is accepted but not required.
+	// check always covers Go and linked buf inputs, so --go is accepted but not required.
 	cmd.Flags().Bool(ecosystemGo, false, "Check Go version pins (the default)")
 
 	return cmd
