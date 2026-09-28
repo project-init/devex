@@ -36,7 +36,7 @@ below.
 
 | Flag              | Effect                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------- |
-| `--go`            | Sync every Go pin, then run `go get -u ./...` and `go mod tidy` in each module                    |
+| `--go`            | Sync every Go pin, then upgrade each module's direct requirements and run `go mod tidy`           |
 | `--mise`          | Upgrade mise tools within their policies; only `--go` moves Go                                    |
 | `--buf`           | Move `buf.gen.yaml` plugins and inputs within their policies, regenerate, and refresh `buf.lock`  |
 | `--all`           | Enable the ecosystems in `dependencies.upgrade`                                                   |
@@ -244,20 +244,39 @@ a pin, so each mention produces a warning.
    first because an uncapped tool can depend on one, as an npm tool does on `node`, and the bump
    fails while that dependency's new version is uninstalled. The bump runs after the write because
    it can shift the text of files devex edits in place, such as `.tool-versions`.
-4. **Upgrade modules.** Run `go get -u ./...` and `go mod tidy` in every module with
-   `GOTOOLCHAIN=go<target>` and `GOWORK=off`, so each works on its own `go.mod`. A
-   dependency whose latest release needs a newer Go is held at its current version,
-   reported, and the rest upgrade. A vendored module gets `go mod vendor`, unless a `go.work`
-   sits beside it. Holding a module back while its dependencies move can break the build, so
-   a module with holds must compile on the host, tests included, or the run fails and names
-   the Go version the holds need; a module with no package for the host passes. Once every
-   module has upgraded, `go work use` lifts every `go.work` floor that `go mod tidy` left
-   behind, and a vendored workspace gets `go work vendor`.
+4. **Upgrade modules.** Run `go get`, naming every direct requirement at `@upgrade`, then
+   `go mod tidy`, in every module with `GOTOOLCHAIN=go<target>` and `GOWORK=off`, so each works
+   on its own `go.mod`. Indirect requirements move only as far as the direct requirements' new
+   versions require; `go get -u` would take each to its newest release, which the modules
+   importing it may not support yet, as when a newer `k8s.io/kube-openapi` outran
+   `k8s.io/apimachinery`. `@upgrade` keeps a requirement already on a newer prerelease or
+   pseudo-version. A `tool` module the code does not import is marked indirect, so the same rule
+   applies.
 
-   Holding reads go's error text, so it has limits. A module that is not yet in `go.mod`,
-   such as one a dependency's new release pulls in, cannot be held, and the run fails; raise
-   the target instead. A hold can also quietly keep back modules that need a newer release of
-   the held one, and devex does not report those.
+   devex skips a requirement when a `replace` covers the version `go.mod` lists and either
+   points at a local directory, which has no release to move to, or replaces only that exact
+   version, which `@upgrade` would move off. When another requirement needs a version above an
+   exact-version replacement, the module still moves off it to that version. A module with no
+   direct requirement left gets no `go get`.
+
+   devex holds a dependency at its current version when the version `go get` tries needs a newer
+   Go, reports it, and upgrades the rest. A direct requirement whose new version needs a held
+   module to move is held too. When other requirements' new versions need a direct requirement
+   above what `@upgrade` picks, such as a prerelease, devex requests the highest version they
+   need. Each new hold or raised version reruns `go get`.
+
+   A vendored module gets `go mod vendor`, unless a `go.work` sits beside it. Holding a module
+   back while its dependencies move can break the build, so a module with holds must compile on
+   the host, tests included, or the run fails and names the Go version the holds need; a module
+   with no package for the host passes. Once every module has upgraded, `go work use` lifts
+   every `go.work` floor that `go mod tidy` left behind, and a vendored workspace gets
+   `go work vendor`.
+
+   Holds and raised versions come from go's error text, so they have limits. A module that is
+   not yet in `go.mod`, such as one a dependency's new release pulls in, cannot be held, and the
+   run fails; raise the target instead. A raised version stays requested even if the requirement
+   that needed it later moves to a release that doesn't need it, which can leave a prerelease in
+   place.
 
 5. **Verify.** Run `check`; any drift fails the run.
 6. **`--buf`.** Rewrite the plugin versions and input tags in each `buf.gen*.yaml`, with each

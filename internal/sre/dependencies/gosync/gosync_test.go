@@ -1,6 +1,7 @@
 package gosync
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
+	"golang.org/x/mod/semver"
 )
 
 type fakeResolver []string
@@ -84,6 +86,12 @@ func changesByLocation(plan Plan) map[string]string {
 }
 
 const appTree = "module app\n\ngo 1.26.6\n"
+
+// libTree requires one module directly, so UpdateModules has something to upgrade.
+const libTree = "module app\n\ngo 1.26.6\n\nrequire example.com/a v1.2.0\n"
+
+// pairTree requires two modules directly, for the conflicts between their latest releases.
+const pairTree = "module app\n\ngo 1.26.6\n\nrequire (\n\texample.com/a v1.0.0\n\texample.com/b v1.0.0\n)\n"
 
 func TestNewSettingsDefaultsAndValidation(t *testing.T) {
 	s, err := NewSettings(".", config.GoDependenciesConfiguration{})
@@ -461,13 +469,32 @@ func TestPlanLeavesRegistryFromBuildArgUnverified(t *testing.T) {
 	}
 }
 
-// holdingRunner fails go get -u with a needs-newer-Go refusal until every blocked module is
-// held back by an explicit module@version argument.
+// holdingRunner fails go get with a needs-newer-Go refusal until every blocked module is held
+// back by an explicit module@version argument other than @upgrade. A conflict refuses its from
+// module at @upgrade while the module it needs is named below the version it requires, as go
+// does.
 type holdingRunner struct {
-	blocked        map[string]string
+	blocked   map[string]string
+	conflicts []conflict
+	// latest resolves a needed module's @upgrade; without an entry, @upgrade falls below every
+	// version a conflict requires.
+	latest         map[string]string
 	buildFails     bool
 	noHostPackages bool
 	calls          []string
+}
+
+type conflict struct {
+	from     string
+	needs    string
+	requires string
+	line     string
+}
+
+func heldIn(args []string, module string) bool {
+	return slices.ContainsFunc(args, func(a string) bool {
+		return strings.HasPrefix(a, module+"@") && a != module+"@upgrade"
+	})
 }
 
 func (r *holdingRunner) Run(_ context.Context, _ string, _ []string, name string, args ...string) error {
@@ -483,8 +510,21 @@ func (r *holdingRunner) Run(_ context.Context, _ string, _ []string, name string
 	}
 	var stderr strings.Builder
 	for module, line := range r.blocked {
-		if !slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, module+"@") }) {
+		if !heldIn(args, module) {
 			stderr.WriteString(line + "\n")
+		}
+	}
+	for _, c := range r.conflicts {
+		below := slices.ContainsFunc(args, func(a string) bool {
+			version, ok := strings.CutPrefix(a, c.needs+"@")
+			if version == "upgrade" {
+				version = r.latest[c.needs]
+			}
+
+			return ok && semver.Compare(version, c.requires) < 0
+		})
+		if slices.Contains(args, c.from+"@upgrade") && below {
+			stderr.WriteString(c.line + "\n")
 		}
 	}
 	if stderr.Len() == 0 {
@@ -521,13 +561,308 @@ require (
 		t.Fatalf("held = %+v", held)
 	}
 	want := []string{
-		"go get -u ./...",
-		"go get -u ./... k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff",
+		"go get example.com/a@upgrade",
+		"go get example.com/a@upgrade k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff",
 		"go mod tidy",
 		strings.Join(HoldCheck, " "),
 	}
 	if strings.Join(run.calls, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(run.calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestUpdateModulesUpgradesOnlyDirectRequirements(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": `module app
+
+go 1.26.6
+
+require (
+	example.com/a v1.2.0
+	example.com/forked v1.0.0
+	example.com/local v1.0.0
+	example.com/pinned v1.0.0
+	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
+)
+
+replace example.com/forked v1.0.0 => example.com/fork v1.0.1
+
+replace example.com/a v1.0.0 => ../old-a
+
+replace example.com/local => ../local
+
+replace example.com/pinned => example.com/fork v1.0.1
+`})
+	run := &holdingRunner{}
+	target, _ := goversion.Parse("1.26.8")
+
+	if _, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run); err != nil {
+		t.Fatal(err)
+	}
+	// The indirect kube-openapi moves only as far as a's latest release requires, the local
+	// replacement has no release to move to, and @upgrade would move forked off its fork.
+	if want := []string{"go get example.com/a@upgrade example.com/pinned@upgrade", "go mod tidy"}; !slices.Equal(run.calls, want) {
+		t.Errorf("calls = %q, want %q", run.calls, want)
+	}
+}
+
+func TestUpdateModulesSkipsGoGetWithoutDirectRequirements(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": appTree})
+	run := &holdingRunner{}
+	target, _ := goversion.Parse("1.26.8")
+
+	if _, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"go mod tidy"}; !slices.Equal(run.calls, want) {
+		t.Errorf("calls = %q, want %q", run.calls, want)
+	}
+}
+
+func TestUpdateModulesHoldsADirectRequirementThatNeedsAHeldModule(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": `module app
+
+go 1.26.6
+
+require (
+	example.com/a v1.2.0
+	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
+)
+`})
+	run := &holdingRunner{
+		blocked: map[string]string{
+			"k8s.io/kube-openapi": "go: k8s.io/kube-openapi@v0.0.0-20260911184034-7970a1e230da requires go >= 1.27.0 (running go 1.26.8; GOTOOLCHAIN=go1.26.8)",
+		},
+		conflicts: []conflict{
+			{from: "example.com/a", needs: "k8s.io/kube-openapi", requires: "v0.0.0-20260911184034-7970a1e230da", line: "go: example.com/a@upgrade (v1.3.0) indirectly requires k8s.io/kube-openapi@v0.0.0-20260911184034-7970a1e230da, not k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff"},
+		},
+	}
+	target, _ := goversion.Parse("1.26.8")
+
+	held, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []Held{
+		{Module: "k8s.io/kube-openapi", Version: "v0.0.0-20250318190949-c8a335a9a2ff", Wanted: "v0.0.0-20260911184034-7970a1e230da", NeedsGo: "1.27.0"},
+		{Module: "example.com/a", Version: "v1.2.0", Wanted: "v1.3.0", NeedsGo: "1.27.0", Via: "k8s.io/kube-openapi", ViaVersion: "v0.0.0-20260911184034-7970a1e230da"},
+	}; !slices.Equal(held, want) {
+		t.Fatalf("held = %+v, want a held for the Go kube-openapi needs", held)
+	}
+	want := []string{
+		"go get example.com/a@upgrade",
+		"go get example.com/a@upgrade k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff",
+		"go get k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff example.com/a@v1.2.0",
+		"go mod tidy",
+		strings.Join(HoldCheck, " "),
+	}
+	if strings.Join(run.calls, "\n") != strings.Join(want, "\n") {
+		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(run.calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestUpdateModulesNamesTheHeldModuleANeederRequires(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": `module app
+
+go 1.26.6
+
+require (
+	example.com/a v1.0.0
+	example.com/b v1.0.0
+	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
+)
+`})
+	run := &holdingRunner{
+		blocked: map[string]string{
+			"k8s.io/kube-openapi": "go: k8s.io/kube-openapi@v0.0.0-20260911184034-7970a1e230da requires go >= 1.27.0",
+		},
+		conflicts: []conflict{
+			{from: "example.com/b", needs: "k8s.io/kube-openapi", requires: "v0.0.0-20260911184034-7970a1e230da", line: "go: example.com/b@upgrade (v1.2.0) requires k8s.io/kube-openapi@v0.0.0-20260911184034-7970a1e230da, not k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff"},
+			{from: "example.com/a", needs: "example.com/b", requires: "v1.1.0", line: "go: example.com/a@upgrade (v1.3.0) requires example.com/b@v1.1.0, not example.com/b@v1.0.0"},
+		},
+		latest: map[string]string{"example.com/b": "v1.2.0"},
+	}
+	target, _ := goversion.Parse("1.26.8")
+
+	held, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a needs only b v1.1.0, which runs on the target Go, so its Via names b, not kube-openapi.
+	if want := []Held{
+		{Module: "k8s.io/kube-openapi", Version: "v0.0.0-20250318190949-c8a335a9a2ff", Wanted: "v0.0.0-20260911184034-7970a1e230da", NeedsGo: "1.27.0"},
+		{Module: "example.com/b", Version: "v1.0.0", Wanted: "v1.2.0", NeedsGo: "1.27.0", Via: "k8s.io/kube-openapi", ViaVersion: "v0.0.0-20260911184034-7970a1e230da"},
+		{Module: "example.com/a", Version: "v1.0.0", Wanted: "v1.3.0", NeedsGo: "1.27.0", Via: "example.com/b", ViaVersion: "v1.1.0"},
+	}; !slices.Equal(held, want) {
+		t.Fatalf("held = %+v, want %+v", held, want)
+	}
+	want := []string{
+		"go get example.com/a@upgrade example.com/b@upgrade",
+		"go get example.com/a@upgrade example.com/b@upgrade k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff",
+		"go get example.com/a@upgrade k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff example.com/b@v1.0.0",
+		"go get k8s.io/kube-openapi@v0.0.0-20250318190949-c8a335a9a2ff example.com/b@v1.0.0 example.com/a@v1.0.0",
+		"go mod tidy",
+		strings.Join(HoldCheck, " "),
+	}
+	if strings.Join(run.calls, "\n") != strings.Join(want, "\n") {
+		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(run.calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestRequirementsKeepsTheHighestOfARepeatedRequirement(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": `module app
+
+go 1.26.6
+
+require (
+	example.com/a v1.1.0
+	example.com/b v1.1.0
+)
+
+require (
+	example.com/a v1.0.0
+	example.com/b v1.0.0
+)
+
+// go builds a at v1.1.0, so the fork of v1.0.0 leaves a in the upgrade.
+replace example.com/a v1.0.0 => example.com/fork v1.0.0-x
+
+// The fork applies to the version go selects, so b stays out of the upgrade.
+replace example.com/b v1.1.0 => example.com/fork v1.1.0-x
+`})
+
+	direct, versions, err := requirements(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(direct, []string{"example.com/a"}) || versions["example.com/a"] != "v1.1.0" || versions["example.com/b"] != "v1.1.0" {
+		t.Errorf("requirements = %q, %q, want [example.com/a] with a and b at v1.1.0", direct, versions)
+	}
+}
+
+func TestRequiresHeldMatchesDirectAndIndirectConflicts(t *testing.T) {
+	for line, requires := range map[string]string{
+		"go: example.com/a@upgrade (v1.3.0) requires example.com/b@v1.2.0, not example.com/b@v1.1.0":                "v1.2.0",
+		"go: example.com/a@upgrade (v1.3.0) indirectly requires example.com/b@v1.2.0, not example.com/b@v1.1.0":     "v1.2.0",
+		"go: example.com/a@v1.3.0 requires example.com/b@v1.2.0, not example.com/b@v1.1.0":                          "v1.2.0",
+		"go: example.com/a@upgrade (v1.3.0) requires example.com/b@v1.2.0-rc.1, not example.com/b@upgrade (v1.1.0)": "v1.2.0-rc.1",
+	} {
+		m := requiresHeld.FindStringSubmatch(line)
+		if m == nil || m[1] != "example.com/a" || cmp.Or(m[3], m[2]) != "v1.3.0" || m[4] != "example.com/b" || m[5] != requires {
+			t.Errorf("requiresHeld(%q) = %q", line, m)
+		}
+	}
+}
+
+func TestUpdateModulesRaisesARequirementAnotherNeedsPastItsUpgrade(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": pairTree})
+	run := &holdingRunner{conflicts: []conflict{
+		{from: "example.com/b", needs: "example.com/a", requires: "v1.2.0-rc.1", line: "go: example.com/b@upgrade (v1.1.0) requires example.com/a@v1.2.0-rc.1, not example.com/a@upgrade (v1.1.0)"},
+	}}
+	target, _ := goversion.Parse("1.26.8")
+
+	held, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 0 {
+		t.Errorf("held = %+v, want none", held)
+	}
+	// a moves to the prerelease b's latest release requires, as go get -u would.
+	if want := []string{"go get example.com/a@upgrade example.com/b@upgrade", "go get example.com/a@v1.2.0-rc.1 example.com/b@upgrade", "go mod tidy"}; !slices.Equal(run.calls, want) {
+		t.Errorf("calls = %q, want %q", run.calls, want)
+	}
+}
+
+func TestUpdateModulesDropsAMinimumOnceItsNeederIsHeld(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": pairTree})
+	var calls []string
+	// b's latest release first needs a past its @upgrade; with a raised, go then reports that the
+	// release also needs a newer Go.
+	stderr := []string{
+		"go: example.com/b@upgrade (v1.1.0) requires example.com/a@v1.2.0-rc.1, not example.com/a@upgrade (v1.1.0)",
+		"go: example.com/b@v1.1.0 requires go >= 1.27.0",
+	}
+	run := runnerFunc(func(name string, args ...string) error {
+		call := name + " " + strings.Join(args, " ")
+		calls = append(calls, call)
+		if args[0] != "get" || len(calls) > len(stderr) {
+			return nil
+		}
+
+		return &CommandError{Command: call, Stderr: []byte(stderr[len(calls)-1] + "\n"), Err: errors.New("exit status 1")}
+	})
+	target, _ := goversion.Parse("1.26.8")
+
+	if _, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"go get example.com/a@upgrade example.com/b@upgrade",
+		"go get example.com/a@v1.2.0-rc.1 example.com/b@upgrade",
+		"go get example.com/a@upgrade example.com/b@v1.0.0",
+		"go mod tidy",
+		strings.Join(HoldCheck, " "),
+	}
+	if !slices.Equal(calls, want) {
+		t.Errorf("calls = %q, want %q", calls, want)
+	}
+}
+
+func TestUpdateModulesIgnoresAMinimumFromANeederHeldInTheSameRound(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": pairTree})
+	run := &holdingRunner{
+		blocked: map[string]string{"example.com/b": "go: example.com/b@v1.1.0 requires go >= 1.27.0"},
+		conflicts: []conflict{
+			{from: "example.com/b", needs: "example.com/a", requires: "v1.2.0-rc.1", line: "go: example.com/b@upgrade (v1.1.0) requires example.com/a@v1.2.0-rc.1, not example.com/a@upgrade (v1.1.0)"},
+		},
+	}
+	target, _ := goversion.Parse("1.26.8")
+
+	if _, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"go get example.com/a@upgrade example.com/b@upgrade",
+		"go get example.com/a@upgrade example.com/b@v1.0.0",
+		"go mod tidy",
+		strings.Join(HoldCheck, " "),
+	}
+	if !slices.Equal(run.calls, want) {
+		t.Errorf("calls = %q, want %q", run.calls, want)
+	}
+}
+
+func TestUpdateModulesRaisesBothRequirementsOfACycle(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": pairTree})
+	run := &holdingRunner{conflicts: []conflict{
+		{from: "example.com/a", needs: "example.com/b", requires: "v1.1.0-rc.1", line: "go: example.com/a@upgrade (v1.2.0) requires example.com/b@v1.1.0-rc.1, not example.com/b@upgrade (v1.0.0)"},
+		{from: "example.com/b", needs: "example.com/a", requires: "v1.2.0-rc.1", line: "go: example.com/b@upgrade (v1.0.0) requires example.com/a@v1.2.0-rc.1, not example.com/a@upgrade (v1.1.0)"},
+	}}
+	target, _ := goversion.Parse("1.26.8")
+
+	if _, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"go get example.com/a@upgrade example.com/b@upgrade", "go get example.com/a@v1.2.0-rc.1 example.com/b@v1.1.0-rc.1", "go mod tidy"}; !slices.Equal(run.calls, want) {
+		t.Errorf("calls = %q, want %q", run.calls, want)
+	}
+}
+
+func TestUpdateModulesRaisesEachRequirementItsNeedersNeed(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": "module app\n\ngo 1.26.6\n\nrequire (\n\texample.com/a v1.0.0\n\texample.com/b v1.0.0\n\texample.com/c v1.0.0\n)\n"})
+	run := &holdingRunner{conflicts: []conflict{
+		{from: "example.com/c", needs: "example.com/b", requires: "v1.3.0-rc.1", line: "go: example.com/c@upgrade (v1.1.0) requires example.com/b@v1.3.0-rc.1, not example.com/b@upgrade (v1.2.0)"},
+		{from: "example.com/b", needs: "example.com/a", requires: "v1.1.0-rc.1", line: "go: example.com/b@upgrade (v1.2.0) requires example.com/a@v1.1.0-rc.1, not example.com/a@upgrade (v1.0.5)"},
+		{from: "example.com/c", needs: "example.com/a", requires: "v1.2.0-rc.1", line: "go: example.com/c@upgrade (v1.1.0) indirectly requires example.com/a@v1.2.0-rc.1, not example.com/a@upgrade (v1.0.5)"},
+	}}
+	target, _ := goversion.Parse("1.26.8")
+
+	if _, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run); err != nil {
+		t.Fatal(err)
+	}
+	// a takes the higher of the two versions its needers require.
+	if want := []string{"go get example.com/a@upgrade example.com/b@upgrade example.com/c@upgrade", "go get example.com/a@v1.2.0-rc.1 example.com/b@v1.3.0-rc.1 example.com/c@upgrade", "go mod tidy"}; !slices.Equal(run.calls, want) {
+		t.Errorf("calls = %q, want %q", run.calls, want)
 	}
 }
 
@@ -558,37 +893,37 @@ func TestUpdateModulesSkipsBuildWhenNothingHeld(t *testing.T) {
 }
 
 func TestUpdateModulesSyncsWorkspacesAfterEveryModule(t *testing.T) {
-	root := writeTree(t, map[string]string{"go.work": "go 1.26.0\n\nuse ./a\n", "a/go.mod": appTree, "b/go.mod": appTree})
+	root := writeTree(t, map[string]string{"go.work": "go 1.26.0\n\nuse ./a\n", "a/go.mod": libTree, "b/go.mod": libTree})
 	run := &holdingRunner{}
 	target, _ := goversion.Parse("1.26.8")
 
 	if _, err := UpdateModules(context.Background(), root, []string{"a", "b"}, []string{"go.work"}, target, run); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"go get -u ./...", "go mod tidy", "go get -u ./...", "go mod tidy", "go work use"}; !slices.Equal(run.calls, want) {
+	if want := []string{"go get example.com/a@upgrade", "go mod tidy", "go get example.com/a@upgrade", "go mod tidy", "go work use"}; !slices.Equal(run.calls, want) {
 		t.Errorf("calls = %q, want %q", run.calls, want)
 	}
 }
 
 func TestUpdateModulesRefreshesVendor(t *testing.T) {
-	root := writeTree(t, map[string]string{"go.mod": appTree, "vendor/modules.txt": "# vendored\n"})
+	root := writeTree(t, map[string]string{"go.mod": libTree, "vendor/modules.txt": "# vendored\n"})
 	run := &holdingRunner{}
 	target, _ := goversion.Parse("1.26.8")
 
 	if _, err := UpdateModules(context.Background(), root, []string{"."}, nil, target, run); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"go get -u ./...", "go mod tidy", "go mod vendor"}; !slices.Equal(run.calls, want) {
+	if want := []string{"go get example.com/a@upgrade", "go mod tidy", "go mod vendor"}; !slices.Equal(run.calls, want) {
 		t.Errorf("calls = %q, want %q", run.calls, want)
 	}
 
 	// A vendor/ beside a go.work belongs to go work vendor, even when a module shares the directory.
-	root = writeTree(t, map[string]string{"go.work": "go 1.26.0\n\nuse ./a\n", "go.mod": appTree, "vendor/modules.txt": "# vendored\n", "a/go.mod": appTree})
+	root = writeTree(t, map[string]string{"go.work": "go 1.26.0\n\nuse ./a\n", "go.mod": libTree, "vendor/modules.txt": "# vendored\n", "a/go.mod": libTree})
 	run = &holdingRunner{}
 	if _, err := UpdateModules(context.Background(), root, []string{"a", "."}, []string{"go.work"}, target, run); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"go get -u ./...", "go mod tidy", "go get -u ./...", "go mod tidy", "go work use", "go work vendor"}; !slices.Equal(run.calls, want) {
+	if want := []string{"go get example.com/a@upgrade", "go mod tidy", "go get example.com/a@upgrade", "go mod tidy", "go work use", "go work vendor"}; !slices.Equal(run.calls, want) {
 		t.Errorf("calls = %q, want %q", run.calls, want)
 	}
 }
@@ -612,7 +947,7 @@ require k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
 }
 
 func TestUpdateModulesFailsWhenBlockedModuleIsNotRequired(t *testing.T) {
-	root := writeTree(t, map[string]string{"go.mod": appTree})
+	root := writeTree(t, map[string]string{"go.mod": libTree})
 	run := &holdingRunner{blocked: map[string]string{
 		"example.com/new": "go: example.com/new@v1.0.0 requires go >= 1.27.0 (running go 1.26.8; GOTOOLCHAIN=go1.26.8)",
 	}}
@@ -625,7 +960,7 @@ func TestUpdateModulesFailsWhenBlockedModuleIsNotRequired(t *testing.T) {
 }
 
 func TestUpdateModulesPropagatesOtherFailures(t *testing.T) {
-	root := writeTree(t, map[string]string{"go.mod": appTree})
+	root := writeTree(t, map[string]string{"go.mod": libTree})
 	target, _ := goversion.Parse("1.26.8")
 	failing := runnerFunc(func(string, ...string) error {
 		return &CommandError{Command: "go get", Stderr: []byte("go: network unreachable\n"), Err: errors.New("exit status 1")}

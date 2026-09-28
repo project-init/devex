@@ -2,6 +2,7 @@ package gosync
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
 )
 
 // Runner executes an external command in dir with the inherited environment, minus GOROOT,
@@ -126,18 +128,37 @@ func MiseInstall(plan Plan) []string {
 // than the pinned toolchain.
 var requiresNewerGo = regexp.MustCompile(`(?m)(\S+)@(\S+) requires go >= (\S+)`)
 
-// Held is a module kept at its current version because its latest release needs a newer Go.
+// requiresHeld matches go get refusing a requested version because it needs a newer version of
+// another requested module, directly or through others, such as
+// "a@upgrade (v1.3.0) indirectly requires b@v1.2.0, not b@v1.1.0" or, when b's newer version
+// is a prerelease or pseudo-version, "... not b@upgrade (v1.1.0)".
+var requiresHeld = regexp.MustCompile(`(?m)(\S+)@(\S+)(?: \((\S+)\))? (?:indirectly )?requires (\S+)@(\S+), not \S+`)
+
+// Held is a module kept at its current version because the version go get tried needs a newer Go
+// or a newer release of another held module.
 type Held struct {
-	Module  string
+	// Module is the held module's path.
+	Module string
+	// Version is the go.mod version Module stays at.
 	Version string
-	Wanted  string
+	// Wanted is the version go get tried, which needs NeedsGo or Via at ViaVersion.
+	Wanted string
+	// NeedsGo is the Go version Module is held for or, when Via is set, the one Via is held for.
 	NeedsGo string
+	// Via names the held module that Wanted needs a newer release of.
+	Via string
+	// ViaVersion is the version of Via that Wanted requires.
+	ViaVersion string
 }
 
-// UpdateModules upgrades dependencies in every module under exactly the target toolchain.
-// go get -u has no mode that skips updates needing a newer Go, so one such module would
-// block every other upgrade. Instead, each is held at its current version and reported,
-// while the rest upgrade. Holding a module back while its dependencies move can leave an
+// UpdateModules upgrades each module's direct requirements with go get @upgrade under exactly the
+// target toolchain, raising a requirement above @upgrade, such as to a prerelease, when another
+// requirement's new version needs it. Indirect requirements move only as far as the direct
+// requirements' new versions require; go get -u would take each to its newest release, which the
+// modules importing it may not support yet. go get has no mode that skips updates needing a newer
+// Go, so one such module would block every other upgrade. Instead, each is held at its current
+// version and reported while the rest upgrade. A direct requirement whose new version needs a held
+// module to move is held too. Holding a module back while its dependencies move can leave an
 // incompatible graph, so a module with holds must still build, or the upgrade fails.
 //
 // workspaces lists each go.work, relative to root. go mod tidy can raise a module's go
@@ -225,12 +246,65 @@ func highestNeed(held []Held) string {
 }
 
 func upgradeModule(ctx context.Context, dir string, env []string, target goversion.Version, run Runner) ([]Held, error) {
+	direct, versions, err := requirements(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return nil, err
+	}
+	if len(direct) == 0 {
+		return nil, nil
+	}
+
 	var held []Held
-	var holds []string
-	seen := map[string]bool{}
-	// Each round holds at least one module not held before, so the loop ends.
+	// pinned indexes held by module.
+	pinned := map[string]Held{}
+	// minimums maps each direct requirement, by needer, to the version that needer's new version
+	// requires above the requirement's own @upgrade, such as a prerelease. go get names the
+	// requirement at the highest version an unpinned needer requires.
+	minimums := map[string]map[string]string{}
+	minimum := func(m string) string {
+		highest := ""
+		for needer, v := range minimums[m] {
+			if _, ok := pinned[needer]; !ok && semver.Compare(v, highest) > 0 {
+				highest = v
+			}
+		}
+
+		return highest
+	}
+	// hold pins h at its go.mod version; cause is the go get failure that asked for it.
+	hold := func(h Held, cause error) error {
+		if _, ok := pinned[h.Module]; ok {
+			return nil
+		}
+		current, ok := versions[h.Module]
+		if !ok {
+			return fmt.Errorf("%s@%s needs Go %s, above target %s, and is not yet in go.mod to hold back: %w", h.Module, h.Wanted, h.NeedsGo, target, cause)
+		}
+		h.Version = current
+		pinned[h.Module] = h
+		held = append(held, h)
+
+		return nil
+	}
+	getArgs := func() []string {
+		// @upgrade, unlike @latest, keeps a newer prerelease or pseudo-version in place.
+		args := []string{"get"}
+		for _, m := range direct {
+			if _, ok := pinned[m]; !ok {
+				args = append(args, m+"@"+cmp.Or(minimum(m), "upgrade"))
+			}
+		}
+		for _, h := range held {
+			args = append(args, h.Module+"@"+h.Version)
+		}
+
+		return args
+	}
+	// Holds only grow, and between holds each minimum only rises, so no round repeats another;
+	// the loop gives up when a failure leaves the arguments unchanged.
+	args := getArgs()
 	for {
-		err := run.Run(ctx, dir, env, "go", slices.Concat([]string{"get", "-u", "./..."}, holds)...)
+		err := run.Run(ctx, dir, env, "go", args...)
 		var cmdErr *CommandError
 		if err == nil {
 			return held, nil
@@ -239,46 +313,71 @@ func upgradeModule(ctx context.Context, dir string, env []string, target goversi
 			return nil, err
 		}
 
-		var blocked []Held
 		for _, m := range requiresNewerGo.FindAllStringSubmatch(string(cmdErr.Stderr), -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				blocked = append(blocked, Held{Module: m[1], Wanted: m[2], NeedsGo: m[3]})
+			if holdErr := hold(Held{Module: m[1], Wanted: m[2], NeedsGo: m[3]}, err); holdErr != nil {
+				return nil, holdErr
 			}
 		}
-		if len(blocked) == 0 {
+		for _, m := range requiresHeld.FindAllStringSubmatch(string(cmdErr.Stderr), -1) {
+			needer, wanted, needed, requires := m[1], cmp.Or(m[3], m[2]), m[4], m[5]
+			if blocker, ok := pinned[needed]; ok {
+				if holdErr := hold(Held{Module: needer, Wanted: wanted, NeedsGo: blocker.NeedsGo, Via: needed, ViaVersion: requires}, err); holdErr != nil {
+					return nil, holdErr
+				}
+				continue
+			}
+			if _, ok := pinned[needer]; ok || !slices.Contains(direct, needed) {
+				continue
+			}
+			if minimums[needed] == nil {
+				minimums[needed] = map[string]string{}
+			}
+			if semver.Compare(requires, minimums[needed][needer]) > 0 {
+				minimums[needed][needer] = requires
+			}
+		}
+		next := getArgs()
+		if slices.Equal(next, args) {
 			if len(held) > 0 {
-				return nil, fmt.Errorf("go get -u in %s still fails after holding back %s: %w", dir, heldNames(held), err)
+				return nil, fmt.Errorf("go get in %s still fails after holding back %s: %w", dir, heldNames(held), err)
 			}
 
 			return nil, err
 		}
-		for _, h := range blocked {
-			current, ok := requiredVersion(filepath.Join(dir, "go.mod"), h.Module)
-			if !ok {
-				return nil, fmt.Errorf("%s@%s needs Go %s, above target %s, and is not yet in go.mod to hold back: %w", h.Module, h.Wanted, h.NeedsGo, target, err)
-			}
-			h.Version = current
-			held = append(held, h)
-			holds = append(holds, h.Module+"@"+current)
-		}
+		args = next
 	}
 }
 
-func requiredVersion(goMod, module string) (string, bool) {
+// requirements returns the modules goMod requires directly and the version of every module it
+// requires. The direct list skips a module when a replace directive covers its go.mod version and
+// either points at a local directory, which has no release to move to, or replaces only that exact
+// version, which @upgrade would move off.
+func requirements(goMod string) ([]string, map[string]string, error) {
 	data, err := os.ReadFile(goMod)
 	if err != nil {
-		return "", false
+		return nil, nil, err
 	}
-	f, err := modfile.ParseLax(goMod, data, nil)
+	f, err := modfile.Parse(goMod, data, nil)
 	if err != nil {
-		return "", false
+		return nil, nil, fmt.Errorf("parse %s: %w", goMod, err)
 	}
+	var mods []string
+	versions := map[string]string{}
 	for _, r := range f.Require {
-		if r.Mod.Path == module {
-			return r.Mod.Version, true
+		// go selects the highest of a module's repeated requirements.
+		if semver.Compare(r.Mod.Version, versions[r.Mod.Path]) > 0 {
+			versions[r.Mod.Path] = r.Mod.Version
+		}
+		if !r.Indirect && !slices.Contains(mods, r.Mod.Path) {
+			mods = append(mods, r.Mod.Path)
 		}
 	}
+	direct := slices.DeleteFunc(mods, func(mod string) bool {
+		return slices.ContainsFunc(f.Replace, func(rep *modfile.Replace) bool {
+			applies := rep.Old.Path == mod && (rep.Old.Version == "" || rep.Old.Version == versions[mod])
+			return applies && (rep.New.Version == "" || rep.Old.Version != "")
+		})
+	})
 
-	return "", false
+	return direct, versions, nil
 }

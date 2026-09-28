@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/sre/dependencies/gosync"
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
 )
@@ -152,7 +153,7 @@ func TestUpgradeMatchesGoldenTree(t *testing.T) {
 		"[.] mise install go@1.26.9",
 		"[.] mise upgrade node",
 		"[.] mise upgrade --bump --exclude awscli --exclude go --exclude node",
-		"[.] GOTOOLCHAIN=go1.26.9 GOWORK=off go get -u ./...",
+		"[.] GOTOOLCHAIN=go1.26.9 GOWORK=off go get example.com/lib@upgrade",
 		"[.] GOTOOLCHAIN=go1.26.9 GOWORK=off go mod tidy",
 		"[.] buf dep update",
 		"[.] buf generate",
@@ -322,7 +323,7 @@ func TestUpgradeMovesALinkedTagWhereGoGetLeftItsModule(t *testing.T) {
 		t.Fatal(err)
 	}
 	env, run := testEnvironment(root)
-	run.effects = map[string]func(string){"go get -u ./...": func(string) {
+	run.effects = map[string]func(string){"go get github.com/acme/protos@upgrade": func(string) {
 		_ = os.WriteFile(goMod, []byte("module example.com/app\n\ngo 1.26.9\n\nrequire github.com/acme/protos v1.9.0\n"), 0o644)
 	}}
 
@@ -411,7 +412,7 @@ func TestUpgradeGoAloneWarnsWhenALinkedTagTrails(t *testing.T) {
 		t.Fatal(err)
 	}
 	env, run := testEnvironment(root)
-	run.effects = map[string]func(string){"go get -u ./...": func(string) {
+	run.effects = map[string]func(string){"go get github.com/acme/protos@upgrade": func(string) {
 		_ = os.WriteFile(goMod, []byte("module example.com/app\n\ngo 1.26.9\n\nrequire github.com/acme/protos v1.9.0\n"), 0o644)
 	}}
 
@@ -421,5 +422,26 @@ func TestUpgradeGoAloneWarnsWhenALinkedTagTrails(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "warning: buf.gen.yaml:4: tag v1.8.2, but go.mod builds against github.com/acme/protos v1.9.0; run upgrade --buf") {
 		t.Errorf("output =\n%s\nwant the trailing tag named", out.String())
+	}
+}
+
+func TestHeldWarningExplainsEachHold(t *testing.T) {
+	target, _ := goversion.Parse("1.26.8")
+	for _, tc := range []struct {
+		held gosync.Held
+		want string
+	}{
+		{
+			held: gosync.Held{Module: "k8s.io/kube-openapi", Version: "v0.0.0-1", Wanted: "v0.0.0-2", NeedsGo: "1.27.0"},
+			want: "held k8s.io/kube-openapi at v0.0.0-1; v0.0.0-2 needs Go 1.27.0, above 1.26.8",
+		},
+		{
+			held: gosync.Held{Module: "example.com/a", Version: "v1.0.0", Wanted: "v1.3.0", NeedsGo: "1.27.0", Via: "example.com/b", ViaVersion: "v1.1.0"},
+			want: "held example.com/a at v1.0.0; v1.3.0 needs example.com/b v1.1.0, and example.com/b is held for Go 1.27.0, above 1.26.8",
+		},
+	} {
+		if got := heldWarning(tc.held, target); got != tc.want {
+			t.Errorf("heldWarning(%+v) = %q, want %q", tc.held, got, tc.want)
+		}
 	}
 }

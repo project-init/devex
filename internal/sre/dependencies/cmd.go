@@ -40,8 +40,10 @@ func upgradeCommand() *cobra.Command {
 		Long: `Upgrade mise tools, Go modules, and Buf dependencies.
 
 --go moves every Go version pin (mise, go.mod, go.work, Dockerfile golang images, setup-go,
-.go-version, .tool-versions, and declared pins) to one version, then runs go get -u and
-go mod tidy under exactly that toolchain.
+.go-version, .tool-versions, and declared pins) to one version, then upgrades each module's
+direct requirements with go get and runs go mod tidy under exactly that toolchain. Indirect
+requirements move only as far as the direct ones need. A dependency whose new version needs a
+newer Go stays at its current version, with a warning.
 
 --mise bumps every mise tool except Go, and --buf moves the remote plugin versions and git
 input tags in buf.gen.yaml, then regenerates. A policy per tool or pin in

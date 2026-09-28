@@ -123,13 +123,14 @@ devex sre release
 #### Dependencies
 
 Upgrade mise tools, Go modules, and Buf dependencies. `--go` moves every Go version pin (mise,
-`go.mod`, `go.work`, Dockerfile golang images, `setup-go`, `.go-version`, and `.tool-versions`) to one
-version, verifies each new image tag against its registry, and upgrades modules under exactly
-that toolchain. `--mise` bumps every other mise tool, and `--buf` moves the plugin versions and
-git input tags in `buf.gen.yaml`, then regenerates. A policy per tool or pin caps it at `minor`
-or `patch`, or pins it. A git input whose repository a `go.mod` requires follows that module's
-version instead. `check` fails on drift without network access. A `.sre` directory is
-optional.
+`go.mod`, `go.work`, Dockerfile golang images, `setup-go`, `.go-version`, and `.tool-versions`) to
+one version, verifies each new image tag against its registry, and upgrades each module's direct
+requirements under exactly that toolchain. Indirect requirements move only as far as the direct
+ones need, and a dependency whose new version needs a newer Go stays put, with a warning. `--mise`
+bumps every other mise tool, and `--buf` moves the plugin versions and git input tags in
+`buf.gen.yaml`, then regenerates. A policy per tool or pin caps it at `minor` or `patch`, or pins
+it. A git input whose repository a `go.mod` requires follows that module's version instead.
+`check` fails on drift without network access. A `.sre` directory is optional.
 
 ```shell
 # Move every Go pin to the latest patch and upgrade modules.
