@@ -150,8 +150,8 @@ func TestUpgradeMatchesGoldenTree(t *testing.T) {
 	assertTree(t, root, "testdata/upgrade/golden")
 	want := []string{
 		"[.] mise install go@1.26.9",
-		"[.] mise upgrade --bump --exclude awscli --exclude go --exclude node",
 		"[.] mise upgrade node",
+		"[.] mise upgrade --bump --exclude awscli --exclude go --exclude node",
 		"[.] GOTOOLCHAIN=go1.26.9 GOWORK=off go get -u ./...",
 		"[.] GOTOOLCHAIN=go1.26.9 GOWORK=off go mod tidy",
 		"[.] buf dep update",
@@ -212,7 +212,7 @@ func TestUpgradeDryRunShowsMiseAndBufPlans(t *testing.T) {
 	}
 	for _, want := range []string{
 		"mise.toml:7  26.8.2 → 26.10.0",
-		"mise upgrade --bump --exclude awscli --exclude go --exclude node\nmise upgrade node\n",
+		"mise upgrade node\nmise upgrade --bump --exclude awscli --exclude go --exclude node\n",
 		"buf.gen.yaml:4  v1.8.2 → v1.9.0",
 		"buf.gen.yaml:6  v1.36.5 → v1.36.11",
 		"buf generate  (in .)",

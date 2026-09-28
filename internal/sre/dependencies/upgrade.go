@@ -82,13 +82,16 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 	}
 	if o.miseFlag {
 		_, _ = fmt.Fprintln(out, "Upgrading mise tools...")
-		if err := run(".", p.mise.UpgradeCommand()); err != nil {
-			return err
-		}
+		// Install the rewritten pins before mise resolves anything else: an uncapped tool can
+		// depend on a capped one, as an npm tool does on node, and mise upgrade --bump fails while
+		// that dependency's new version is uninstalled.
 		if capped := p.mise.CapCommand(); capped != nil {
 			if err := run(".", capped); err != nil {
 				return err
 			}
+		}
+		if err := run(".", p.mise.UpgradeCommand()); err != nil {
+			return err
 		}
 	}
 	if o.goFlag {
@@ -291,10 +294,10 @@ func printDryRun(out io.Writer, o upgradeOptions, p plans) {
 	}
 	if o.miseFlag {
 		printEdits(out, p.mise.Changes)
-		_, _ = fmt.Fprintln(out, strings.Join(p.mise.UpgradeCommand(), " "))
 		if capped := p.mise.CapCommand(); capped != nil {
 			_, _ = fmt.Fprintln(out, strings.Join(capped, " "))
 		}
+		_, _ = fmt.Fprintln(out, strings.Join(p.mise.UpgradeCommand(), " "))
 	}
 	if o.goFlag {
 		moduleEnv := strings.Join(gosync.ModuleEnv(p.goPlan.Target), " ")

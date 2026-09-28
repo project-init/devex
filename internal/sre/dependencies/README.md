@@ -238,10 +238,12 @@ a pin, so each mention produces a warning.
    `mise.lock` or `mise.ci.lock`, keeps the old Go, so devex warns; run `mise lock` to
    refresh it.
 3. **`--mise`.** Rewrite each tool capped at `minor` or `patch` in place, alongside the Go
-   pins, then run `mise upgrade --bump` with `--exclude` for Go and every tool whose policy is
-   not `latest`. A plain `mise upgrade` of the capped tools follows, installing each within the
-   range its config now names and refreshing `mise.lock`. The bump runs after the write
-   because it can shift the text of files devex edits in place, such as `.tool-versions`.
+   pins, then run a plain `mise upgrade` of the capped tools, installing each within the range
+   its config now names and refreshing `mise.lock`. `mise upgrade --bump` follows, with
+   `--exclude` for Go and every tool whose policy is not `latest`. The capped tools install
+   first because an uncapped tool can depend on one, as an npm tool does on `node`, and the bump
+   fails while that dependency's new version is uninstalled. The bump runs after the write because
+   it can shift the text of files devex edits in place, such as `.tool-versions`.
 4. **Upgrade modules.** Run `go get -u ./...` and `go mod tidy` in every module with
    `GOTOOLCHAIN=go<target>` and `GOWORK=off`, so each works on its own `go.mod`. A
    dependency whose latest release needs a newer Go is held at its current version,
