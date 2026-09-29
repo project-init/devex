@@ -14,6 +14,10 @@ func Command() *cobra.Command {
 		Short: "Fetches the latest git tag, prompts for a version bump type\n\t(major/minor/patch), and creates + pushes the new tag.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireGitHubReleaseReady(); err != nil {
+				return err
+			}
+
 			current, err := fetchLatestTag()
 			if err != nil {
 				return err
@@ -41,6 +45,10 @@ func Command() *cobra.Command {
 			}
 
 			fmt.Printf("\nNew version will be: %s\n", next)
+
+			if err = displayReleasePullRequests(cmd.Context()); err != nil {
+				return err
+			}
 
 			if err = confirmRelease(next); err != nil {
 				fmt.Println("Tag creation cancelled.")

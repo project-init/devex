@@ -17,8 +17,12 @@ sre release
 
 The above will generate a git tag and trigger your release if it is coupled with a GH workflow like [this](../../../.github/workflows/release.yaml).
 
+GitHub auth is required (`gh auth login` or `GITHUB_TOKEN`). `origin` must be a github.com remote.
+
+Before confirmation the tool lists merged pull requests into `main` since the latest tag, or all such PRs when tagging
+for the first time.
+
 #### Description
 
-The release cmd does a simple git tag and push and assumes the GH workflow covers the rest. Future upgrades will likely
-include a better UI with more content, and configuration that limits what can be done such as prohibiting major version
-bumps.
+The release cmd does a simple git tag and push and assumes the GH workflow covers the rest.
+Future upgrades will likely include a better UI with more content, and configuration that limits what can be done.
