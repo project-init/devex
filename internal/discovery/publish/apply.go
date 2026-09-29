@@ -57,31 +57,14 @@ func Apply(
 
 	for _, operation := range plan.Operations {
 		previous, exists := receipt.Operations[operation.ID]
-		if exists && (previous.Status == "created" || previous.Status == "reused") && previous.Remote != nil {
+		if exists && settled(previous) {
 			if operation.ItemID != "" {
 				resolved[operation.ItemID] = *previous.Remote
 			}
 			continue
 		}
 
-		result := provider.OperationResult{ItemID: operation.ItemID}
-		if remote, found := published[operation.IdempotencyKey]; found && operation.ItemID != "" {
-			result.Status = "reused"
-			result.Remote = &remote
-			resolved[operation.ItemID] = remote
-		} else {
-			created, executeErr := adapter.Execute(ctx, plan.Target, operation, resolved)
-			if executeErr != nil {
-				result.Status = "failed"
-				result.Error = executeErr.Error()
-			} else {
-				result.Status = "created"
-				result.Remote = &created
-				if operation.ItemID != "" {
-					resolved[operation.ItemID] = created
-				}
-			}
-		}
+		result := applyOperation(ctx, plan, adapter, operation, published, resolved)
 		receipt.Operations[operation.ID] = result
 		if result.Status == "failed" {
 			receipt.Status = "partial"
@@ -122,7 +105,7 @@ func resolvePending(
 			continue
 		}
 		previous, exists := receipt.Operations[operation.ID]
-		if exists && (previous.Status == "created" || previous.Status == "reused") && previous.Remote != nil {
+		if exists && settled(previous) {
 			continue
 		}
 		pending = append(pending, operation)
@@ -131,6 +114,71 @@ func resolvePending(
 		return nil, nil
 	}
 	return adapter.Resolve(ctx, plan.Target, plan, pending)
+}
+
+// applyOperation runs one operation. A planned create reuses a matching remote issue instead of
+// creating a second one. A reuse or update fails when the issue the plan saw is gone; an update
+// then executes against that issue.
+func applyOperation(
+	ctx context.Context,
+	plan *provider.Plan,
+	adapter provider.Adapter,
+	operation provider.Operation,
+	published map[string]provider.RemoteRef,
+	resolved map[domain.ItemID]provider.RemoteRef,
+) provider.OperationResult {
+	result := provider.OperationResult{ItemID: operation.ItemID}
+	remote, found := published[operation.IdempotencyKey]
+	if operation.ItemID != "" {
+		switch {
+		case found && operation.Action != provider.ActionUpdateIssue:
+			result.Status = "reused"
+			result.Remote = &remote
+			resolved[operation.ItemID] = remote
+			return result
+		case !found && (operation.Action == provider.ActionReuseIssue || operation.Action == provider.ActionUpdateIssue):
+			result.Status = "failed"
+			result.Error = "the issue this plan expected is gone; plan again"
+			return result
+		case found:
+			resolved[operation.ItemID] = remote
+		}
+	}
+
+	executed, err := adapter.Execute(ctx, plan.Target, operation, resolved)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = err.Error()
+		return result
+	}
+	result.Status = executedStatus(operation.Action)
+	result.Remote = &executed
+	if operation.ItemID != "" {
+		resolved[operation.ItemID] = executed
+	}
+
+	return result
+}
+
+func executedStatus(action string) string {
+	switch action {
+	case provider.ActionUpdateIssue:
+		return "updated"
+	case provider.ActionUnlinkIssues:
+		return "unlinked"
+	default:
+		return "created"
+	}
+}
+
+// settled reports whether a receipt entry needs no further work on resume.
+func settled(result provider.OperationResult) bool {
+	switch result.Status {
+	case "created", "reused", "updated", "unlinked":
+		return result.Remote != nil
+	default:
+		return false
+	}
 }
 
 func existingReceipt(path string, plan *provider.Plan) (*provider.Receipt, error) {
@@ -165,7 +213,7 @@ func resolvedItems(receipt *provider.Receipt) map[domain.ItemID]provider.RemoteR
 		if result.ItemID == "" {
 			continue
 		}
-		if result.Remote != nil && (result.Status == "created" || result.Status == "reused") {
+		if settled(result) {
 			resolved[result.ItemID] = *result.Remote
 		}
 	}

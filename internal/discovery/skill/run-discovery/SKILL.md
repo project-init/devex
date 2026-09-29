@@ -86,3 +86,13 @@ devex discovery publish apply <plan-file>
 ```
 
 Report the receipt path and created or reused remote work items.
+
+## Republish after the bundle changes
+
+When a published bundle changes, plan with `--sync`:
+
+```bash
+devex discovery publish plan <bundle-directory> --sync
+```
+
+A sync plan reads the target and lists the creates, updates (with the fields each rewrites), link additions, and link removals that bring published work in line with the bundle. Show it and explain every warning, above all issues skipped because someone edited them since devex last wrote them. Offer `--force` for those only when the user confirms the bundle should overwrite the edits. Apply only after the user confirms the plan.

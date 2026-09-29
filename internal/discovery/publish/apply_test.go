@@ -21,6 +21,7 @@ type fakeAdapter struct {
 	lookups      []string
 	resolveCalls int
 	failOnce     string
+	published    map[string]provider.RemoteRef
 }
 
 func (f *fakeAdapter) ID() string { return "fake" }
@@ -43,7 +44,7 @@ func (f *fakeAdapter) Resolve(
 	for _, operation := range pending {
 		f.lookups = append(f.lookups, operation.IdempotencyKey)
 	}
-	return nil, nil
+	return f.published, nil
 }
 
 func (f *fakeAdapter) Execute(
@@ -63,6 +64,9 @@ func (f *fakeAdapter) Execute(
 	}
 	if operation.ID == f.failOnce && f.executions[operation.ID] == 1 {
 		return provider.RemoteRef{}, fmt.Errorf("temporary failure")
+	}
+	if operation.Action == provider.ActionUpdateIssue {
+		return resolved[operation.ItemID], nil
 	}
 	return provider.RemoteRef{ID: operation.ID, URL: "https://example.test/" + operation.ID}, nil
 }

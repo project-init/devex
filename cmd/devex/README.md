@@ -207,7 +207,7 @@ devex discovery doctor --harness codex
 
 `doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Results are grouped as passed, flagged, and failed, with failures rendered last and highlighted in interactive terminals.
 
-At least one selected harness must have the skill installed. Once one is installed, missing additional harness integrations are flagged for awareness rather than treated as failures. Modified installed skills and missing, invalid, or placeholder configuration remain failures. Missing credentials are warnings because they are only required by `publish apply`. The command exits nonzero only when failures are present.
+At least one selected harness must have the skill installed. Once one is installed, missing additional harness integrations are flagged for awareness rather than treated as failures. Modified installed skills and missing, invalid, or placeholder configuration remain failures. Missing credentials are warnings because they are only required by `publish apply` and `publish plan --sync`. The command exits nonzero only when failures are present.
 
 **Create and validate a bundle:**
 
@@ -270,9 +270,22 @@ devex discovery publish plan docs/discoveries/audit-logs --target jira-project
 devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
 ```
 
-`plan` performs no remote mutations. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.
+`plan` performs no remote mutations; with `--sync` it reads the target but still writes nothing. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.
 
-Planning is reproducible: an unchanged bundle and target produce the same operations and the same `plan_digest` on any machine. Only `generated_at` records the run, and it is excluded from the digest. `apply` never re-plans; it executes the frozen artifact and refuses to run against a bundle that changed after the plan was written.
+Planning without `--sync` is reproducible: an unchanged bundle and target produce the same operations and the same `plan_digest` on any machine. Only `generated_at` records the run, and it is excluded from the digest. `apply` never re-plans; it executes the frozen artifact and refuses to run against a bundle that changed after the plan was written.
+
+**Republish a changed bundle:**
+
+```shell
+devex discovery publish plan docs/discoveries/audit-logs --sync
+devex discovery publish apply docs/discoveries/audit-logs/.publish/jira-project/sync-<timestamp>/plan.yaml
+```
+
+A plain plan only creates: `apply` reuses any issue already published and changes nothing on it. `--sync` reads the target and plans the changes that bring published work in line with the bundle. It creates missing items, keeps unchanged ones, updates changed ones, and names the fields each update rewrites. On Jira it also adds missing links and removes dependency links between the discovery's own issues that the bundle does not declare, including ones added by hand in Jira; the plan lists each removal. A Jira update cannot change an issue's type or remove its parent, so the plan warns instead. On GitHub, dependencies live in the issue body, so a changed dependency surfaces as a body update. A sync never deletes an issue, never removes a label, and never touches links to issues outside the discovery; it warns about published issues the bundle no longer lists.
+
+Each write records a stamp: one digest per bundle field it wrote from, and one of the title and description as the target stored them. Jira keeps the stamp in the issue property beside the idempotency marker; GitHub keeps it in a hidden body comment. The stamp lets a sync tell bundle changes from edits made in Jira or on GitHub: a sync skips and warns about an issue edited since devex last wrote it unless the plan uses `--force`, and `apply` re-checks before writing, so an edit made after the plan stops it even under `--force`. On Jira, label and parent changes leave edits intact, so they proceed without `--force`, and forcing over an edit rewrites both the summary and the description. On GitHub, every update rewrites the title, body, and labels. Issues published before stamps existed carry none, so the first sync rewrites each of them once and records one. A write devex could not read back, or a stamp damaged by hand, counts as edited, because devex cannot rule out a later edit.
+
+`--sync` needs the provider credentials `apply` needs, and a sync plan reflects the remote as it stood when planned. It writes to `.publish/<target>/sync-<timestamp>/`, so each sync plan keeps its own receipt.
 
 The generated `.gitignore` excludes `.publish/`. Receipts are small local YAML files that allow a later CLI session to resume an interrupted publication. Jira issue properties and hidden GitHub issue-body markers provide a secondary idempotency check if a receipt is lost.
 
