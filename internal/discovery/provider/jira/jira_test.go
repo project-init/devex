@@ -16,8 +16,17 @@ import (
 )
 
 func TestExecuteCreatesJiraIssue(t *testing.T) {
+	var stamp provider.Stamp
 	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
-		if request.Method != http.MethodPost || request.URL.Path != "/rest/api/3/issue" {
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/rest/api/3/issue/DEVEX-7":
+			return jiraJSONResponse(`{"key":"DEVEX-7","fields":{"summary":"Implement audit logs","description":{"type":"doc"}}}`)
+		case request.Method == http.MethodPut && request.URL.Path == "/rest/api/3/issue/DEVEX-7/properties/"+propertyKey:
+			if err := json.NewDecoder(request.Body).Decode(&stamp); err != nil {
+				t.Fatal(err)
+			}
+			return jiraJSONResponse(`{}`)
+		case request.Method != http.MethodPost || request.URL.Path != "/rest/api/3/issue":
 			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
 		}
 		var body map[string]any
@@ -41,15 +50,15 @@ func TestExecuteCreatesJiraIssue(t *testing.T) {
 		context.Background(),
 		target,
 		provider.Operation{
-			ID: "create-WI-001",
+			ID:             "create-WI-001",
+			IdempotencyKey: "audit/WI-001",
 			Fields: map[string]any{
-				"project_key":        "DEVEX",
-				"issue_type":         "Task",
-				"title":              "Implement audit logs",
-				"description":        "Implement persistence.",
-				"labels":             []any{generatedLabel},
-				"parent_item_id":     "",
-				"idempotency_marker": "audit/WI-001",
+				"project_key":    "DEVEX",
+				"issue_type":     "Task",
+				"title":          "Implement audit logs",
+				"description":    "Implement persistence.",
+				"labels":         []any{generatedLabel},
+				"parent_item_id": "",
 			},
 		},
 		nil,
@@ -60,6 +69,9 @@ func TestExecuteCreatesJiraIssue(t *testing.T) {
 	if remote.Key != "DEVEX-7" || remote.URL != "https://jira.test/browse/DEVEX-7" {
 		t.Fatalf("remote = %#v", remote)
 	}
+	if stamp.ID != "audit/WI-001" || stamp.Live == "" || stamp.Source["title"] == "" {
+		t.Fatalf("stamp = %#v, want the marker, a live digest, and source digests", stamp)
+	}
 }
 
 func TestResolveFindsJiraProperties(t *testing.T) {
@@ -69,13 +81,11 @@ func TestResolveFindsJiraProperties(t *testing.T) {
 		case "/rest/api/3/search/jql":
 			searchRequests++
 			if request.URL.Query().Get("nextPageToken") == "page-2" {
-				return jiraJSONResponse(`{"issues":[{"id":"10043","key":"DEVEX-8"}],"isLast":true}`)
+				return jiraJSONResponse(`{"issues":[{"id":"10043","key":"DEVEX-8",` +
+					`"properties":{"devex.discovery":{"id":"audit/WI-002"}}}],"isLast":true}`)
 			}
-			return jiraJSONResponse(`{"issues":[{"id":"10042","key":"DEVEX-7"}],"nextPageToken":"page-2"}`)
-		case "/rest/api/3/issue/DEVEX-7/properties/devex.discovery":
-			return jiraJSONResponse(`{"value":{"id":"audit/WI-001"}}`)
-		case "/rest/api/3/issue/DEVEX-8/properties/devex.discovery":
-			return jiraJSONResponse(`{"value":{"id":"audit/WI-002"}}`)
+			return jiraJSONResponse(`{"issues":[{"id":"10042","key":"DEVEX-7",` +
+				`"properties":{"devex.discovery":{"id":"audit/WI-001"}}}],"nextPageToken":"page-2"}`)
 		default:
 			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("not found"))}
 		}
@@ -106,9 +116,8 @@ func TestResolveIgnoresKeysOutsideThePendingSet(t *testing.T) {
 	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
 		switch request.URL.Path {
 		case "/rest/api/3/search/jql":
-			return jiraJSONResponse(`{"issues":[{"id":"10042","key":"DEVEX-7"}],"isLast":true}`)
-		case "/rest/api/3/issue/DEVEX-7/properties/devex.discovery":
-			return jiraJSONResponse(`{"value":{"id":"billing/WI-001"}}`)
+			return jiraJSONResponse(`{"issues":[{"id":"10042","key":"DEVEX-7",` +
+				`"properties":{"devex.discovery":{"id":"billing/WI-001"}}}],"isLast":true}`)
 		default:
 			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("not found"))}
 		}
@@ -175,7 +184,7 @@ func TestPlanEmitsDependencyLinks(t *testing.T) {
 
 	// Links follow every create so both issues exist before the relationship is published.
 	link := operations[2]
-	if link.Action != actionLinkIssues || link.ID != "link-WI-001/WI-002" {
+	if link.Action != provider.ActionLinkIssues || link.ID != "link-WI-001/WI-002" {
 		t.Fatalf("link = %#v", link)
 	}
 	if link.ItemID != "" {
@@ -373,7 +382,7 @@ func TestPlanRejectsLabelsJiraCannotApply(t *testing.T) {
 func TestExecuteLinkTrustsIssuesCreatedThisRun(t *testing.T) {
 	issueGets := 0
 	client := &http.Client{Transport: jiraRoundTripFunc(func(request *http.Request) *http.Response {
-		if request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/rest/api/3/issue/") {
+		if request.Method == http.MethodGet && request.URL.Query().Get("fields") == "issuelinks" {
 			issueGets++
 		}
 		if request.Method == http.MethodPost && request.URL.Path == "/rest/api/3/issue" {
@@ -389,7 +398,7 @@ func TestExecuteLinkTrustsIssuesCreatedThisRun(t *testing.T) {
 		Fields: map[string]any{
 			"project_key": "DEVEX", "issue_type": "Task", "title": "Second",
 			"description": "Second.", "labels": []any{generatedLabel},
-			"parent_item_id": "", "idempotency_marker": "audit/WI-002",
+			"parent_item_id": "",
 		},
 	}, nil)
 	if err != nil {
@@ -404,7 +413,7 @@ func TestExecuteLinkTrustsIssuesCreatedThisRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	if issueGets != 0 {
-		t.Fatalf("issue reads = %d, want none for an issue created this run", issueGets)
+		t.Fatalf("link reads = %d, want none for an issue created this run", issueGets)
 	}
 }
 
@@ -549,7 +558,7 @@ func TestPlanRelatesEpicsToTheTrackingIssue(t *testing.T) {
 
 	var tracking []provider.Operation
 	for _, operation := range operations {
-		if operation.Action == actionLinkIssues {
+		if operation.Action == provider.ActionLinkIssues {
 			tracking = append(tracking, operation)
 		}
 	}
@@ -595,7 +604,7 @@ func TestPlanWarnsWhenTheTrackingIssueIsElsewhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, operation := range operations {
-		if operation.Action == actionLinkIssues {
+		if operation.Action == provider.ActionLinkIssues {
 			t.Fatalf("operations = %#v, want no link to another tracker", operations)
 		}
 	}

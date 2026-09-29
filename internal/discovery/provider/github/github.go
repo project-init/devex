@@ -82,7 +82,7 @@ func (a *Adapter) Plan(
 		dependsOn := dependenciesFor(item)
 		operations = append(operations, provider.Operation{
 			ID:             "create-" + string(item.ID),
-			Action:         "create_issue",
+			Action:         provider.ActionCreateIssue,
 			ItemID:         item.ID,
 			DependsOn:      dependsOn,
 			IdempotencyKey: marker,
@@ -108,21 +108,33 @@ func (a *Adapter) Resolve(
 	_ *provider.Plan,
 	pending []provider.Operation,
 ) (map[string]provider.RemoteRef, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("github client is unavailable")
-	}
 	wanted := make(map[string]bool, len(pending))
 	for _, operation := range pending {
 		wanted[operation.IdempotencyKey] = true
 	}
-	published := make(map[string]provider.RemoteRef, len(pending))
-
-	options := &gh.IssueListByRepoOptions{
-		State: "all",
-		ListOptions: gh.ListOptions{
-			PerPage: 100,
-		},
+	issues, err := a.markedIssues(ctx, target, func(marker string) bool { return wanted[marker] })
+	if err != nil {
+		return nil, err
 	}
+	published := make(map[string]provider.RemoteRef, len(issues))
+	for foundMarker, issue := range issues {
+		published[foundMarker] = issueRef(issue)
+	}
+
+	return published, nil
+}
+
+// markedIssues lists the repository's issues by the idempotency markers keep accepts.
+func (a *Adapter) markedIssues(
+	ctx context.Context,
+	target config.Target,
+	keep func(marker string) bool,
+) (map[string]*gh.Issue, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("github client is unavailable")
+	}
+	marked := make(map[string]*gh.Issue)
+	options := &gh.IssueListByRepoOptions{State: "all", ListOptions: gh.ListOptions{PerPage: 100}}
 	for {
 		issues, response, err := a.client.Issues.ListByRepo(ctx, target.GitHub.Owner, target.GitHub.Repository, options)
 		if err != nil {
@@ -133,21 +145,25 @@ func (a *Adapter) Resolve(
 				continue
 			}
 			for _, foundMarker := range markerPattern.FindAllString(issue.GetBody(), -1) {
-				if !wanted[foundMarker] {
-					continue
-				}
-				published[foundMarker] = provider.RemoteRef{
-					ID:   strconv.FormatInt(issue.GetID(), 10),
-					Key:  strconv.Itoa(issue.GetNumber()),
-					URL:  issue.GetHTMLURL(),
-					Type: "issue",
+				// A copied body copies the marker too; the original is the oldest issue.
+				if existing, exists := marked[foundMarker]; keep(foundMarker) && (!exists || issue.GetNumber() < existing.GetNumber()) {
+					marked[foundMarker] = issue
 				}
 			}
 		}
 		if response == nil || response.NextPage == 0 {
-			return published, nil
+			return marked, nil
 		}
 		options.ListOptions.Page = response.NextPage
+	}
+}
+
+func issueRef(issue *gh.Issue) provider.RemoteRef {
+	return provider.RemoteRef{
+		ID:   strconv.FormatInt(issue.GetID(), 10),
+		Key:  strconv.Itoa(issue.GetNumber()),
+		URL:  issue.GetHTMLURL(),
+		Type: "issue",
 	}
 }
 
@@ -173,6 +189,10 @@ func (a *Adapter) Execute(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
+	resolvedBody = stampedBody(operation, title, resolvedBody)
+	if operation.Action == provider.ActionUpdateIssue {
+		return a.executeUpdateIssue(ctx, target, operation, resolved, resolvedBody, title, labels)
+	}
 	issue, _, err := a.client.Issues.Create(ctx, target.GitHub.Owner, target.GitHub.Repository, &gh.IssueRequest{
 		Title:  gh.Ptr(title),
 		Body:   gh.Ptr(resolvedBody),
@@ -181,16 +201,16 @@ func (a *Adapter) Execute(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	return provider.RemoteRef{
-		ID:   strconv.FormatInt(issue.GetID(), 10),
-		Key:  strconv.Itoa(issue.GetNumber()),
-		URL:  issue.GetHTMLURL(),
-		Type: "issue",
-	}, nil
+	return issueRef(issue), nil
 }
 
 func marker(discoveryID string, itemID domain.ItemID) string {
-	return fmt.Sprintf("<!-- %s: %s/%s -->", generatedMarker, discoveryID, itemID)
+	return markerPrefix(discoveryID) + string(itemID) + " -->"
+}
+
+// markerPrefix starts every marker of one discovery.
+func markerPrefix(discoveryID string) string {
+	return fmt.Sprintf("<!-- %s: %s/", generatedMarker, discoveryID)
 }
 
 func bodyForItem(item domain.WorkItem, input provider.PlanInput, idempotencyMarker string) string {

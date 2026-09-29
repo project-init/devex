@@ -11,7 +11,7 @@ require (
 	github.com/jszwec/csvutil v1.10.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/moby/buildkit v0.33.0
-	github.com/project-init/gommon v0.8.1
+	github.com/project-init/gommon v0.9.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/mod v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
