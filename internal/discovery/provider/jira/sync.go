@@ -122,7 +122,7 @@ func (a *Adapter) Sync(
 	// links this sync still changes.
 	linkOperations := syncLinks(target, request.DiscoveryID, links, synced)
 	planned := linkPermissionWarning(links)
-	kept := make([]string, 0, len(request.Warnings)+1)
+	var kept []string
 	for _, warning := range request.Warnings {
 		if warning != planned {
 			kept = append(kept, warning)

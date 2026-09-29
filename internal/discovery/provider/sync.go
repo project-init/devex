@@ -143,9 +143,9 @@ func SyncIssue(operation Operation, issue PublishedIssue, changed []string, forc
 		return reuse(operation, issue.Label), warning
 	}
 
-	fields := make(map[string]any, len(operation.Fields)+2)
-	for name, value := range operation.Fields {
-		fields[name] = value
+	fields := maps.Clone(operation.Fields)
+	if fields == nil {
+		fields = map[string]any{}
 	}
 	fields["changed"] = changed
 	if touchesLive || issue.Stamp.Source == nil {
