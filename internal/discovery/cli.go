@@ -185,6 +185,7 @@ func planCommand() *cobra.Command {
 	var configPath string
 	var targetName string
 	var outputPath string
+	var options publish.PlanOptions
 	command := &cobra.Command{
 		Use:   "plan <bundle-directory>",
 		Short: "Create a read-only, reviewable publication plan",
@@ -203,15 +204,17 @@ func planCommand() *cobra.Command {
 				return fmt.Errorf("resolve publication target from %s: %w", configPath, err)
 			}
 			targetName = resolvedTargetName
-			adapter, err := newAdapter(target, false)
+			adapter, err := newAdapter(target, options.Sync)
 			if err != nil {
 				return err
 			}
-			plan, err := publish.CreatePlan(cmd.Context(), bundle, targetName, target, adapter)
+			plan, err := publish.CreatePlan(cmd.Context(), bundle, targetName, target, adapter, options)
 			if err != nil {
 				return err
 			}
-			if outputPath == "" {
+			if outputPath == "" && options.Sync {
+				outputPath = publish.DefaultSyncPlanPath(bundle.Directory, targetName, plan.GeneratedAt)
+			} else if outputPath == "" {
 				outputPath = publish.DefaultPlanPath(bundle.Directory, targetName)
 			} else if !filepath.IsAbs(outputPath) {
 				outputPath, err = filepath.Abs(outputPath)
@@ -235,6 +238,9 @@ func planCommand() *cobra.Command {
 	command.Flags().StringVar(&configPath, "config", defaultConfigPath, "target configuration file")
 	command.Flags().StringVar(&targetName, "target", "", "named publication target (overrides default_target)")
 	command.Flags().StringVar(&outputPath, "out", "", "publication plan output path")
+	command.Flags().BoolVar(&options.Sync, "sync", false,
+		"read published work and plan updates and link removals (needs provider credentials)")
+	command.Flags().BoolVar(&options.Force, "force", false, "with --sync, overwrite issues edited since devex last wrote them")
 	return command
 }
 

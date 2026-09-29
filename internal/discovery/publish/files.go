@@ -81,7 +81,11 @@ func LoadReceipt(path string) (*provider.Receipt, error) {
 }
 
 func PlanDigest(plan *provider.Plan) (string, error) {
-	copy := *plan
+	// A plan hashes identically before and after a round trip through its file.
+	copy, err := canonical(*plan)
+	if err != nil {
+		return "", err
+	}
 	copy.PlanDigest = ""
 	// The digest identifies the work, not the run that produced it. Hashing the timestamp gave
 	// an unchanged bundle a new digest on every plan, and hashing the bundle's absolute path
@@ -89,18 +93,26 @@ func PlanDigest(plan *provider.Plan) (string, error) {
 	// already identifies the bundle's content, so its location adds nothing.
 	copy.GeneratedAt = time.Time{}
 	copy.BundlePath = ""
-	copy.Operations = append([]provider.Operation(nil), plan.Operations...)
-	for index := range copy.Operations {
-		if copy.Operations[index].Fields == nil {
-			copy.Operations[index].Fields = map[string]any{}
-		}
-	}
 	content, err := json.Marshal(copy)
 	if err != nil {
 		return "", err
 	}
 	digest := sha256.Sum256(content)
 	return "sha256:" + hex.EncodeToString(digest[:]), nil
+}
+
+// canonical gives a value the shape it takes after a round trip through a plan file, where a
+// nil list or map reads back as an empty one and a []string as a []any. Planning computes digests
+// in memory and apply recomputes them from the loaded file, so both must see the same shape.
+func canonical[T any](value T) (T, error) {
+	var result T
+	encoded, err := yaml.Marshal(value)
+	if err != nil {
+		return result, err
+	}
+	err = yaml.Unmarshal(encoded, &result)
+
+	return result, err
 }
 
 func loadStrict(path string, target any) error {

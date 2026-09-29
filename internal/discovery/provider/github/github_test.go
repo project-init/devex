@@ -24,7 +24,7 @@ func TestExecuteCreatesIssue(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.GetTitle() != "Implement audit logs" || body.GetBody() != "Parent: https://example.test/1" {
+		if body.GetTitle() != "Implement audit logs" || !strings.HasPrefix(body.GetBody(), "Parent: https://example.test/1\n<!-- devex-sync: ") {
 			t.Fatalf("body = %#v", body)
 		}
 		return jsonResponse(`{"id":42,"number":7,"html_url":"https://github.test/issues/7"}`)

@@ -2,6 +2,7 @@ package jira
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
+	gerror "github.com/project-init/gommon/pkg/errors"
 	"github.com/project-init/gommon/pkg/jiraclient"
 )
 
@@ -23,9 +25,6 @@ const (
 	propertyKey = "devex.discovery"
 
 	generatedLabel = "devex-generated"
-
-	actionCreateIssue = "create_issue"
-	actionLinkIssues  = "link_issues"
 
 	defaultLinkType = "Blocks"
 
@@ -85,10 +84,7 @@ func (a *Adapter) Plan(
 	if err != nil {
 		return nil, nil, err
 	}
-	linkType := target.Jira.LinkType
-	if linkType == "" {
-		linkType = defaultLinkType
-	}
+	linkType := linkTypeFor(target)
 	trackingKey := trackingIssueKey(input.TrackingURL, target.Jira.BaseURL)
 	operations := make([]provider.Operation, 0, len(ordered))
 	links := make([]provider.Operation, 0, len(ordered))
@@ -112,7 +108,7 @@ func (a *Adapter) Plan(
 		}
 		operations = append(operations, provider.Operation{
 			ID:             "create-" + string(item.ID),
-			Action:         actionCreateIssue,
+			Action:         provider.ActionCreateIssue,
 			ItemID:         item.ID,
 			DependsOn:      dependenciesFor(item),
 			IdempotencyKey: marker,
@@ -126,21 +122,12 @@ func (a *Adapter) Plan(
 				"document_url":        input.DocumentURL,
 				"labels":              labels,
 				"parent_item_id":      string(item.Parent),
-				"idempotency_marker":  marker,
 			},
 		})
 	}
 	var warnings []string
-	if len(links) > 0 {
-		types := []string{linkType}
-		if trackingKey != "" {
-			types = append(types, trackingLinkType)
-		}
-		warnings = append(warnings, fmt.Sprintf(
-			"Publishing %d issue link(s) needs the Jira Link Issues permission and these link types: %s.",
-			len(links),
-			strings.Join(provider.UniqueSorted(types), ", "),
-		))
+	if warning := linkPermissionWarning(links); warning != "" {
+		warnings = append(warnings, warning)
 	}
 	if input.TrackingURL != "" && trackingKey == "" {
 		warnings = append(warnings, fmt.Sprintf(
@@ -150,6 +137,38 @@ func (a *Adapter) Plan(
 		))
 	}
 	return append(operations, links...), warnings, nil
+}
+
+// linkPermissionWarning names the permission and link types the planned link additions and
+// removals need, or returns "" when a plan changes no links.
+func linkPermissionWarning(operations []provider.Operation) string {
+	var types []string
+	for _, operation := range operations {
+		if operation.Action == provider.ActionLinkIssues || operation.Action == provider.ActionUnlinkIssues {
+			linkType, _ := operation.Fields["link_type"].(string)
+			types = append(types, linkType)
+		}
+	}
+	if len(types) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"Changing issue links needs the Jira Link Issues permission and these link types: %s.",
+		strings.Join(provider.UniqueSorted(types), ", "),
+	)
+}
+
+func linkTypeFor(target config.Target) string {
+	if target.Jira.LinkType != "" {
+		return target.Jira.LinkType
+	}
+
+	return defaultLinkType
+}
+
+func browseURL(target config.Target, issueKey string) string {
+	return strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + issueKey
 }
 
 func trackingIssueKey(trackingURL string, baseURL string) string {
@@ -175,7 +194,7 @@ func trackingIssueKey(trackingURL string, baseURL string) string {
 func trackingOperation(discoveryID string, item domain.ItemID, trackingKey string) provider.Operation {
 	return provider.Operation{
 		ID:             "link-" + trackingKey + "/" + string(item),
-		Action:         actionLinkIssues,
+		Action:         provider.ActionLinkIssues,
 		DependsOn:      []string{"create-" + string(item)},
 		IdempotencyKey: discoveryID + "/link/" + trackingKey + "/" + string(item),
 		Summary:        fmt.Sprintf("Link Jira %s: %s relates to %s", trackingLinkType, item, trackingKey),
@@ -195,7 +214,7 @@ func linkOperation(
 ) provider.Operation {
 	return provider.Operation{
 		ID:             "link-" + string(dependency) + "/" + string(item),
-		Action:         actionLinkIssues,
+		Action:         provider.ActionLinkIssues,
 		DependsOn:      []string{"create-" + string(dependency), "create-" + string(item)},
 		IdempotencyKey: discoveryID + "/link/" + string(dependency) + "/" + string(item),
 		Summary:        fmt.Sprintf("Link Jira %s: %s blocks %s", linkType, dependency, item),
@@ -213,51 +232,22 @@ func (a *Adapter) Resolve(
 	plan *provider.Plan,
 	pending []provider.Operation,
 ) (map[string]provider.RemoteRef, error) {
-	wanted := make(map[string]bool, len(pending))
+	published, err := a.publishedIssues(ctx, a.getClient(target.Jira.BaseURL), target, plan.DiscoveryID, "issuelinks")
+	if err != nil {
+		return nil, err
+	}
+	refs := make(map[string]provider.RemoteRef, len(pending))
 	for _, operation := range pending {
-		wanted[operation.IdempotencyKey] = true
-	}
-	published := make(map[string]provider.RemoteRef, len(pending))
-
-	jql := fmt.Sprintf(`project = %q AND labels = %q`, target.Jira.ProjectKey, generatedLabel)
-	if plan.DiscoveryID != "" {
-		jql += fmt.Sprintf(` AND labels = %q`, plan.DiscoveryID)
-	}
-
-	nextPageToken := ""
-	client := a.getClient(target.Jira.BaseURL)
-
-	for {
-		result, err := client.SearchJQL(ctx, jql, 100, nextPageToken)
-		if err != nil {
-			return nil, err
+		if issue, exists := published[operation.IdempotencyKey]; exists {
+			refs[operation.IdempotencyKey] = issue.ref
 		}
-
-		for _, issue := range result.Issues {
-			propertyID, err := client.GetIssueProperty(ctx, issue.Key, propertyKey)
-			if err != nil {
-				// We expect a literal 404 response body or status code string block from our Do wrapper
-				if strings.Contains(err.Error(), "HTTP 404") {
-					continue
-				}
-				return nil, err
-			}
-
-			if wanted[propertyID] {
-				published[propertyID] = provider.RemoteRef{
-					ID:   issue.ID,
-					Key:  issue.Key,
-					URL:  strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + issue.Key,
-					Type: "issue",
-				}
-			}
-		}
-		if len(published) == len(wanted) || result.IsLast || result.NextPageToken == "" {
-			break
-		}
-		nextPageToken = result.NextPageToken
 	}
-	return published, nil
+	// The search already read every issue's links, so link operations need not read them again.
+	for _, issue := range published {
+		a.cacheLinks(issue.ref.Key, issue.links)
+	}
+
+	return refs, nil
 }
 
 func (a *Adapter) Execute(
@@ -266,10 +256,16 @@ func (a *Adapter) Execute(
 	operation provider.Operation,
 	resolved map[domain.ItemID]provider.RemoteRef,
 ) (provider.RemoteRef, error) {
-	if operation.Action == actionLinkIssues {
+	switch operation.Action {
+	case provider.ActionLinkIssues:
 		return a.executeLink(ctx, target, operation, resolved)
+	case provider.ActionUnlinkIssues:
+		return a.executeUnlink(ctx, target, operation)
+	case provider.ActionUpdateIssue:
+		return a.executeUpdateIssue(ctx, target, operation, resolved)
+	default:
+		return a.executeCreateIssue(ctx, target, operation, resolved)
 	}
-	return a.executeCreateIssue(ctx, target, operation, resolved)
 }
 
 func (a *Adapter) executeCreateIssue(
@@ -290,34 +286,19 @@ func (a *Adapter) executeCreateIssue(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	description, err := fieldString(operation, "description")
+	description, err := a.descriptionDocument(operation, resolved)
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	description, err = provider.ResolveReferences(description, resolved)
-	if err != nil {
-		return provider.RemoteRef{}, err
-	}
-	acceptanceCriteria, err := fieldStringSlice(operation, "acceptance_criteria")
-	if err != nil {
-		return provider.RemoteRef{}, err
-	}
-	documentURL, _ := operation.Fields["document_url"].(string)
 	labels, err := fieldStringSlice(operation, "labels")
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
-	marker, err := fieldString(operation, "idempotency_marker")
-	if err != nil {
-		return provider.RemoteRef{}, err
-	}
-
 	fields := map[string]any{
-		"project":   map[string]string{"key": projectKey},
-		"issuetype": map[string]string{"name": issueType},
-		"summary":   title,
-		// Using exported jiraclient.ADFDescription!
-		"description": jiraclient.ADFDescription(description, acceptanceCriteria, documentURL),
+		"project":     map[string]string{"key": projectKey},
+		"issuetype":   map[string]string{"name": issueType},
+		"summary":     title,
+		"description": description,
 		"labels":      labels,
 	}
 	if parentID, _ := operation.Fields["parent_item_id"].(string); parentID != "" {
@@ -330,7 +311,7 @@ func (a *Adapter) executeCreateIssue(
 	body := map[string]any{
 		"fields": fields,
 		"properties": []map[string]any{
-			{"key": propertyKey, "value": map[string]string{"id": marker}},
+			{"key": propertyKey, "value": provider.NewStamp(operation, sourceFields, "")},
 		},
 	}
 
@@ -340,17 +321,38 @@ func (a *Adapter) executeCreateIssue(
 		return provider.RemoteRef{}, err
 	}
 
-	if a.linkCache == nil {
-		a.linkCache = make(map[string]map[string]bool)
-	}
-	a.linkCache[response.Key] = make(map[string]bool)
+	a.cacheLinks(response.Key, nil)
+	recordLive(ctx, client, operation, response.Key)
 
 	return provider.RemoteRef{
 		ID:   response.ID,
 		Key:  response.Key,
-		URL:  strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + response.Key,
+		URL:  browseURL(target, response.Key),
 		Type: issueType,
 	}, nil
+}
+
+// descriptionDocument renders an operation's description, acceptance criteria, and document link
+// as the ADF document Jira stores, with remote references resolved.
+func (a *Adapter) descriptionDocument(
+	operation provider.Operation,
+	resolved map[domain.ItemID]provider.RemoteRef,
+) (map[string]any, error) {
+	description, err := fieldString(operation, "description")
+	if err != nil {
+		return nil, err
+	}
+	description, err = provider.ResolveReferences(description, resolved)
+	if err != nil {
+		return nil, err
+	}
+	acceptanceCriteria, err := fieldStringSlice(operation, "acceptance_criteria")
+	if err != nil {
+		return nil, err
+	}
+	documentURL, _ := operation.Fields["document_url"].(string)
+
+	return jiraclient.ADFDescription(description, acceptanceCriteria, documentURL), nil
 }
 
 func (a *Adapter) executeLink(
@@ -396,7 +398,7 @@ func (a *Adapter) describeLinkFailure(
 	linkType string,
 	cause error,
 ) error {
-	if !strings.Contains(cause.Error(), "HTTP 400") {
+	if !errors.Is(cause, gerror.ErrBadRequest) {
 		return cause
 	}
 
@@ -426,16 +428,23 @@ func (a *Adapter) linkExists(
 		return false, err
 	}
 
-	existing := make(map[string]bool, len(existingLinks))
-	for _, link := range existingLinks {
-		existing[linkKey(link.Type, link.InwardIssue)] = true
-	}
+	return a.cacheLinks(issueKey, existingLinks)[linkKey(linkType, blockingKey)], nil
+}
 
+// cacheLinks records and returns an issue's inward links, the ones linkExists checks.
+func (a *Adapter) cacheLinks(issueKey string, links []jiraclient.IssueLink) map[string]bool {
+	existing := make(map[string]bool, len(links))
+	for _, link := range links {
+		if link.InwardIssue != "" {
+			existing[linkKey(link.Type, link.InwardIssue)] = true
+		}
+	}
 	if a.linkCache == nil {
 		a.linkCache = make(map[string]map[string]bool)
 	}
 	a.linkCache[issueKey] = existing
-	return existing[linkKey(linkType, blockingKey)], nil
+
+	return existing
 }
 
 func (a *Adapter) rememberLink(issueKey string, linkType string, blockingKey string) {
