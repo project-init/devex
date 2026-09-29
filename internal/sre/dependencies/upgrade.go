@@ -51,7 +51,7 @@ type plans struct {
 // untouched. Go pins then move to the target alongside capped mise pins, mise bumps every other
 // tool, modules update under the target toolchain, a check confirms the Go invariant, and buf
 // pins move last, so buf generate runs with any buf mise just bumped and git inputs that follow
-// a Go module land where go get -u left it.
+// a Go module land where the Go upgrade left it.
 func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config.DependenciesConfiguration, env environment) error {
 	p, err := plan(ctx, out, o, cfg, env)
 	if err != nil {
@@ -100,9 +100,11 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 		if err != nil {
 			return err
 		}
+		var holds []string
 		for _, h := range held {
-			_, _ = fmt.Fprintf(out, "warning: held %s at %s; %s needs Go %s, above %s\n", h.Module, h.Version, h.Wanted, h.NeedsGo, p.goPlan.Target)
+			holds = append(holds, heldWarning(h, p.goPlan.Target))
 		}
+		printWarnings(out, holds)
 		found, err := pins.Discover(p.goSettings.Discovery)
 		if err != nil {
 			return err
@@ -110,7 +112,7 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 		if _, err := gosync.Check(found, p.goSettings.Directive); err != nil {
 			return fmt.Errorf("pins are out of step after the upgrade:\n%w", err)
 		}
-		// Without --buf nothing moves a linked tag go get -u left behind, and check would fail.
+		// Without --buf nothing moves a linked tag the Go upgrade left behind, and check would fail.
 		if !o.bufFlag {
 			// The Go upgrade already succeeded, so a failed read here only warns.
 			links, warnings, err := linkedInputs(env.Root, cfg, nil)
@@ -130,15 +132,15 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 		_, _ = fmt.Fprintln(out, "Upgrading Buf dependencies...")
 		links := p.buf.Links
 		if o.goFlag {
-			// Read after the Go upgrade, with a fresh listing, so each linked tag lands where go
-			// get -u left its module.
+			// Read after the Go upgrade, with a fresh listing, so each linked tag lands where the
+			// upgrade left its module.
 			var warnings []string
 			if links, warnings, err = linkedInputs(env.Root, cfg, nil); err != nil {
 				return err
 			}
 			// Planning already printed the warnings that still hold.
 			printWarnings(out, slices.DeleteFunc(warnings, func(w string) bool { return slices.Contains(p.buf.Warnings, w) }))
-			// Planning skipped a linked input, so one go get -u unlinked stays put until a rerun.
+			// Planning skipped a linked input, so an input the Go upgrade unlinks stays put until a rerun.
 			var unlinked []string
 			for _, planned := range p.buf.Links {
 				if !slices.ContainsFunc(links, func(l bufsync.Link) bool { return l.On(planned.Change) }) {
@@ -302,7 +304,7 @@ func printDryRun(out io.Writer, o upgradeOptions, p plans) {
 	if o.goFlag {
 		moduleEnv := strings.Join(gosync.ModuleEnv(p.goPlan.Target), " ")
 		for _, m := range p.goPlan.Modules {
-			_, _ = fmt.Fprintf(out, "go get -u ./... && go mod tidy  (in %s, %s)\n", m, moduleEnv)
+			_, _ = fmt.Fprintf(out, "go get <each direct requirement>@upgrade && go mod tidy  (in %s, %s)\n", m, moduleEnv)
 		}
 		if len(p.goPlan.Modules) > 0 {
 			_, _ = fmt.Fprintln(out, "  then go mod vendor in each vendored module outside a go.work directory, and "+strings.Join(gosync.HoldCheck, " ")+" in each module with holds")
@@ -380,4 +382,12 @@ func currentLabel(plan gosync.Plan) string {
 	}
 
 	return plan.Current.String()
+}
+
+func heldWarning(h gosync.Held, target goversion.Version) string {
+	if h.Via != "" {
+		return fmt.Sprintf("held %s at %s; %s needs %s %s, and %s is held for Go %s, above %s", h.Module, h.Version, h.Wanted, h.Via, h.ViaVersion, h.Via, h.NeedsGo, target)
+	}
+
+	return fmt.Sprintf("held %s at %s; %s needs Go %s, above %s", h.Module, h.Version, h.Wanted, h.NeedsGo, target)
 }

@@ -89,8 +89,8 @@ func (l Link) Moves() bool {
 }
 
 // With returns the plan's changes plus each link that moves, sorted by file and line, and the
-// templates they touch. A link drops any planned change on its span, since an input go get -u
-// linked after planning now follows go.mod, even where go.mod leaves the tag in place.
+// templates they touch. A link drops any planned change on its span, since an input the Go
+// upgrade linked after planning now follows go.mod, even where go.mod leaves the tag in place.
 func (p Plan) With(links []Link) ([]edit.Change, []string) {
 	changes := slices.DeleteFunc(slices.Clone(p.Changes), func(c edit.Change) bool {
 		return slices.ContainsFunc(links, func(l Link) bool { return l.On(c) })
@@ -112,7 +112,7 @@ func (p Plan) With(links []Link) ([]edit.Change, []string) {
 }
 
 // Links returns every git input that follows a Go module, resolved against the tree as it
-// stands, so a call after go get -u sees the versions it left. The warnings name inputs that
+// stands, so a call after the Go upgrade sees the versions it left. The warnings name inputs that
 // match several modules, which link to none, and buf files it skipped as unparsable.
 func (p Planner) Links() ([]Link, []string, error) {
 	l, err := p.load(true)
