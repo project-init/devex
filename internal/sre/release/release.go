@@ -164,11 +164,39 @@ func displayReleasePullRequests(ctx context.Context) error {
 		fmt.Println("  (none)")
 		return nil
 	}
-	for _, pr := range prs {
-		fmt.Printf("  #%d %s (@%s)\n", pr.Number, pr.Title, pr.Author)
-		fmt.Printf("      %s\n", pr.URL)
-	}
+	printReleasePullRequests(prs)
 	return nil
+}
+
+const (
+	releasePRColWidth     = 8
+	releaseAuthorColWidth = 16
+	releaseTitleMaxRunes  = 56
+)
+
+func printReleasePullRequests(prs []pullRequestSummary) {
+	fmt.Printf("  %-*s  %-*s  %s\n", releasePRColWidth, "#", releaseAuthorColWidth, "Author", "Title")
+	for _, pr := range prs {
+		fmt.Printf("  %-*s  %-*s  %s\n",
+			releasePRColWidth, fmt.Sprintf("#%d", pr.Number),
+			releaseAuthorColWidth, truncateRunes(pr.Author, releaseAuthorColWidth),
+			truncateRunes(pr.Title, releaseTitleMaxRunes),
+		)
+	}
+}
+
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	if maxRunes == 1 {
+		return "…"
+	}
+	return string(r[:maxRunes-1]) + "…"
 }
 
 // resolveGitHubToken reads GITHUB_TOKEN from the environment or from gh auth token.
