@@ -11,7 +11,7 @@ import (
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "release",
-		Short: "Fetches the latest git tag, prompts for a version bump type\n\t(major/minor/patch), and creates + pushes the new tag.",
+		Short: "Fetches the latest git tag, prompts for a version bump type\n\t(major/minor/patch), lists merged PRs to main since the last tag, and creates + pushes the new tag.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireGitHubReleaseReady(); err != nil {
