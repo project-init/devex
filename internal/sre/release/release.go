@@ -201,9 +201,9 @@ func listMergedPullRequestsSince(ctx context.Context, owner, repo string, since 
 	found := make([]pullRequestSummary, 0)
 	for page := 1; ; page++ {
 		prs, resp, err := client.PullRequests.List(ctx, owner, repo, &github.PullRequestListOptions{
-			State:     "closed",
-			Sort:      "created",
-			Direction: "desc",
+			State:       "closed",
+			Sort:        "created",
+			Direction:   "desc",
 			ListOptions: github.ListOptions{Page: page, PerPage: 100},
 		})
 		if err != nil {
