@@ -19,8 +19,16 @@ The above will generate a git tag and trigger your release if it is coupled with
 
 GitHub auth is required (`gh auth login` or `GITHUB_TOKEN`). `origin` must be a github.com remote.
 
-Before confirmation the tool lists merged pull requests into `main` since the latest tag, or all such PRs when tagging
-for the first time.
+Before confirmation the tool lists merged pull requests into `main`. See [PR preview](#pr-preview) for what is included.
+
+#### PR preview
+
+Before you confirm the tag, the tool prints merged GitHub pull requests into **`main`** only.
+
+- **With an existing tag:** PRs merged into `main` after the **latest tag's commit time** (from `git describe` and `git log` on that tag).
+- **No tags yet:** heading `all history` — every merged PR into `main` (the tool fetches all pages from the GitHub API, 100 PRs per request).
+
+**Not included:** PRs merged into other branches (for example stacked or feature branches), closed-but-unmerged PRs, and commits that never went through a PR.
 
 #### Description
 
