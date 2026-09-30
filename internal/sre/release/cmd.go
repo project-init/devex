@@ -11,9 +11,13 @@ import (
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "release",
-		Short: "Fetches the latest git tag, prompts for a version bump type\n\t(major/minor/patch), and creates + pushes the new tag.",
+		Short: "Fetches the latest git tag, lists merged PRs to main since the last tag, prompts for a version bump type\n\t(major/minor/patch), and creates + pushes the new tag.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireGitHubReleaseReady(); err != nil {
+				return err
+			}
+
 			current, err := fetchLatestTag()
 			if err != nil {
 				return err
@@ -27,6 +31,10 @@ func Command() *cobra.Command {
 				allowMajor = *cfg.Release.AllowMajorVersionBump
 			} else {
 				fmt.Println("\n⚠️  WARNING: allowMajorVersionBump not set in config, defaulting to false")
+			}
+
+			if err = displayReleasePullRequests(cmd.Context()); err != nil {
+				return err
 			}
 
 			bumpType, err := selectBumpType(allowMajor)
