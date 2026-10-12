@@ -114,6 +114,7 @@ func (f fakePlugins) LatestPlugin(_ context.Context, plugin string) (string, err
 
 func testEnvironment(root string) (environment, *recordingRunner) {
 	run := &recordingRunner{root: root, outputs: map[string]string{
+		"mise --version":        "2026.6.12 macos-arm64 (2026-06-21)\n",
 		"mise config ls --json": fmt.Sprintf(`[{"path": %q}]`, filepath.Join(root, "mise.toml")),
 		"mise latest node@26":   "26.10.0\n",
 		"git ls-remote --tags --refs --end-of-options https://github.com/acme/protos.git": "0a1\trefs/tags/v1.8.2\n0b2\trefs/tags/v1.9.0\n0c3\trefs/tags/v2.0.0\n",
@@ -174,6 +175,22 @@ func TestUpgradeMiseAloneLeavesGoPut(t *testing.T) {
 	assertTree(t, root, "testdata/upgrade/input")
 	if want := "[.] mise upgrade --bump --exclude go"; strings.Join(run.calls, "\n") != want {
 		t.Errorf("calls = %q, want only %q", run.calls, want)
+	}
+}
+
+func TestUpgradeStopsOnAnOldMiseBeforeWriting(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/input")
+	env, run := testEnvironment(root)
+	run.outputs["mise --version"] = "2025.12.13 macos-arm64 (2025-12-30)\n"
+
+	o := upgradeOptions{goFlag: true, miseFlag: true}
+	err := runUpgrade(context.Background(), &bytes.Buffer{}, o, policyConfig, env)
+	if err == nil || !strings.Contains(err.Error(), "mise 2025.12.13 is too old") {
+		t.Fatalf("err = %v, want mise too old", err)
+	}
+	assertTree(t, root, "testdata/upgrade/input")
+	if len(run.calls) != 0 {
+		t.Errorf("ran %q before stopping", run.calls)
 	}
 }
 
