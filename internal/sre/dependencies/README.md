@@ -227,8 +227,9 @@ a pin, so each mention produces a warning.
 1. **Plan, writing nothing.** Discover every pin, derive the current version, resolve the
    target from go.dev, and query the registry for each rewritten or digest-pinned image
    tag. The planned versions must pass `check`. The mise and buf plans resolve here too. Pins
-   that disagree, an unpublished tag, a failed lookup, a bad policy, or a floor above the
-   target stop the run here, with every file untouched.
+   that disagree, an unpublished tag, a failed lookup, a bad policy, a floor above the
+   target, or with `--mise` a mise older than 2026.1.3, the first release whose `upgrade` takes
+   `--exclude`, stop the run here, with every file untouched.
 2. **Write.** When a pin mise reads moves, in a mise config or `.tool-versions`,
    `mise install go@<target>` runs first if mise is on `PATH`, so its shims can run the new
    Go; it writes no config. devex then confirms every planned edit against the

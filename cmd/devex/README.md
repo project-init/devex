@@ -129,7 +129,7 @@ Upgrade mise tools, Go modules, and Buf dependencies. `--go` moves every Go vers
 one version, verifies each new image tag against its registry, and upgrades each module's direct
 requirements under exactly that toolchain. Indirect requirements move only as far as the direct
 ones need, and a dependency whose new version needs a newer Go stays put, with a warning. `--mise`
-bumps every other mise tool, and `--buf` moves the plugin versions and git input tags in
+bumps every other mise tool and needs mise 2026.1.3 or newer, and `--buf` moves the plugin versions and git input tags in
 `buf.gen.yaml`, then regenerates. A policy per tool or pin caps it at `minor` or `patch`, or pins
 it. A git input whose repository a `go.mod` requires follows that module's version instead.
 `check` fails on drift without network access. A `.sre` directory is optional.

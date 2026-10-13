@@ -14,10 +14,15 @@ import (
 	"github.com/project-init/devex/internal/sre/dependencies/edit"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"github.com/project-init/devex/internal/sre/dependencies/policy"
+	"golang.org/x/mod/semver"
 )
 
 // goTool is the key Go takes in mise. Go moves only with the Go sync, never with mise.
 const goTool = "go"
+
+// MinVersion is the oldest mise whose upgrade command takes --exclude, which UpgradeCommand
+// always passes.
+const MinVersion = "2026.1.3"
 
 // Runner runs a command and returns its stdout.
 type Runner interface {
@@ -47,6 +52,26 @@ type Plan struct {
 	Capped []string
 	// Warnings lists entries a policy names but cannot cap.
 	Warnings []string
+}
+
+// CheckVersion fails when the mise on PATH is older than MinVersion, so an upgrade stops before
+// it writes anything rather than after mise rejects --exclude. A version it cannot read passes,
+// so a change to mise's --version output never blocks an upgrade.
+func CheckVersion(ctx context.Context, run Runner, dir string) error {
+	out, err := run.Output(ctx, dir, nil, "mise", "--version")
+	if err != nil {
+		return err
+	}
+	// mise prints its version first, such as "2026.6.12 macos-arm64 (2026-06-21)".
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		return nil
+	}
+	if v := "v" + fields[0]; semver.IsValid(v) && semver.Compare(v, "v"+MinVersion) < 0 {
+		return fmt.Errorf("mise %s is too old: upgrading mise tools needs mise %s or newer, the first release whose upgrade command takes --exclude; update mise, such as with mise self-update or brew upgrade mise", fields[0], MinVersion)
+	}
+
+	return nil
 }
 
 // UpgradeCommand returns the mise command that bumps every tool the plan leaves to latest.

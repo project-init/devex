@@ -240,3 +240,34 @@ func TestPlanReadsEveryConfigMiseLoadsAndAsksOncePerQuery(t *testing.T) {
 		t.Errorf("changes = %d, mise latest calls = %d; want 2 changes from 1 call", len(plan.Changes), run.calls)
 	}
 }
+
+// versionRunner answers mise --version with its text.
+type versionRunner string
+
+func (v versionRunner) Output(_ context.Context, _ string, _ []string, name string, args ...string) ([]byte, error) {
+	if command := name + " " + strings.Join(args, " "); command != "mise --version" {
+		return nil, fmt.Errorf("unexpected command %s", command)
+	}
+
+	return []byte(v), nil
+}
+
+func TestCheckVersion(t *testing.T) {
+	for _, tc := range []struct {
+		output  string
+		wantErr bool
+	}{
+		{"2025.12.13 macos-arm64 (2025-12-30)\n", true},
+		{"2026.1.2 linux-x64 (2026-01-13)\n", true},
+		{"2026.1.3 linux-x64 (2026-01-16)\n", false},
+		{"2026.10.8 macos-arm64 (2026-10-11)\n", false},
+		// A version devex cannot read passes rather than blocking the upgrade.
+		{"mise nightly\n", false},
+		{"", false},
+	} {
+		err := CheckVersion(context.Background(), versionRunner(tc.output), t.TempDir())
+		if (err != nil) != tc.wantErr {
+			t.Errorf("CheckVersion(%q) = %v, want error %t", tc.output, err, tc.wantErr)
+		}
+	}
+}

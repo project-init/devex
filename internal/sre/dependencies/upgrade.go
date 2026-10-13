@@ -208,6 +208,9 @@ func plan(ctx context.Context, out io.Writer, o upgradeOptions, cfg config.Depen
 		p.workspaces = slices.Sorted(maps.Keys(p.goPlan.Workspaces))
 	}
 	if o.miseFlag {
+		if err := misesync.CheckVersion(ctx, env.Run, env.Root); err != nil {
+			return plans{}, err
+		}
 		planner := misesync.Planner{Root: env.Root, Policies: cfg.Mise.Policies, Run: env.Run, ListFiles: list}
 		if p.mise, err = planner.Plan(ctx); err != nil {
 			return plans{}, err
