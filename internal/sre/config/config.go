@@ -15,6 +15,7 @@ type Configuration struct {
 	Keygen       KeygenConfiguration       `yaml:"keygen"`
 	Postgres     PostgresConfiguration     `yaml:"postgres"`
 	Release      ReleaseConfiguration      `yaml:"release"`
+	SLOs         SLOsConfiguration         `yaml:"slos"`
 }
 
 // OptionalAnnotation marks a command that runs without a config directory, applying its own

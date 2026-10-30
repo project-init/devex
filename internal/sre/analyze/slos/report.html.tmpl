@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SLO risk: {{.Group}}, {{.Scope}}, {{.Window}}</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --raised: #ffffff; --text: #0b0b0b; --muted: #52514e; --line: #e1e0d9;
+    --breaching: #d03b3b; --at-risk: #ec835a; --watch: #fab219; --healthy: #0ca30c; --quiet: #a3a29b;
+    --over-bg: rgba(208, 59, 59, 0.16); --near-bg: rgba(250, 178, 25, 0.24);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface: #1a1a19; --raised: #222221; --text: #f0efec; --muted: #c3c2b7; --line: #2c2c2a; --quiet: #6b6a64;
+      --over-bg: rgba(208, 59, 59, 0.32); --near-bg: rgba(250, 178, 25, 0.22);
+    }
+  }
+  body { margin: 0; padding: 24px; background: var(--surface); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .tile { background: var(--raised); border: 1px solid var(--line); border-top: 4px solid var(--c); border-radius: 6px; padding: 8px 12px; min-width: 96px; }
+  .tile b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: 12px; }
+  .total { margin: 0 0 20px; }
+  details { background: var(--raised); border: 1px solid var(--line); border-left: 6px solid var(--c); border-radius: 6px; margin-bottom: 12px; }
+  summary { cursor: pointer; padding: 10px 12px; font-weight: 600; }
+  summary .n { color: var(--muted); font-weight: 400; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 6px 10px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  td { font-variant-numeric: tabular-nums; }
+  td:nth-child(n+3):nth-child(-n+12) { text-align: right; white-space: nowrap; }
+  td:last-child { min-width: 240px; }
+  .scroll { overflow-x: auto; }
+  td.over { background: var(--over-bg); font-weight: 700; }
+  td.near { background: var(--near-bg); font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 600; font-size: 12px; }
+  .pill::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+  .breaching { --c: var(--breaching); }
+  .at-risk { --c: var(--at-risk); }
+  .watch { --c: var(--watch); }
+  .healthy { --c: var(--healthy); }
+  .no-slo, .low-data, .no-data { --c: var(--quiet); }
+  .legend { color: var(--muted); font-size: 12px; margin-top: 16px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; border-radius: 2px; }
+  .info { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 4px;
+    border: 1px solid var(--muted); border-radius: 50%; color: var(--muted); font: italic 600 10px/1 Georgia, serif; cursor: help; vertical-align: 1px; }
+  #all-columns:not(:checked) ~ * .extra { display: none; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 12px; color: var(--muted); cursor: pointer; }
+  #all-columns { margin: 0 6px 12px 0; vertical-align: -1px; cursor: pointer; }
+  .bar { display: flex; width: 140px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); margin: 5px 0 3px auto; }
+  .bar i { display: block; height: 100%; }
+  .bar .u { background: var(--healthy); } .bar .n { background: var(--watch); } .bar .o { background: var(--breaching); }
+  .total .bar { width: 320px; height: 10px; margin: 6px 0 0; }
+  .split { display: inline-block; padding: 2px 0; cursor: default; }
+  .split:focus { outline: 2px solid var(--line); outline-offset: 2px; }
+  .pop { position: fixed; z-index: 10; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity 0.1s;
+    display: grid; grid-template-columns: 10px auto auto auto; gap: 4px 10px; align-items: center; padding: 8px 10px;
+    background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); font-size: 12px; font-weight: 400; text-align: left; white-space: nowrap; }
+  .split:hover .pop, .split:focus .pop { visibility: visible; opacity: 1; }
+  .pop .sw { width: 10px; height: 10px; border-radius: 2px; }
+  .pop .sw.u { background: var(--healthy); } .pop .sw.n { background: var(--watch); } .pop .sw.o { background: var(--breaching); }
+  .pop b, .pop .count { justify-self: end; font-variant-numeric: tabular-nums; }
+  .pop .count { color: var(--muted); }
+  .pop .of { grid-column: 1 / -1; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>SLO risk: {{.Group}}</h1>
+<p class="sub">{{.Scope}}, {{.Window}}, {{.Rollup}} buckets. Most urgent first.</p>
+
+<div class="tiles">
+{{- range .Tiles}}
+  <div class="tile {{.Class}}" title="{{.Info}}"><b>{{.Count}}</b><span class="pill">{{.Label}}</span></div>
+{{- end}}
+</div>
+{{- if .Requests}}
+<div class="total">Of <b>{{.Requests}}</b> requests, <b>{{.Near}}</b> ran at 75% of their SLO or more, and <b>{{.Over}}</b> over it.
+  {{- with .Total}}<br><div class="split" tabindex="0">{{template "bar" .}}{{template "pop" .}}</div>{{end}}</div>
+{{- end}}
+
+<input type="checkbox" id="all-columns"><label class="toggle" for="all-columns">Show all columns</label>
+
+{{- range .Sections}}
+<details class="{{.Class}}" data-verdict="{{.Label}}"{{if .Open}} open{{end}}>
+  <summary><span class="pill">{{.Label}}</span> <span class="n">{{len .Rows}}{{if .Flagged}}, {{.Flagged}} read worse than HEALTHY{{end}}</span><span class="info" tabindex="0" title="{{.Info}}" aria-label="{{.Info}}">i</span></summary>
+  <div class="scroll"><table>
+    <thead><tr>{{range $.Columns}}<th{{if .Extra}} class="extra"{{end}}{{if .Tip}} title="{{.Tip}}"{{end}}>{{.Name}}{{if .Tip}}<span class="info" aria-hidden="true">i</span>{{end}}</th>{{end}}</tr></thead>
+    <tbody>
+    {{- range $r := .Rows}}
+      <tr class="{{$r.Class}}">
+      {{- range $i, $c := $r.Cells}}
+        {{- if eq $i 0}}<td><span class="pill">{{$c.Text}}</span>
+          {{- if $r.Reads}}<br><span class="pill {{$r.ReadsClass}}">reads {{$r.Reads}}</span>{{end}}</td>
+        {{- else}}<td class="{{if $c.Extra}}extra {{end}}{{$c.Class}}">
+          {{- with $c.Split}}<div class="split" tabindex="0">{{template "bar" .}}{{$c.Text}}{{template "pop" .}}</div>
+          {{- else}}{{$c.Text}}{{end}}</td>{{end}}
+      {{- end}}
+      </tr>
+    {{- end}}
+    </tbody>
+  </table></div>
+</details>
+{{- end}}
+
+<p class="legend"><i style="background: var(--over-bg)"></i> at or over the SLO &nbsp; <i style="background: var(--near-bg)"></i> at 75% of the SLO or more.
+&lt;75% / 75-100% / &gt;=SLO estimates the share of requests in each range, from each bucket's median, p95, and max.
+Hover a <span class="info">i</span> for what a section or column means.</p>
+<script>
+// A panel is fixed to the window, so a table that scrolls sideways cannot clip it. It opens under its bar, or over it
+// near the bottom of the window.
+document.querySelectorAll(".split").forEach(function (el) {
+  var pop = el.querySelector(".pop");
+  el.place = function () {
+    var r = el.getBoundingClientRect();
+    var top = r.bottom + 6;
+    if (top + pop.offsetHeight > innerHeight - 8) top = r.top - pop.offsetHeight - 6;
+    pop.style.top = top + "px";
+    pop.style.left = Math.max(8, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 8)) + "px";
+  };
+  el.addEventListener("mouseenter", el.place);
+  el.addEventListener("focus", el.place);
+});
+addEventListener("scroll", function () {
+  var el = document.querySelector(".split:hover, .split:focus");
+  if (el) el.place();
+}, true);
+</script>
+</body>
+</html>
+{{define "bar"}}<div class="bar"><i class="u" style="width: {{printf "%.2f" .Under}}%"></i><i class="n" style="width: {{printf "%.2f" .Near}}%"></i><i class="o" style="width: {{printf "%.2f" .Over}}%"></i></div>{{end}}
+{{define "pop"}}<div class="pop" role="tooltip">
+  {{- range .Shares}}<i class="sw {{.Class}}"></i><span>{{.Range}}</span><b>{{.Pct}}</b><span class="count">{{.Count}}</span>{{end}}
+  {{- with .Of}}<span class="of">of {{.}} requests; the counts are estimates</span>{{end}}</div>{{end}}

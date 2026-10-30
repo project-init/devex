@@ -6,6 +6,7 @@ import (
 	"github.com/project-init/devex/internal/sre/analyze/ownership"
 	"github.com/project-init/devex/internal/sre/analyze/protos"
 	"github.com/project-init/devex/internal/sre/analyze/reliability"
+	"github.com/project-init/devex/internal/sre/analyze/slos"
 	"github.com/project-init/devex/internal/sre/analyze/sql"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +21,7 @@ func Command() *cobra.Command {
 	cmd.AddCommand(ownership.Command())
 	cmd.AddCommand(protos.Command())
 	cmd.AddCommand(reliability.Command())
+	cmd.AddCommand(slos.Command())
 	cmd.AddCommand(sql.Command())
 	return cmd
 }
