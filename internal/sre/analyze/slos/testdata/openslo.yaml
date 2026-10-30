@@ -1,0 +1,91 @@
+# OpenSLO v1 SLOs in the subset devex reads: one inline indicator, one rolling window, one objective.
+apiVersion: openslo/v1
+kind: Service
+metadata:
+  name: orders
+spec:
+  description: "Skipped: devex reads SLO documents only."
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: orders-checkout-latency
+  displayName: Checkout
+  labels:
+    tags: [p0]
+spec:
+  service: orders
+  indicator:
+    metadata:
+      name: checkout-p95
+    spec:
+      thresholdMetric:
+        metricSource:
+          type: Datadog
+          spec:
+            query: avg:acme.checkout.response_time.95percentile{env:production}
+  timeWindow:
+    - duration: 7d
+      isRolling: true
+  budgetingMethod: Timeslices
+  objectives:
+    - op: lt
+      value: 800
+      target: 0.99
+      timeSliceWindow: 5m
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: orders-nightly-export
+  labels:
+    tags: p1, batch
+spec:
+  service: orders
+  indicator:
+    metadata:
+      name: export-success
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: datadog
+            spec:
+              query: sum:acme.export.succeeded{env:production}
+        total:
+          metricSource:
+            type: datadog
+            spec:
+              query: sum:acme.export.runs{env:production}
+  timeWindow:
+    - duration: 4w
+      isRolling: true
+  budgetingMethod: Occurrences
+  objectives:
+    - target: 0.9
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: inventory-lookup-latency
+spec:
+  service: inventory
+  indicator:
+    metadata:
+      name: lookup-p95
+    spec:
+      thresholdMetric:
+        metricSource:
+          type: Datadog
+          spec:
+            query: avg:acme.lookup.response_time.95percentile{env:production}
+  timeWindow:
+    - duration: 30d
+      isRolling: true
+  budgetingMethod: Timeslices
+  objectives:
+    - op: lt
+      value: 300
+      target: 0.95
+      timeSliceWindow: 15m

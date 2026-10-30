@@ -85,7 +85,7 @@ Site Reliability Engineering toolbox for common operational tasks.
 - [postgres](../../internal/sre/postgres/README.md) - PostgreSQL operations and access management
 - [release](../../internal/sre/release/README.md) - Git tag and release management with a merged-PR list preview
 - [dependencies](../../internal/sre/dependencies/README.md) - Upgrade dependencies and keep every Go version pin in step
-- analyze - Code analysis operations
+- analyze - Code analysis operations, including [slos](../../internal/sre/analyze/slos/README.md): score OpenSLO SLOs against Datadog, with an error budget for each
 - echo - Print and transform arguments
 
 **Usage:**
@@ -161,6 +161,25 @@ dependencies:
 
 See the [dependencies README](../../internal/sre/dependencies/README.md) for every flag, config
 field, and failure mode.
+
+#### SLOs
+
+Score the SLOs in an OpenSLO v1 file against Datadog, each over its own time window, with a verdict,
+an error budget, and an action for each. Nothing has to be set up in the repository it runs in:
+export the keys and pass the file. An org on a Datadog site other than `datadoghq.com` also sets
+`DD_SITE`.
+
+```shell
+export DD_API_KEY=... DD_APP_KEY=...
+
+# Score every SLO in the file.
+devex sre analyze slos --slo-file slos/orders.yaml
+
+# Write a self-contained HTML report of one service, only once the run succeeds.
+devex sre analyze slos --slo-file slos/all.yaml --group orders --format html --out slo-risk.html
+```
+
+See the [slos README](../../internal/sre/analyze/slos/README.md) for every flag and verdict.
 
 ---
 
