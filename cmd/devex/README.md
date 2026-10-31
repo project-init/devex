@@ -85,7 +85,7 @@ Site Reliability Engineering toolbox for common operational tasks.
 - [postgres](../../internal/sre/postgres/README.md) - PostgreSQL operations and access management
 - [release](../../internal/sre/release/README.md) - Git tag and release management with a merged-PR list preview
 - [dependencies](../../internal/sre/dependencies/README.md) - Upgrade dependencies and keep every Go version pin in step
-- analyze - Code analysis operations
+- analyze - Code analysis operations, including [slos](../../internal/sre/analyze/slos/README.md): rank RPCs by how close they run to their response time SLO
 - echo - Print and transform arguments
 
 **Usage:**
@@ -161,6 +161,35 @@ dependencies:
 
 See the [dependencies README](../../internal/sre/dependencies/README.md) for every flag, config
 field, and failure mode.
+
+#### SLOs
+
+Rank a team's RPCs by how close they run to their response time SLO in Datadog, with a verdict
+and an action for each. The SLOs come from the SLO file in the protos module that `go.mod` pins,
+and which app serves each RPC is read from Datadog. Nothing has to be set up in the repository it
+runs in: export the keys and pass `--group`.
+
+```shell
+export DD_API_KEY=... DD_APP_KEY=...
+
+# Score the last 30 days.
+devex sre analyze slos --group gigapi
+
+# Write a self-contained HTML report, only once the run succeeds.
+devex sre analyze slos --group gigapi --days 7 --format html --out slo-risk.html
+```
+
+Every config field is optional, and overrides a default:
+
+```yaml
+slos:
+  group: gigapi # what --group overrides
+  datadog:
+    scope: environment:production # the default
+```
+
+See the [slos README](../../internal/sre/analyze/slos/README.md) for every flag, config field,
+and verdict.
 
 ---
 

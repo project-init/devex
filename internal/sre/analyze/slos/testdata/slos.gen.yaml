@@ -1,0 +1,27 @@
+# The SLO file shape, version 1. slo is the response time SLO in milliseconds, or null when the RPC has none.
+version: 1
+services:
+  orders:
+    - method: /acme.services.orders.v1.OrdersService/GetOrder
+      metric: acmeServicesOrdersV1OrdersServiceGetOrder
+      slo: 500
+      tags: [p0, apps-primary]
+      minCount: null
+      maxCount: null
+      evaluationWindow: null
+    - method: /acme.services.orders.v1.OrdersService/ListOrders
+      metric: acmeServicesOrdersV1OrdersServiceListOrders
+      slo: null
+      tags: []
+      minCount: 10
+      maxCount: null
+      evaluationWindow: 1h
+  inventory:
+    - method: /acme.services.inventory.v1.InventoryService/GetItem
+      metric: acmeServicesInventoryV1InventoryServiceGetItem
+      slo: 1500
+      tags: [p1]
+      minCount: null
+      maxCount: null
+      evaluationWindow: null
+  shipping: []
