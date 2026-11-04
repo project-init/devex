@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,14 +13,15 @@ import (
 
 // options holds the parameters required to run a database migration as an ECS task.
 type options struct {
-	cluster        string
-	taskDef        string
-	subnets        string
-	securityGroups string
-	container      string
-	imageURI       string
-	region         string
-	launchType     string
+	cluster          string
+	taskDef          string
+	subnets          string
+	securityGroups   string
+	container        string
+	imageURI         string
+	region           string
+	launchType       string
+	capacityProvider string
 }
 
 func Command() *cobra.Command {
@@ -46,9 +48,31 @@ func Command() *cobra.Command {
 	flags.StringVar(&opts.container, "container", os.Getenv("CONTAINER"), "Container name")
 	flags.StringVar(&opts.imageURI, "image-uri", os.Getenv("IMAGE_URI"), "Docker image URI")
 	flags.StringVar(&opts.region, "region", cmp.Or(os.Getenv("REGION"), "us-east-1"), "AWS region")
-	flags.StringVar(&opts.launchType, "launch-type", cmp.Or(os.Getenv("LAUNCH_TYPE"), string(ecstypes.LaunchTypeFargate)), "ECS launch type to run the task with")
+	flags.StringVar(&opts.launchType, "launch-type", os.Getenv("LAUNCH_TYPE"), "ECS launch type to run the task with; FARGATE when neither this nor --capacity-provider is set")
+	flags.StringVar(&opts.capacityProvider, "capacity-provider", os.Getenv("CAPACITY_PROVIDER"), "ECS capacity provider to run the task on, instead of a launch type")
 
 	return cmd
+}
+
+// placement chooses how RunTask places the task. A named capacity provider lets a full cluster scale
+// out: the task waits in PROVISIONING for capacity rather than failing. Otherwise the launch type
+// places it.
+func (o *options) placement() (ecstypes.LaunchType, []ecstypes.CapacityProviderStrategyItem, error) {
+	if o.capacityProvider == "" {
+		if o.launchType == "" {
+			return ecstypes.LaunchTypeFargate, nil, nil
+		}
+
+		launchType, err := o.resolveLaunchType()
+
+		return launchType, nil, err
+	}
+
+	if o.launchType != "" {
+		return "", nil, errors.New("set --capacity-provider (CAPACITY_PROVIDER) or --launch-type (LAUNCH_TYPE), not both")
+	}
+
+	return "", []ecstypes.CapacityProviderStrategyItem{{CapacityProvider: &o.capacityProvider, Weight: 1}}, nil
 }
 
 // resolveLaunchType normalizes the launch type flag and rejects values ECS does not accept.

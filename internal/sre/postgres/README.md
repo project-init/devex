@@ -58,22 +58,23 @@ sre postgres migrate \
   --container <container-name> \
   --image-uri <docker-image-uri> \
   [--region <aws-region>] \
-  [--launch-type <ecs-launch-type>]
+  [--launch-type <ecs-launch-type> | --capacity-provider <capacity-provider>]
 ```
 
 Each flag also falls back to an environment variable, so the command can be driven entirely from the environment in
 CI/CD:
 
-| Flag                | Environment variable | Required | Default     |
-| ------------------- | -------------------- | -------- | ----------- |
-| `--cluster`         | `CLUSTER`            | yes      |             |
-| `--task-def`        | `TASK_DEF`           | yes      |             |
-| `--subnets`         | `SUBNETS`            | yes      |             |
-| `--security-groups` | `SECURITY_GROUPS`    | yes      |             |
-| `--container`       | `CONTAINER`          | yes      |             |
-| `--image-uri`       | `IMAGE_URI`          | yes      |             |
-| `--region`          | `REGION`             | no       | `us-east-1` |
-| `--launch-type`     | `LAUNCH_TYPE`        | no       | `FARGATE`   |
+| Flag                  | Environment variable | Required | Default     |
+| --------------------- | -------------------- | -------- | ----------- |
+| `--cluster`           | `CLUSTER`            | yes      |             |
+| `--task-def`          | `TASK_DEF`           | yes      |             |
+| `--subnets`           | `SUBNETS`            | yes      |             |
+| `--security-groups`   | `SECURITY_GROUPS`    | yes      |             |
+| `--container`         | `CONTAINER`          | yes      |             |
+| `--image-uri`         | `IMAGE_URI`          | yes      |             |
+| `--region`            | `REGION`             | no       | `us-east-1` |
+| `--launch-type`       | `LAUNCH_TYPE`        | no       | `FARGATE`   |
+| `--capacity-provider` | `CAPACITY_PROVIDER`  | no       |             |
 
 #### Description
 
@@ -85,6 +86,15 @@ cluster and waits (up to 30 minutes) for it to complete. On a non-zero exit it p
 `--launch-type` defaults to `FARGATE`. Set it to `EC2` when the task definition is backed by container instances rather
 than Fargate — the value has to match the `requiresCompatibilities` on the task definition, or ECS rejects the run with
 `InvalidParameterException: Task definition does not support launch_type ...`.
+
+If the wait ends first, at 30 minutes or on a failed status check, the command fails and reports what ECS still knows:
+the task's status, or why it can't tell. It leaves the task alone, since stopping it could interrupt a migration. A
+task in any state but `STOPPED` may yet change the database, so check it before retrying. With `--capacity-provider`,
+the 30 minutes include any wait for the cluster to scale out.
+
+`--capacity-provider` runs the task on a named capacity provider instead of a launch type. On a full EC2-backed
+cluster, a launch type fails the run at once with `RESOURCE:ENI` or `RESOURCE:MEMORY`. A capacity provider with managed
+scaling instead holds the task in `PROVISIONING` and adds an instance for it. Set one or the other, not both.
 
 **NOTE**: This relies on standard AWS credential resolution, so make sure your `AWS_PROFILE`/SSO login (or CI role) is in
 place and has permission to describe/register task definitions and run tasks on the target cluster.
