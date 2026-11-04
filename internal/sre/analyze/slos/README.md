@@ -1,10 +1,11 @@
 # SLOs
 
-Score the SLOs in an [OpenSLO v1](https://openslo.com/specification/) file against Datadog, so a team
-can see which SLOs to fix, or which to move, before their error budget runs out.
+Score the SLOs in an [OpenSLO v1](https://openslo.com/specification/) file against any metric
+upstream, so a team can see which SLOs to fix, or which to move, before their error budget runs out.
+Datadog is the only upstream integrated today.
 
-`devex sre analyze slos --slo-file <file>` reads each SLO, asks Datadog for its data over the SLO's
-own time window, ending now, and gives each SLO a verdict, an error budget, and an action. A 7d SLO
+`devex sre analyze slos --slo-file <file>` reads each SLO, asks the metric upstream for its data over
+the SLO's own time window, ending now, and gives each SLO a verdict, an error budget, and an action. A 7d SLO
 is scored over the last 7 days, and a 30d one over the last 30.
 
 Nothing has to be set up in the repository it runs in. Export the two Datadog keys, pass the file,
