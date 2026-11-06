@@ -33,9 +33,11 @@ go.work.sum
 .vscode/
 
 # MacOSX
-
 .DS_Store
 /gen/
+
+# Mise
+mise.local.toml
 
 # Contributions
 cmd/devex/contributions/prs
