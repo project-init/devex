@@ -1,0 +1,16 @@
+default_target: jira-project
+default_labels: [triaged]
+
+targets:
+  jira-project:
+    provider: jira
+    jira:
+      base_url: https://project-init.atlassian.net
+      project_key: INIT
+      hierarchy_fallback: error
+      kind_mapping:
+        initiative: Epic
+        feature: Task
+        task: Task
+        defect: Bug
+        research: Task
