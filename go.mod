@@ -10,7 +10,7 @@ require (
 	github.com/google/go-github/v74 v74.0.0
 	github.com/jszwec/csvutil v1.10.1
 	github.com/manifoldco/promptui v0.9.0
-	github.com/moby/buildkit v0.33.0
+	github.com/moby/buildkit v0.34.2
 	github.com/project-init/gommon v0.10.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/mod v0.41.0
