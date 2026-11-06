@@ -20,3 +20,6 @@ run = "go run cmd/devex/main.go sre"
 
 [tasks.workplan]
 run = "go run cmd/workplan/main.go"
+
+[tasks.errtrack]
+run = "mise sre errtrack"
