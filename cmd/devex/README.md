@@ -85,6 +85,7 @@ Site Reliability Engineering toolbox for common operational tasks.
 - [postgres](../../internal/sre/postgres/README.md) - PostgreSQL operations and access management
 - [release](../../internal/sre/release/README.md) - Git tag and release management with a merged-PR list preview
 - [dependencies](../../internal/sre/dependencies/README.md) - Upgrade dependencies and keep every Go version pin in step
+- [errtrack](../../internal/sre/errtrack/README.md) - Pull Datadog error metadata down as JSON
 - analyze - Code analysis operations, including [slos](../../internal/sre/analyze/slos/README.md): score OpenSLO SLOs against Datadog, with an error budget for each
 - echo - Print and transform arguments
 
@@ -118,6 +119,9 @@ devex sre postgres access
 
 # Create a new release
 devex sre release
+
+# Pull the metadata behind a Datadog error link
+devex sre errtrack <link>
 ```
 
 Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists merged PRs into `main` since the latest tag (all such PRs on the first tag).

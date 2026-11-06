@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "source": "datadog",
+  "fetched_at": "2026-11-06T15:04:05Z",
+  "summary": "[gigapi] runtime.Error: runtime error: invalid memory address or nil pointer dereference",
+  "error": {
+    "type": "runtime.Error",
+    "message": "runtime error: invalid memory address or nil pointer dereference",
+    "service": "gigapi",
+    "environment": "production",
+    "state": "OPEN",
+    "is_crash": false,
+    "platform": "BACKEND",
+    "languages": ["GO"]
+  },
+  "timeline": {
+    "first_seen": "2026-10-02T09:14:00Z",
+    "first_seen_version": "aaf65cd0",
+    "last_seen": "2026-11-06T14:51:33Z",
+    "last_seen_version": "7c4f1a9e"
+  },
+  "occurrences": {
+    "total": 1843,
+    "impacted_users": 212,
+    "impacted_sessions": 318
+  },
+  "code": {
+    "repository_url": "https://github.com/dailypay/gigapi",
+    "commit_sha": "7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a",
+    "location": {
+      "file": "internal/transfers/service.go",
+      "function": "(*Service).CreateTransfer",
+      "line": 142
+    },
+    "frames": [
+      {
+        "text": "internal/transfers/service.go:142 (*Service).CreateTransfer",
+        "file": "internal/transfers/service.go",
+        "first_line": 142,
+        "last_line": 142,
+        "source_url": "https://github.com/dailypay/gigapi/blob/7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a/internal/transfers/service.go#L142",
+        "code_snippet": {
+          "offset": 140,
+          "lines": [
+            "func (s *Service) CreateTransfer(ctx context.Context, req *Request) (*Transfer, error) {",
+            "\taccount := s.accounts.Lookup(ctx, req.AccountID)",
+            "\tif account.Status == StatusActive {",
+            "\t\treturn s.enqueue(ctx, account, req)",
+            "\t}"
+          ]
+        }
+      },
+      {
+        "text": "internal/transfers/handler.go:88 (*Handler).Post",
+        "file": "internal/transfers/handler.go",
+        "first_line": 88,
+        "last_line": 88,
+        "source_url": "https://github.com/dailypay/gigapi/blob/7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a/internal/transfers/handler.go#L88",
+        "code_snippet": {
+          "offset": 87,
+          "lines": [
+            "\ttransfer, err := h.transfers.CreateTransfer(ctx, req)",
+            "\tif err != nil {"
+          ]
+        }
+      },
+      {
+        "text": "internal/server/router.go:214 (*Router).ServeHTTP",
+        "file": "internal/server/router.go",
+        "first_line": 214,
+        "last_line": 214,
+        "source_url": "https://github.com/dailypay/gigapi/blob/7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a/internal/server/router.go#L214",
+        "code_snippet": null
+      }
+    ],
+    "frames_truncated": true
+  },
+  "links": {
+    "issue": "https://app.datadoghq.com/apm/error-tracking/issue/c1726a66-1f64-11ee-b338-da7ad0900002",
+    "trace": "https://app.datadoghq.com/apm/trace/4f2b1c8e9d0a1b2c",
+    "session_replay": null
+  }
+}
