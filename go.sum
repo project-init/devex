@@ -1,7 +1,7 @@
 github.com/aws/aws-sdk-go-v2 v1.47.5 h1:5yA+A+BiXbDq1ZLbYwPViwhEGDMdR0MEhL8Jh2LnLS4=
 github.com/aws/aws-sdk-go-v2 v1.47.5/go.mod h1:iNIkogrRvFwm+1OQIUOP2lPBtlXZboOIUWiCa+pHEMw=
-github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.21 h1:WKBWnr7CcxtexN5hlwQm3PQHpOiHC1yL2jT9xV1lst4=
-github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.21/go.mod h1:wSsHgTuq6+1PF8bYXu69GvAtPwRqu58R54eiU3oJjPA=
+github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25 h1:MW0Iql1SOTgQPj8mCxrU/eH/K/AIDWi08ItOsXaWRLU=
+github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25/go.mod h1:+ucVYmHYB3JqVueY0E1RHahdXAnKQbIHqybSbvOUbOM=
 github.com/aws/aws-sdk-go-v2/config v1.33.13 h1:u52x6ISQOx172tpwM0VRxhJzEsTJYpMcEYUGM2A1wrw=
 github.com/aws/aws-sdk-go-v2/config v1.33.13/go.mod h1:/ixtz6XPHb42zekjQ0LqD9XjTpTysNWhIGwufY1OzI4=
 github.com/aws/aws-sdk-go-v2/credentials v1.20.13 h1:j4z41OtspmQ3ftQycaDunJ26b69a9SHfaSVUPqgRv8k=
@@ -16,8 +16,8 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 h1:PWv+vG8aCLS8qd+HPdY
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8/go.mod h1:xxPZEpflYHJA12366ZGyq66z9dHPCoeCIu99Jck+MPw=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 h1:WOp5De9iWdEHDPh2Kb0tBP3vGBm/dVAuRGh4a4tqduo=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8/go.mod h1:z8W8YgfhbWl62XqcTtK+CxPrE+iHGRVUOtrrbIOp7ZY=
-github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.89.2 h1:ZUfYtMOELzVop4DMPjR7I8LS+hIH8H5iIx7s5kzp2ek=
-github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.89.2/go.mod h1:iu8+tw6QjMHI2U04mIYFLYUP5WwvtOc6oyz9G6qHoQM=
+github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.91.0 h1:JmTf3Lb/o16zZLId9rSlwzJsa8jIuGczvvVTGr1/j2U=
+github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.91.0/go.mod h1:rjX/2ubRFOWZEUMUIK1FA2ppl8FrX9laHyQ7LDJU/Kg=
 github.com/aws/aws-sdk-go-v2/service/ecs v1.103.1 h1:DRTV+EGfif88RSqkyHvuyrHGHT9pCdT6yL0ivfALa4U=
 github.com/aws/aws-sdk-go-v2/service/ecs v1.103.1/go.mod h1:jjuJTYCyu/HPuJ0/SccHi+0I4VJFWxTPVxU7HpuZdPw=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 h1:MCIR6iZaCKO4UE0hUvoWWLI6JVjppopV64JfAJaMjng=

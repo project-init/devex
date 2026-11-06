@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
-	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.89.2
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.91.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.103.1
 	github.com/google/go-github/v74 v74.0.0
 	github.com/jszwec/csvutil v1.10.1
@@ -18,7 +18,7 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.21 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.13 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.7.3 // indirect
