@@ -46,9 +46,13 @@ func ptr[T any](v T) *T { return &v }
 // a wrong issue URL in the documented example for days, because no test ever
 // compared what the mapper produces against what we say it produces.
 //
-// Regenerate with: go test ./internal/sre/errtrack/ -run TestToReportGolden -update
-// The golden file is in .prettierignore, since -update writes Go's indentation
-// and prettier would reformat it straight back.
+// Regenerate with:
+//
+//	go test ./internal/sre/errtrack/ -run TestToReportGolden -update && mise format
+//
+// The format step matters: -update writes Go's indentation, and prettier owns
+// the formatting of JSON in this repository. Skipping it leaves a diff that CI
+// fails on, since it runs mise format and then git diff --exit-code.
 func TestToReportGolden(t *testing.T) {
 	got := toReport(loadFixture(t), mapInput{Site: "datadoghq.com", FetchedAt: testNow})
 

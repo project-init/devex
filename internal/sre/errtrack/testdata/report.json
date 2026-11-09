@@ -11,9 +11,7 @@
     "state": "OPEN",
     "is_crash": false,
     "platform": "BACKEND",
-    "languages": [
-      "GO"
-    ]
+    "languages": ["GO"]
   },
   "timeline": {
     "first_seen": "2026-11-07T17:07:07.024Z",
