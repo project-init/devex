@@ -82,7 +82,7 @@
     "frames_truncated": true
   },
   "links": {
-    "issue": "https://app.datadoghq.com/apm/error-tracking/issue/c1726a66-1f64-11ee-b338-da7ad0900002",
+    "issue": "https://app.datadoghq.com/error-tracking/issue/c1726a66-1f64-11ee-b338-da7ad0900002",
     "trace": "https://app.datadoghq.com/apm/trace/4f2b1c8e9d0a1b2c",
     "session_replay": null
   }

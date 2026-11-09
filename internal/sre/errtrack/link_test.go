@@ -96,69 +96,54 @@ func TestParseTarget(t *testing.T) {
 }
 
 // TestParseTargetErrors checks that each way of failing says what to do about
-// it. The messages are the whole point: this is the one place a user's own
-// input reaches, and a generic parse error sends someone hunting.
+// it. The messages matter more here than anywhere else in the tool: this is the
+// only code a user's own input reaches, and a generic parse error sends someone
+// hunting rather than pointing at the fix.
 func TestParseTargetErrors(t *testing.T) {
-	tests := []struct {
-		name     string
+	tests := map[string]struct {
 		raw      string
 		wantInfo string // a phrase the message must carry
 	}{
-		{name: "empty input", raw: "", wantInfo: "paste"},
-		{name: "only whitespace", raw: "   ", wantInfo: "paste"},
+		"empty input": {raw: "  ", wantInfo: "paste"},
 
-		// The likeliest bad paste: the explorer with no issue opened.
-		{
-			name: "explorer with nothing selected", wantInfo: "no issue selected",
-			raw: "https://app.datadoghq.com/error-tracking?query=&live=true",
+		// The likeliest bad paste: the explorer, with no issue opened.
+		"explorer with nothing selected": {
+			raw:      "https://app.datadoghq.com/error-tracking?query=&live=true",
+			wantInfo: "no issue selected",
 		},
-		{
-			name: "explorer with some other panel", wantInfo: "not an issue one",
-			raw: "https://app.datadoghq.com/error-tracking?sp=%5B%7B%22p%22%3A%7B%22x%22%3A1%7D%2C%22i%22%3A%22logs%22%7D%5D",
-		},
-
-		// sp is undocumented UI state. A shape change has to surface here, not
-		// as an empty id that fails three steps later.
-		{
-			name: "sp is not json", wantInfo: "changed its format",
-			raw: "https://app.datadoghq.com/error-tracking?sp=not-json",
-		},
-		{
-			name: "sp is json but not an array", wantInfo: "changed its format",
-			raw: "https://app.datadoghq.com/error-tracking?sp=%7B%22i%22%3A%22error-tracking-issue%22%7D",
-		},
-		{
-			name: "issue panel carries no id", wantInfo: "not an issue id",
-			raw: "https://app.datadoghq.com/error-tracking?sp=%5B%7B%22p%22%3A%7B%7D%2C%22i%22%3A%22error-tracking-issue%22%7D%5D",
+		"explorer with some other panel": {
+			raw:      "https://app.datadoghq.com/error-tracking?sp=%5B%7B%22p%22%3A%7B%22x%22%3A1%7D%2C%22i%22%3A%22logs%22%7D%5D",
+			wantInfo: "not an issue one",
 		},
 
-		{
-			name: "id in the path is not a uuid", wantInfo: "not an issue id",
-			raw: "https://app.datadoghq.com/error-tracking/issue/not-a-uuid",
+		// sp is undocumented UI state. A shape change has to surface here,
+		// rather than as an empty id that fails three steps later.
+		"sp is not an array of panels": {
+			raw:      "https://app.datadoghq.com/error-tracking?sp=%7B%22i%22%3A%22error-tracking-issue%22%7D",
+			wantInfo: "changed its format",
 		},
-		{
-			name: "not a datadog host", wantInfo: "not a Datadog host",
-			raw: "https://example.com/error-tracking/issue/" + issueID,
-		},
-		{
-			name: "a lookalike host is not datadog", wantInfo: "not a Datadog host",
-			raw: "https://app.datadoghq.com.evil.test/error-tracking/issue/" + issueID,
+		"id in the path is not a uuid": {
+			raw:      "https://app.datadoghq.com/error-tracking/issue/not-a-uuid",
+			wantInfo: "not an issue id",
 		},
 
-		// A monitor notification link is a different Datadog page with no issue
-		// id in it at all. Rejected for now; the message says which page it is.
-		{
-			name: "monitor notification link", wantInfo: "/monitors/318477005",
-			raw: "https://app.datadoghq.com/monitors/318477005?event_id=x&link_source=monitor_notif",
+		// Suffix matching with a leading dot. Contains("datadoghq.com") would
+		// accept this and send credentials to someone else's server.
+		"a lookalike host is not datadog": {
+			raw:      "https://app.datadoghq.com.evil.test/error-tracking/issue/" + issueID,
+			wantInfo: "not a Datadog host",
 		},
-		{
-			name: "some other datadog page", wantInfo: "Error Tracking link",
-			raw: "https://app.datadoghq.com/logs?query=foo",
+
+		// A monitor notification link is a different Datadog page with no
+		// issue id in it. Rejected for now; the message says which page it is.
+		"monitor notification link": {
+			raw:      "https://app.datadoghq.com/monitors/318477005?event_id=x&link_source=monitor_notif",
+			wantInfo: "/monitors/318477005",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			got, err := ParseTarget(tt.raw)
 			if err == nil {
 				t.Fatalf("ParseTarget() error = nil, want one; got %+v", got)

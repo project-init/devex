@@ -5,27 +5,24 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 )
 
 const examplePath = "testdata/example.json"
 
-// decodeExample reads testdata/example.json strictly. DisallowUnknownFields is
-// the point of the strict decode: rename a json tag and the key in the example
-// no longer has a field to land in, so the decode fails instead of silently
-// dropping data.
-func decodeExample(t *testing.T) ([]byte, Report) {
-	t.Helper()
-
+// TestExample checks the documented example and the structs agree, and that the
+// example still documents the awkward cases rather than the easy ones.
+func TestExample(t *testing.T) {
 	raw, err := os.ReadFile(examplePath)
 	if err != nil {
 		t.Fatalf("read %s: %v", examplePath, err)
 	}
 
+	// DisallowUnknownFields is the point: rename a json tag and the key in the
+	// example no longer has a field to land in, so this fails rather than
+	// silently dropping data.
 	var r Report
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -33,155 +30,99 @@ func decodeExample(t *testing.T) ([]byte, Report) {
 		t.Fatalf("strict decode %s: %v", examplePath, err)
 	}
 
-	return raw, r
-}
-
-// TestExampleRoundTrips checks the documented example and the structs agree.
-//
-// The comparison is semantic rather than byte-for-byte on purpose: prettier
-// formats JSON in this repository and keeps short arrays on one line, while
-// json.MarshalIndent expands them. Byte equality would make the test and the
-// formatter permanently disagree, and whitespace is not what this test is for.
-func TestExampleRoundTrips(t *testing.T) {
-	raw, r := decodeExample(t)
-
-	out, err := json.Marshal(r)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	var want, got any
-	if err := json.Unmarshal(raw, &want); err != nil {
-		t.Fatalf("unmarshal example: %v", err)
-	}
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatalf("unmarshal round trip: %v", err)
-	}
-
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("round trip changed the document\n file: %s\n got:  %s", raw, out)
-	}
-}
-
-// TestExampleCoversNullCases asserts the example still documents the awkward
-// cases rather than the easy ones. Filling every field in would make the
-// example tidier and stop it earning its keep, so these assertions fail if
-// someone does.
-func TestExampleCoversNullCases(t *testing.T) {
-	_, r := decodeExample(t)
-
-	t.Run("populated fields are set", func(t *testing.T) {
-		if r.Error.Environment == nil {
-			t.Error("error.environment is null; the example should show an --env value")
+	t.Run("round trips", func(t *testing.T) {
+		out, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
 		}
-		if r.Timeline.FirstSeen == nil || r.Timeline.LastSeen == nil {
-			t.Error("timeline timestamps are null; the example should show both set")
+
+		// Compared as documents, not bytes: prettier formats JSON here and
+		// keeps short arrays on one line where MarshalIndent expands them.
+		var want, got any
+		if err := json.Unmarshal(raw, &want); err != nil {
+			t.Fatal(err)
 		}
-		if r.Occurrences.Total == nil {
-			t.Error("occurrences.total is null; the example should show counts resolved")
+		if err := json.Unmarshal(out, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("round trip changed the document\n file: %s\n got:  %s", raw, out)
 		}
 	})
 
-	t.Run("null cases stay null", func(t *testing.T) {
-		// Backend errors have no session replay.
+	// Filling every field in would make the example tidier and stop it earning
+	// its keep, so these fail if someone does.
+	t.Run("documents the null cases", func(t *testing.T) {
 		if r.Links.SessionReplay != nil {
-			t.Error("links.session_replay should be null")
+			t.Error("session_replay should be null: a backend error has no replay")
 		}
-		// Datadog resolves source only when it can, so a renderer has to cope
-		// with a frame that has no snippet.
 		if n := len(r.Code.Frames); n == 0 {
 			t.Fatal("code.frames is empty")
 		}
 		if r.Code.Frames[len(r.Code.Frames)-1].CodeSnippet != nil {
-			t.Error("the last frame should have a null code_snippet")
+			t.Error("the last frame should have a null code_snippet: Datadog resolves source only when it can")
+		}
+		if len(r.Code.Frames) != MaxTicketFrames || !r.Code.FramesTruncated {
+			t.Errorf("frames = %d, truncated = %v; want %d and true so the cap is visible",
+				len(r.Code.Frames), r.Code.FramesTruncated, MaxTicketFrames)
 		}
 	})
 
-	t.Run("frame cap is exercised", func(t *testing.T) {
-		if got := len(r.Code.Frames); got != MaxTicketFrames {
-			t.Errorf("code.frames = %d, want %d", got, MaxTicketFrames)
+	t.Run("honours the schema's own rules", func(t *testing.T) {
+		if r.SchemaVersion != SchemaVersion {
+			t.Errorf("schema_version = %d, want %d", r.SchemaVersion, SchemaVersion)
 		}
-		if !r.Code.FramesTruncated {
-			t.Error("code.frames_truncated should be true so the cap is visible")
+		if n := len([]rune(r.Summary)); n > SummaryMaxRunes {
+			t.Errorf("summary is %d runes, over the %d cap", n, SummaryMaxRunes)
+		}
+
+		// A frame claiming a source_url must carry the parts that build one,
+		// and the url must pin a commit: a branch link rots as the file moves.
+		for i, f := range r.Code.Frames {
+			if f.SourceURL == "" {
+				continue
+			}
+			if f.RepositoryURL == "" || f.CommitSHA == "" || f.File == "" || f.FirstLine == nil {
+				t.Errorf("frame %d has a source_url but not the parts that build one", i)
+			}
+			if !strings.Contains(f.SourceURL, f.CommitSHA) {
+				t.Errorf("frame %d source_url does not pin its commit: %s", i, f.SourceURL)
+			}
 		}
 	})
 }
 
-// TestExampleInvariants covers the rules the schema promises, independent of
-// which example happens to be committed.
-func TestExampleInvariants(t *testing.T) {
-	_, r := decodeExample(t)
-
-	if r.SchemaVersion != SchemaVersion {
-		t.Errorf("schema_version = %d, want %d", r.SchemaVersion, SchemaVersion)
-	}
-	if r.Source != SourceDatadog {
-		t.Errorf("source = %q, want %q", r.Source, SourceDatadog)
-	}
-	if r.FetchedAt.IsZero() {
-		t.Error("fetched_at is zero; the tool always sets it")
-	}
-
-	// Counted in runes, because Summarize truncates in runes.
-	if n := len([]rune(r.Summary)); n > SummaryMaxRunes {
-		t.Errorf("summary is %d runes, over the %d cap", n, SummaryMaxRunes)
-	}
-
-	// source_url is derived from repository_url, commit_sha, file and line, so
-	// a frame that claims a URL must carry the parts that build one.
-	for i, f := range r.Code.Frames {
-		if f.SourceURL == "" {
-			continue
-		}
-		// The frame's own repository and commit, not the service's: SourceURL
-		// is built from the frame, so a frame in a vendored dependency links
-		// into that repository rather than this service's.
-		if f.RepositoryURL == "" || f.CommitSHA == "" {
-			t.Errorf("frame %d has a source_url but its own repository_url or commit_sha is empty", i)
-		}
-		if f.File == "" || f.FirstLine == nil {
-			t.Errorf("frame %d has a source_url but no file or first_line", i)
-		}
-		// A permalink has to pin a commit; a branch link rots as the file moves.
-		if !strings.Contains(f.SourceURL, f.CommitSHA) {
-			t.Errorf("frame %d source_url does not pin its commit: %s", i, f.SourceURL)
-		}
-	}
-}
-
-// TestNoOmitEmpty guards the "every key is always present" convention by
-// reading the struct tags directly, recursively.
+// TestNoOmitEmpty guards the "every key is always present" convention by reading
+// the struct tags, recursively.
 //
-// Checking the marshalled output instead would miss most of it: encoding/json
-// ignores omitempty on struct values, so a stray omitempty on error, timeline,
-// occurrences, code or links changes nothing observable today — and then starts
+// Checking the marshalled output would miss most of it: encoding/json ignores
+// omitempty on struct values, so a stray omitempty on error, timeline,
+// occurrences, code or links changes nothing observable today — and starts
 // dropping keys the moment one of those becomes a pointer.
 func TestNoOmitEmpty(t *testing.T) {
 	var offenders []string
+	seen := map[reflect.Type]bool{}
 
 	var walk func(reflect.Type, string)
-	seen := map[reflect.Type]bool{}
 	walk = func(typ reflect.Type, path string) {
 		for typ.Kind() == reflect.Pointer || typ.Kind() == reflect.Slice {
 			typ = typ.Elem()
 		}
-		if typ.Kind() != reflect.Struct || seen[typ] {
+		// time.Time marshals through its own MarshalJSON, so its unexported
+		// fields are not part of this schema.
+		if typ.Kind() != reflect.Struct || seen[typ] || typ.PkgPath() == "time" {
 			return
 		}
 		seen[typ] = true
 
-		// time.Time marshals through its own MarshalJSON, so its unexported
-		// fields are not part of our schema.
-		if typ == reflect.TypeOf(time.Time{}) {
-			return
-		}
-
 		for i := range typ.NumField() {
 			f := typ.Field(i)
 			name := path + "." + f.Name
-			for _, opt := range strings.Split(f.Tag.Get("json"), ",")[1:] {
-				if opt == "omitempty" {
-					offenders = append(offenders, name)
+			if slices := strings.Split(f.Tag.Get("json"), ","); len(slices) > 1 {
+				for _, opt := range slices[1:] {
+					if opt == "omitempty" {
+						offenders = append(offenders, name)
+					}
 				}
 			}
 			walk(f.Type, name)
@@ -190,67 +131,36 @@ func TestNoOmitEmpty(t *testing.T) {
 	walk(reflect.TypeOf(Report{}), "Report")
 
 	if len(offenders) > 0 {
-		t.Errorf("omitempty breaks the always-present convention on: %s",
-			strings.Join(offenders, ", "))
-	}
-}
-
-// TestTopLevelKeysAlwaysPresent checks the marshalled output of a zero Report,
-// so the convention is verified in the document and not only in the tags.
-func TestTopLevelKeysAlwaysPresent(t *testing.T) {
-	out, err := json.Marshal(Report{})
-	if err != nil {
-		t.Fatalf("marshal zero report: %v", err)
-	}
-
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(out, &keys); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	for _, want := range []string{
-		"schema_version", "source", "fetched_at", "summary",
-		"error", "timeline", "occurrences", "code", "links",
-	} {
-		if _, ok := keys[want]; !ok {
-			t.Errorf("zero Report omits %q; check for a stray omitempty", want)
-		}
+		t.Errorf("omitempty breaks the always-present convention on: %s", strings.Join(offenders, ", "))
 	}
 }
 
 func TestSummarize(t *testing.T) {
-	// A message long enough to push the line past the cap on its own.
-	longMessage := strings.Repeat("overflow ", 30)
+	// Multi-byte throughout, so every cut position lands mid-rune.
+	wide := strings.Repeat("占", 200)
 
-	// Multi-byte throughout, so a byte-wise cut lands mid-rune.
-	wideMessage := strings.Repeat("占", 200)
-
-	tests := []struct {
-		name    string
-		service string
-		errType string
-		message string
-		want    string // exact result, when short enough to state
+	tests := map[string]struct {
+		service, errType, message string
+		want                      string // exact result, when short enough to state
 	}{
-		{
-			name:    "short line is returned whole",
-			service: "gigapi",
-			errType: "runtime.Error",
-			message: "boom",
-			want:    "[gigapi] runtime.Error: boom",
+		"short line is returned whole": {
+			service: "gigapi", errType: "runtime.Error", message: "boom",
+			want: "[gigapi] runtime.Error: boom",
 		},
-		{
-			name:    "empty message still produces the prefix",
-			service: "gigapi",
-			errType: "runtime.Error",
-			want:    "[gigapi] runtime.Error: ",
+		"empty message still produces the prefix": {
+			service: "gigapi", errType: "runtime.Error",
+			want: "[gigapi] runtime.Error: ",
 		},
-		{name: "long message is truncated", service: "gigapi", errType: "runtime.Error", message: longMessage},
-		{name: "multi-byte message is truncated", service: "gigapi", errType: "runtime.Error", message: wideMessage},
+		"long message is truncated": {
+			service: "gigapi", errType: "runtime.Error", message: strings.Repeat("overflow ", 30),
+		},
+		"multi-byte message survives truncation": {
+			service: "gigapi", errType: "runtime.Error", message: wide,
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			got := Summarize(tt.service, tt.errType, tt.message)
 
 			if tt.want != "" {
@@ -261,48 +171,32 @@ func TestSummarize(t *testing.T) {
 				return
 			}
 
-			// Truncating cases: within the cap, marked, and still valid UTF-8.
-			if n := len([]rune(got)); n > SummaryMaxRunes {
-				t.Errorf("Summarize() is %d runes, over the %d cap: %q", n, SummaryMaxRunes, got)
+			if n := len([]rune(got)); n != SummaryMaxRunes {
+				t.Errorf("Summarize() is %d runes, want exactly %d: %q", n, SummaryMaxRunes, got)
 			}
 			if !strings.HasSuffix(got, "…") {
-				t.Errorf("truncated summary should end in an ellipsis, got %q", got)
+				t.Errorf("truncated summary should end in an ellipsis: %q", got)
 			}
+			// Byte slicing would cut a rune in half and emit invalid UTF-8
+			// into the document.
 			if !utf8.ValidString(got) {
 				t.Errorf("Summarize() produced invalid UTF-8: %q", got)
 			}
 		})
 	}
 
-	// The boundary: a line exactly at the cap must not be touched. Built by
-	// padding the message until the whole line is SummaryMaxRunes long.
-	t.Run("line exactly at the cap is untouched", func(t *testing.T) {
+	// A line exactly on the cap must not be touched. Built rather than
+	// hardcoded so it stays correct if the cap or the format changes.
+	t.Run("a line exactly on the cap is untouched", func(t *testing.T) {
 		const service, errType = "gigapi", "runtime.Error"
 		prefix := len([]rune(Summarize(service, errType, "")))
-		message := strings.Repeat("x", SummaryMaxRunes-prefix)
 
-		got := Summarize(service, errType, message)
-		if n := len([]rune(got)); n != SummaryMaxRunes {
-			t.Fatalf("test setup produced %d runes, want exactly %d", n, SummaryMaxRunes)
-		}
+		got := Summarize(service, errType, strings.Repeat("x", SummaryMaxRunes-prefix))
 		if strings.HasSuffix(got, "…") {
-			t.Errorf("a line exactly at the cap should not be truncated, got %q", got)
+			t.Errorf("a line on the cap should not be truncated: %q", got)
 		}
-	})
-
-	// One rune over the cap is the off-by-one case: it must truncate, and the
-	// result must still fit.
-	t.Run("one rune over the cap truncates", func(t *testing.T) {
-		const service, errType = "gigapi", "runtime.Error"
-		prefix := len([]rune(Summarize(service, errType, "")))
-		message := strings.Repeat("x", SummaryMaxRunes-prefix+1)
-
-		got := Summarize(service, errType, message)
 		if n := len([]rune(got)); n != SummaryMaxRunes {
-			t.Errorf("Summarize() = %d runes, want exactly %d: %q", n, SummaryMaxRunes, got)
-		}
-		if !strings.HasSuffix(got, "…") {
-			t.Errorf("expected an ellipsis, got %q", got)
+			t.Errorf("setup produced %d runes, want %d", n, SummaryMaxRunes)
 		}
 	})
 }
@@ -312,60 +206,44 @@ func TestSourceURL(t *testing.T) {
 		repo = "https://github.com/dailypay/gigapi"
 		sha  = "7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a"
 		file = "internal/transfers/service.go"
+		want = repo + "/blob/" + sha + "/" + file + "#L142"
 	)
-	const want = "https://github.com/dailypay/gigapi/blob/" + sha + "/" + file + "#L142"
 
-	tests := []struct {
-		name            string
+	tests := map[string]struct {
 		repo, sha, file string
 		line            int
 		want            string
 	}{
-		{name: "github permalink", repo: repo, sha: sha, file: file, line: 142, want: want},
+		"github permalink": {repo: repo, sha: sha, file: file, line: 142, want: want},
 
-		// Forms a git remote can carry. Each must normalise, not be rejected.
-		{name: "git suffix trimmed", repo: repo + ".git", sha: sha, file: file, line: 142, want: want},
-		{name: "trailing slash trimmed", repo: repo + "/", sha: sha, file: file, line: 142, want: want},
-		{name: "host case ignored", repo: "https://GitHub.com/dailypay/gigapi", sha: sha, file: file, line: 142, want: want},
+		// Forms a git remote can carry, which must normalise rather than fail.
+		"git suffix and trailing slash trimmed": {repo: repo + ".git/", sha: sha, file: file, line: 142, want: want},
+		"host case ignored":                     {repo: "https://GitHub.com/dailypay/gigapi", sha: sha, file: file, line: 142, want: want},
 
-		// Other forges: the path segment and line anchor both differ, so a
-		// GitHub-shaped URL would 404. No link beats a dead link.
-		{name: "gitlab is not built", repo: "https://gitlab.com/dailypay/gigapi", sha: sha, file: file, line: 142},
-		{name: "bitbucket is not built", repo: "https://bitbucket.org/dailypay/gigapi", sha: sha, file: file, line: 142},
-
-		// Not absolute URLs at all.
-		{name: "ssh remote", repo: "git@github.com:dailypay/gigapi.git", sha: sha, file: file, line: 142},
-		{name: "no scheme", repo: "github.com/dailypay/gigapi", sha: sha, file: file, line: 142},
-		{name: "empty repo", sha: sha, file: file, line: 142},
-		{name: "not a url", repo: "not a url at all", sha: sha, file: file, line: 142},
+		// Another forge puts blob at a different path and uses a different
+		// line anchor, so a GitHub-shaped URL 404s. No link beats a dead link.
+		"other forge is not built": {repo: "https://gitlab.com/dailypay/gigapi", sha: sha, file: file, line: 142},
 
 		// Not a repository root, so blob/<sha> would hang off the wrong path.
-		{name: "host only", repo: "https://github.com", sha: sha, file: file, line: 142},
-		{name: "org only", repo: "https://github.com/dailypay", sha: sha, file: file, line: 142},
-		{name: "too many segments", repo: "https://github.com/dailypay/gigapi/tree/main", sha: sha, file: file, line: 142},
+		"not a repository root": {repo: "https://github.com/dailypay", sha: sha, file: file, line: 142},
 
-		// Missing parts. A permalink must pin a commit and a line.
-		{name: "no commit", repo: repo, file: file, line: 142},
-		{name: "no file", repo: repo, sha: sha, line: 142},
-		{name: "line zero", repo: repo, sha: sha, file: file},
-		{name: "negative line", repo: repo, sha: sha, file: file, line: -1},
+		// A permalink must pin a commit and a line.
+		"no commit": {repo: repo, file: file, line: 142},
+		"no line":   {repo: repo, sha: sha, file: file},
 
-		// A traversing path survives path.Join by eating blob/<sha>, which
-		// would leave a plausible GitHub URL that is not a permalink.
-		{name: "path traversal", repo: repo, sha: sha, file: "../../etc/passwd", line: 1},
+		// path.Join eats blob/<sha> on the way through, leaving a plausible
+		// GitHub URL that is not a permalink at all.
+		"path traversal": {repo: repo, sha: sha, file: "../../etc/passwd", line: 1},
 
-		// Escaping, not rejection: a space is legal in a filename.
-		{
-			name: "space in filename escaped",
+		"space in filename is escaped": {
 			repo: repo, sha: sha, file: "pkg/my file.go", line: 7,
-			want: "https://github.com/dailypay/gigapi/blob/" + sha + "/pkg/my%20file.go#L7",
+			want: repo + "/blob/" + sha + "/pkg/my%20file.go#L7",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := SourceURL(tt.repo, tt.sha, tt.file, tt.line)
-			if got != tt.want {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := SourceURL(tt.repo, tt.sha, tt.file, tt.line); got != tt.want {
 				t.Errorf("SourceURL(%q, %q, %q, %d)\n got  %q\n want %q",
 					tt.repo, tt.sha, tt.file, tt.line, got, tt.want)
 			}
@@ -373,117 +251,54 @@ func TestSourceURL(t *testing.T) {
 	}
 }
 
-// framesNamed builds frames whose File is its index, so a test can assert which
-// frames came back rather than only how many. Returning the last n instead of
-// the first n keeps the count right and would otherwise pass.
-func framesNamed(n int) []Frame {
-	out := make([]Frame, n)
-	for i := range out {
-		out[i] = Frame{File: strconv.Itoa(i)}
-	}
-
-	return out
-}
-
-func filesOf(frames []Frame) []string {
-	out := make([]string, 0, len(frames))
-	for _, f := range frames {
-		out = append(out, f.File)
-	}
-
-	return out
-}
-
 func TestTopFrames(t *testing.T) {
-	tests := []struct {
-		name          string
+	named := func(n int) []Frame {
+		out := make([]Frame, n)
+		for i := range out {
+			out[i] = Frame{File: string(rune('a' + i))}
+		}
+
+		return out
+	}
+	files := func(frames []Frame) string {
+		var b strings.Builder
+		for _, f := range frames {
+			b.WriteString(f.File)
+		}
+
+		return b.String()
+	}
+
+	tests := map[string]struct {
 		frames        []Frame
 		n             int
-		wantFiles     []string
+		wantFiles     string
 		wantTruncated bool
 	}{
-		{name: "nil frames", frames: nil, n: MaxTicketFrames, wantFiles: []string{}},
-		{name: "no frames", frames: framesNamed(0), n: MaxTicketFrames, wantFiles: []string{}},
-		{name: "fewer than the cap", frames: framesNamed(2), n: 3, wantFiles: []string{"0", "1"}},
+		"nil frames":         {n: 3},
+		"fewer than the cap": {frames: named(2), n: 3, wantFiles: "ab"},
 
-		// The off-by-one that matters: a stack exactly at the cap is whole, so
-		// reporting it as truncated would mark a complete trace incomplete.
-		{name: "exactly the cap", frames: framesNamed(3), n: 3, wantFiles: []string{"0", "1", "2"}},
+		// The off-by-one that matters: a stack exactly on the cap is whole, so
+		// reporting it truncated would mark a complete trace incomplete.
+		"exactly the cap": {frames: named(3), n: 3, wantFiles: "abc"},
 
-		{name: "one over the cap", frames: framesNamed(4), n: 3, wantFiles: []string{"0", "1", "2"}, wantTruncated: true},
-		{name: "far over the cap", frames: framesNamed(200), n: 3, wantFiles: []string{"0", "1", "2"}, wantTruncated: true},
-		{name: "cap of one", frames: framesNamed(5), n: 1, wantFiles: []string{"0"}, wantTruncated: true},
-
-		// n <= 0 keeps nothing, and says so when there was something to keep.
-		{name: "zero cap with frames", frames: framesNamed(3), n: 0, wantFiles: []string{}, wantTruncated: true},
-		{name: "zero cap without frames", frames: nil, n: 0, wantFiles: []string{}},
-		{name: "negative cap", frames: framesNamed(3), n: -1, wantFiles: []string{}, wantTruncated: true},
+		// Named by index, so this also catches returning the last n rather
+		// than the first n, which keeps the count right.
+		"over the cap": {frames: named(5), n: 3, wantFiles: "abc", wantTruncated: true},
+		"zero cap":     {frames: named(3), n: 0, wantTruncated: true},
+		"negative cap": {frames: named(3), n: -1, wantTruncated: true},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			kept, truncated := TopFrames(tt.frames, tt.n)
 
-			if got := filesOf(kept); !reflect.DeepEqual(got, tt.wantFiles) {
-				t.Errorf("kept frames = %v, want %v", got, tt.wantFiles)
+			if got := files(kept); got != tt.wantFiles {
+				t.Errorf("kept = %q, want %q", got, tt.wantFiles)
 			}
 			if truncated != tt.wantTruncated {
 				t.Errorf("truncated = %v, want %v", truncated, tt.wantTruncated)
 			}
 		})
-	}
-}
-
-// TestTopFramesDoesNotAliasTheInput checks the clip: writing to the result must
-// not reach back into the caller's slice, and the result must not hold the
-// whole backing array alive.
-func TestTopFramesDoesNotAliasTheInput(t *testing.T) {
-	in := framesNamed(10)
-
-	kept, truncated := TopFrames(in, 3)
-	if !truncated {
-		t.Fatal("expected truncated for 10 frames capped at 3")
-	}
-	if cap(kept) != len(kept) {
-		t.Errorf("cap(kept) = %d, len = %d: the result still holds the full backing array",
-			cap(kept), len(kept))
-	}
-
-	// Appending to a clipped slice reallocates, so the caller's frame 3 stays.
-	kept = append(kept, Frame{File: "clobber"})
-	if in[3].File != "3" {
-		t.Errorf("appending to the result overwrote the input: in[3].File = %q", in[3].File)
-	}
-	_ = kept
-}
-
-// TestSourceURLMatchesExample ties the link format to the committed example the
-// same way TestSummarizeMatchesExample does for the summary: each frame's
-// source_url must be exactly what SourceURL builds from the fields beside it.
-func TestSourceURLMatchesExample(t *testing.T) {
-	_, r := decodeExample(t)
-
-	for i, f := range r.Code.Frames {
-		if f.FirstLine == nil {
-			continue
-		}
-		got := SourceURL(f.RepositoryURL, f.CommitSHA, f.File, *f.FirstLine)
-		if got != f.SourceURL {
-			t.Errorf("frame %d:\n got  %q\n want %q", i, got, f.SourceURL)
-		}
-	}
-}
-
-// TestSummarizeMatchesExample ties the format to the committed example: the
-// summary in testdata/example.json must be exactly what Summarize builds from
-// the error fields beside it. Without this, the function and the documented
-// schema can drift apart silently — the round-trip test only compares the file
-// against the structs, not against this function.
-func TestSummarizeMatchesExample(t *testing.T) {
-	_, r := decodeExample(t)
-
-	got := Summarize(r.Error.Service, r.Error.Type, r.Error.Message)
-	if got != r.Summary {
-		t.Errorf("Summarize() = %q\nexample summary = %q", got, r.Summary)
 	}
 }

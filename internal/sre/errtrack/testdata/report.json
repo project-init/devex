@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "source": "datadog",
+  "fetched_at": "2026-11-08T12:00:00Z",
+  "summary": "[login-ui-app] *errors.errorString: get identity 00000000-0000-0000-0000-000000000000: HTTP 503: undefined response type",
+  "error": {
+    "type": "*errors.errorString",
+    "message": "get identity 00000000-0000-0000-0000-000000000000: HTTP 503: undefined response type",
+    "service": "login-ui-app",
+    "environment": "production",
+    "state": "OPEN",
+    "is_crash": false,
+    "platform": "BACKEND",
+    "languages": [
+      "GO"
+    ]
+  },
+  "timeline": {
+    "first_seen": "2026-11-07T17:07:07.024Z",
+    "first_seen_version": "v1.1.14",
+    "last_seen": "2026-11-07T17:07:07.024Z",
+    "last_seen_version": "v1.1.14"
+  },
+  "occurrences": {
+    "total": null,
+    "impacted_users": null,
+    "impacted_sessions": null
+  },
+  "code": {
+    "repository_url": "",
+    "commit_sha": "",
+    "location": {
+      "file": "/app/pkg/kratos/admin.go",
+      "function": "github.com/dailypay/login-ui/pkg/kratos.endSpan",
+      "line": null
+    },
+    "frames": null,
+    "frames_truncated": false
+  },
+  "links": {
+    "issue": "https://app.datadoghq.com/error-tracking/issue/aae10c1c-dacd-11f1-a39f-da7ad0900002",
+    "trace": null,
+    "session_replay": null
+  }
+}
