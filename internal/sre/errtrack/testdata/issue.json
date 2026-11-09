@@ -1,0 +1,98 @@
+{
+  "_comment": [
+    "A real GET /api/v2/error-tracking/issues/{id}?include=samples&filter[samples.biases]=git_metadata",
+    "response, captured 2026-11-08 and sanitised: the identity in error_message, the host, the AWS",
+    "account tags and the image digests are replaced or dropped, and event is trimmed to the fields a",
+    "mapper reads. Structure and field names are untouched.",
+    "",
+    "This is the no-Source-Code-Integration case, which is what the API returns today: error_stack is",
+    "an empty object and there are no git_commit_sha or git_repository_url fields at all. The whole",
+    "code section of a report is therefore unpopulatable, and SourceURL returns the empty string.",
+    "Keep a second fixture for the SCI case when a service has it enabled.",
+    "",
+    "Note error.stack is absent and only error.handling_stack is present: dd-trace-go moved the",
+    "handling stack to its own field in v2.7.0, and this service runs v2.8.1. The handling stack is",
+    "where the error was recorded, not where it was thrown, so its top frames are tracer internals."
+  ],
+  "data": {
+    "id": "aae10c1c-dacd-11f1-a39f-da7ad0900002",
+    "type": "issue",
+    "attributes": {
+      "error_message": "get identity 00000000-0000-0000-0000-000000000000: HTTP 503: undefined response type",
+      "error_type": "*errors.errorString",
+      "file_path": "/app/pkg/kratos/admin.go",
+      "first_seen": 1794071227024,
+      "first_seen_version": "v1.1.14",
+      "function_name": "github.com/dailypay/login-ui/pkg/kratos.endSpan",
+      "is_crash": false,
+      "languages": ["GO"],
+      "last_seen": 1794071227024,
+      "last_seen_version": "v1.1.14",
+      "platform": "BACKEND",
+      "service": "login-ui-app",
+      "state": "OPEN"
+    },
+    "relationships": {
+      "samples": {
+        "data": [
+          {
+            "id": "c2FtcGxlLWlkLXNhbml0aXNlZA",
+            "type": "error_tracking_issue_sample"
+          }
+        ]
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "c2FtcGxlLWlkLXNhbml0aXNlZA",
+      "type": "error_tracking_issue_sample",
+      "attributes": {
+        "biases": ["git_metadata"],
+        "data_source": "APM",
+        "error_stack": {},
+        "language": "go",
+        "service": "login-ui-app",
+        "span_id": "4028331953934176712",
+        "timestamp": "2026-11-07T17:07:07.024Z",
+        "trace_id": "7034400712117581761",
+        "version": "v1.1.14",
+        "event": {
+          "env": "production",
+          "custom": {
+            "deployment": {
+              "environment": {
+                "name": "production"
+              }
+            }
+          },
+          "error": {
+            "file": "/app/pkg/kratos/admin.go",
+            "handling": "handled",
+            "message": "get identity 00000000-0000-0000-0000-000000000000: HTTP 503: undefined response type",
+            "type": "*errors.errorString",
+            "handling_stack": "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.SkipAndCaptureWithInternalFrames\n\t/go/pkg/mod/github.com/!data!dog/dd-trace-go/v2@v2.8.1/internal/stacktrace/stacktrace.go:274\ngithub.com/DataDog/dd-trace-go/v2/ddtrace/tracer.takeStacktrace\n\t/go/pkg/mod/github.com/!data!dog/dd-trace-go/v2@v2.8.1/ddtrace/tracer/span.go:721\ngithub.com/dailypay/login-ui/pkg/kratos.endSpan\n\t/app/pkg/kratos/admin.go:118\ngithub.com/dailypay/login-ui/pkg/kratos.kratosAdminClient.GetIdentity\n\t/app/pkg/kratos/admin.go:142\ngithub.com/dailypay/login-ui/internal/api/http/webhooks.(*Registration).V1RegistrationWebhook\n\t/app/internal/api/http/webhooks/registration.go:88\nnet/http.HandlerFunc.ServeHTTP\n\t/usr/local/go/src/net/http/server.go:2306\ngithub.com/go-chi/chi/v5.(*Mux).ServeHTTP\n\t/go/pkg/mod/github.com/go-chi/chi/v5@v5.5.0/mux.go:90\nruntime.goexit\n\t/usr/local/go/src/runtime/asm_arm64.s:1447"
+          },
+          "issue": {
+            "age": 2521,
+            "first_seen": 1794071227024,
+            "id": "aae10c1c-dacd-11f1-a39f-da7ad0900002",
+            "state": "OPEN",
+            "type": "error_tracking"
+          },
+          "resource_name": "get_identity",
+          "root": {
+            "resource_name": "POST /webhook/registration",
+            "service": "login-ui-app"
+          },
+          "service": "login-ui-app",
+          "span_id": "4028331953934176712",
+          "status": "error",
+          "timestamp": "2026-11-07T17:07:07.024Z",
+          "trace_id": "1039f7bfdfc3e342619f362d8585f7c1",
+          "version": "v1.1.14"
+        }
+      }
+    }
+  ]
+}

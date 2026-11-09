@@ -74,9 +74,11 @@ type Failure struct {
 	Message string `json:"message"`
 	Service string `json:"service"`
 
-	// Environment comes from the --env flag. Datadog's Error Tracking API
-	// carries no environment field on either the issue or its samples, so it
-	// cannot be fetched and is null when the caller does not supply it.
+	// Environment is the deployment environment, e.g. production.
+	//
+	// Datadog's typed issue and sample attributes carry no environment field,
+	// but the sample's raw event does: a provider reads it from there, and the
+	// --env flag overrides it. Null when neither supplies one.
 	Environment *string `json:"environment"`
 
 	State     string   `json:"state"`
@@ -86,7 +88,10 @@ type Failure struct {
 }
 
 // Timeline is when the error was first and last seen, with the application
-// version — usually a git sha — observed at each point.
+// version observed at each point. The version is whatever the service tags its
+// builds with, so it can be a release tag such as v1.1.14 rather than a git
+// sha — do not treat it as a commit. Frame.CommitSHA is the only field that
+// pins one.
 //
 // The timestamps are pointers: a zero time.Time marshals to
 // "0001-01-01T00:00:00Z", which reads like a real date on a ticket. Null says
