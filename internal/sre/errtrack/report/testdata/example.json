@@ -38,6 +38,8 @@
         "file": "internal/transfers/service.go",
         "first_line": 142,
         "last_line": 142,
+        "repository_url": "https://github.com/dailypay/gigapi",
+        "commit_sha": "7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a",
         "source_url": "https://github.com/dailypay/gigapi/blob/7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a/internal/transfers/service.go#L142",
         "code_snippet": {
           "offset": 140,
@@ -55,6 +57,8 @@
         "file": "internal/transfers/handler.go",
         "first_line": 88,
         "last_line": 88,
+        "repository_url": "https://github.com/dailypay/gigapi",
+        "commit_sha": "7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a",
         "source_url": "https://github.com/dailypay/gigapi/blob/7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a/internal/transfers/handler.go#L88",
         "code_snippet": {
           "offset": 87,
@@ -69,6 +73,8 @@
         "file": "internal/server/router.go",
         "first_line": 214,
         "last_line": 214,
+        "repository_url": "https://github.com/dailypay/gigapi",
+        "commit_sha": "7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a",
         "source_url": "https://github.com/dailypay/gigapi/blob/7c4f1a9e2b8d3c5f6a0e9d8c7b6a5f4e3d2c1b0a/internal/server/router.go#L214",
         "code_snippet": null
       }
