@@ -1,16 +1,12 @@
 version: 2
-updates:
-  # Go
-  - package-ecosystem: "gomod"
-    directory: "/"
-    open-pull-requests-limit: 5
-    schedule:
-      interval: "monthly"
-    groups:
-      patch:
-        update-types:
-          - "patch"
+# Go modules and the mise pins are updated by the weekly devex workflow
+# (.github/workflows/update-deps.yaml). This repo is the devex module, so the job runs
+# `go run cmd/devex/main.go sre dependencies upgrade --all` from the checkout.
+# That command moves go.mod, go.sum, and the mise pins together.
+# Dependabot no longer opens a gomod pull request for the same modules.
+# GitHub Actions stay here.
 
+updates:
   # Github Actions
   - package-ecosystem: "github-actions"
     directory: "/"

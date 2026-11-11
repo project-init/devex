@@ -1,0 +1,14 @@
+name: Dependency Updates
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Runs automatically every Monday at 8am
+  workflow_dispatch:
+
+jobs:
+  update:
+    uses: project-init/infrastructure/.github/workflows/reusable-update-deps.yaml@main
+    secrets:
+      GH_READ_ONLY_TOKEN: ${{ secrets.GH_READ_ONLY_TOKEN }}
+    with:
+      reviewers: "project-init/admin"
+      run-command: "go run cmd/devex/main.go sre dependencies upgrade --all"
