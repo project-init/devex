@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -12,11 +11,8 @@ import (
 
 	"github.com/google/go-github/v74/github"
 	"github.com/manifoldco/promptui"
-	"github.com/project-init/devex/internal/githubclient"
+	"github.com/project-init/gommon/pkg/githubclient"
 )
-
-// errGitHubAuthUnavailable is returned when neither GITHUB_TOKEN nor gh CLI auth is available.
-var errGitHubAuthUnavailable = errors.New("github auth unavailable")
 
 // pullRequestSummary is a minimal PR record for release preview output.
 type pullRequestSummary struct {
@@ -123,11 +119,8 @@ const releaseBaseBranch = "main"
 
 // requireGitHubReleaseReady ensures GitHub auth and a valid github.com origin before release steps.
 func requireGitHubReleaseReady() error {
-	if _, err := resolveGitHubToken(); err != nil {
-		if errors.Is(err, errGitHubAuthUnavailable) {
-			return fmt.Errorf("GitHub auth required (run `gh auth login` or set GITHUB_TOKEN)")
-		}
-		return err
+	if _, err := githubclient.ResolveToken(); err != nil {
+		return githubAuthError(err)
 	}
 	if _, _, err := getOriginGitHubRepo(); err != nil {
 		return fmt.Errorf("GitHub origin required: %w", err)
@@ -199,26 +192,18 @@ func truncateRunes(s string, maxRunes int) string {
 	return string(r[:maxRunes-1]) + "…"
 }
 
-// resolveGitHubToken reads GITHUB_TOKEN from the environment or from gh auth token.
-func resolveGitHubToken() (string, error) {
-	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
-		return token, nil
+func githubAuthError(err error) error {
+	if errors.Is(err, githubclient.ErrAuthUnavailable) {
+		return fmt.Errorf("GitHub auth required (run `gh auth login` or set GITHUB_TOKEN)")
 	}
-	out, err := exec.Command("gh", "auth", "token").Output()
-	if err != nil {
-		return "", errGitHubAuthUnavailable
-	}
-	if token := strings.TrimSpace(string(out)); token != "" {
-		return token, nil
-	}
-	return "", errGitHubAuthUnavailable
+	return err
 }
 
 // listMergedPullRequestsSince fetches closed PRs merged into main after since via the GitHub API.
 func listMergedPullRequestsSince(ctx context.Context, owner, repo string, since time.Time) ([]pullRequestSummary, error) {
-	token, err := resolveGitHubToken()
+	token, err := githubclient.ResolveToken()
 	if err != nil {
-		return nil, err
+		return nil, githubAuthError(err)
 	}
 
 	client, err := githubclient.New(token, "")

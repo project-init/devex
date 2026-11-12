@@ -261,7 +261,7 @@ The example is also available at [`cmd/devex/discovery/example_config.yaml`](dis
 Set credentials only for the provider being applied:
 
 ```shell
-# GitHub
+# GitHub: `gh auth login`, or
 export GITHUB_TOKEN=...
 
 # Jira

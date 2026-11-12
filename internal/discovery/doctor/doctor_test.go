@@ -8,6 +8,7 @@ import (
 
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/skill"
+	"github.com/project-init/gommon/pkg/githubclient"
 )
 
 func TestRunReportsMissingPrerequisites(t *testing.T) {
@@ -145,6 +146,77 @@ func TestRunValidatesConfigurationSkillsAndCredentials(t *testing.T) {
 	}
 	if report.FlagCount() != 2 {
 		t.Fatalf("flags = %d, checks = %#v", report.FlagCount(), report.Checks)
+	}
+}
+
+func TestMain(m *testing.M) {
+	githubAuth = func() error { return githubclient.ErrAuthUnavailable }
+	os.Exit(m.Run())
+}
+
+func TestGitHubCredentialCheck(t *testing.T) {
+	previous := githubAuth
+	t.Cleanup(func() { githubAuth = previous })
+
+	configuration := &config.File{
+		Targets: map[string]config.Target{
+			"github-project": {Provider: "github"},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		token    string
+		authErr  error
+		detail   string
+		remedy   string
+		severity Severity
+	}{
+		{
+			name:     "token",
+			token:    "set",
+			detail:   "GITHUB_TOKEN is set",
+			severity: SeverityPass,
+		},
+		{
+			name:     "cli",
+			detail:   "GitHub CLI auth is available",
+			severity: SeverityPass,
+		},
+		{
+			name:     "missing",
+			authErr:  githubclient.ErrAuthUnavailable,
+			detail:   "GitHub auth is not available; planning still works, but publish apply requires it",
+			remedy:   "run `gh auth login` or set GITHUB_TOKEN before publishing",
+			severity: SeverityWarn,
+		},
+		{
+			name:     "timeout",
+			authErr:  githubclient.ErrAuthTimedOut,
+			detail:   "gh auth token timed out; planning still works, but publish apply requires it",
+			remedy:   "set GITHUB_TOKEN, or retry after the gh prompt finishes",
+			severity: SeverityWarn,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			githubAuth = func() error { return test.authErr }
+			report := Report{}
+			appendCredentialChecks(&report, configuration, func(name string) (string, bool) {
+				if name == "GITHUB_TOKEN" && test.token != "" {
+					return test.token, true
+				}
+				return "", false
+			})
+			if len(report.Checks) != 1 {
+				t.Fatalf("checks = %#v", report.Checks)
+			}
+			check := report.Checks[0]
+			if check.Name != "credentials:github" || check.Severity != test.severity || check.Detail != test.detail || check.Remedy != test.remedy {
+				t.Fatalf("check = %#v", check)
+			}
+		})
 	}
 }
 

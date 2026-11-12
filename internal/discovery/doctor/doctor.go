@@ -10,6 +10,7 @@ import (
 
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/skill"
+	"github.com/project-init/gommon/pkg/githubclient"
 )
 
 type Severity string
@@ -201,15 +202,11 @@ func appendCredentialChecks(report *Report, configuration *config.File, lookupEn
 		providers[strings.ToLower(target.Provider)] = true
 	}
 	if providers["github"] {
-		if value, exists := lookupEnv("GITHUB_TOKEN"); exists && value != "" {
+		token, exists := lookupEnv("GITHUB_TOKEN")
+		if exists && strings.TrimSpace(token) != "" {
 			report.Checks = append(report.Checks, Check{Severity: SeverityPass, Name: "credentials:github", Detail: "GITHUB_TOKEN is set"})
 		} else {
-			report.Checks = append(report.Checks, Check{
-				Severity: SeverityWarn,
-				Name:     "credentials:github",
-				Detail:   "GITHUB_TOKEN is not set; planning still works, but publish apply requires it",
-				Remedy:   "set GITHUB_TOKEN in the environment before publishing",
-			})
+			report.Checks = append(report.Checks, githubCredentialCheck(githubAuth()))
 		}
 	}
 	if providers["jira"] {
@@ -224,6 +221,34 @@ func appendCredentialChecks(report *Report, configuration *config.File, lookupEn
 				Detail:   "JIRA_EMAIL and JIRA_API_KEY are required by publish apply",
 				Remedy:   "set JIRA_EMAIL and JIRA_API_KEY in the environment before publishing",
 			})
+		}
+	}
+}
+
+// githubAuth resolves a token with `gh auth token` when GITHUB_TOKEN is unset.
+// Tests replace it so a logged-in developer does not change the credential check.
+var githubAuth = func() error {
+	_, err := githubclient.ResolveToken()
+	return err
+}
+
+func githubCredentialCheck(err error) Check {
+	switch {
+	case err == nil:
+		return Check{Severity: SeverityPass, Name: "credentials:github", Detail: "GitHub CLI auth is available"}
+	case errors.Is(err, githubclient.ErrAuthTimedOut):
+		return Check{
+			Severity: SeverityWarn,
+			Name:     "credentials:github",
+			Detail:   "gh auth token timed out; planning still works, but publish apply requires it",
+			Remedy:   "set GITHUB_TOKEN, or retry after the gh prompt finishes",
+		}
+	default:
+		return Check{
+			Severity: SeverityWarn,
+			Name:     "credentials:github",
+			Detail:   "GitHub auth is not available; planning still works, but publish apply requires it",
+			Remedy:   "run `gh auth login` or set GITHUB_TOKEN before publishing",
 		}
 	}
 }
