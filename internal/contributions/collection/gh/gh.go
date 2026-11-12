@@ -2,11 +2,11 @@ package gh
 
 import (
 	"errors"
-	"os"
+	"fmt"
 
 	"github.com/google/go-github/v74/github"
 
-	"github.com/project-init/devex/internal/githubclient"
+	"github.com/project-init/gommon/pkg/githubclient"
 )
 
 type GH struct {
@@ -15,9 +15,9 @@ type GH struct {
 }
 
 func New(organization string) (*GH, error) {
-	ghToken := os.Getenv("GITHUB_TOKEN")
-	if ghToken == "" {
-		return nil, errors.New("GITHUB_TOKEN environment variable not set")
+	ghToken, err := githubclient.ResolveToken()
+	if err != nil {
+		return nil, githubAuthError(err)
 	}
 
 	ghClient, err := githubclient.New(ghToken, "")
@@ -29,4 +29,11 @@ func New(organization string) (*GH, error) {
 		ghClient:     ghClient,
 		organization: organization,
 	}, nil
+}
+
+func githubAuthError(err error) error {
+	if errors.Is(err, githubclient.ErrAuthUnavailable) {
+		return fmt.Errorf("GitHub auth required (run `gh auth login` or set GITHUB_TOKEN)")
+	}
+	return err
 }

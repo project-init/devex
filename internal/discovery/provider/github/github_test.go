@@ -3,6 +3,8 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
+	"github.com/project-init/gommon/pkg/githubclient"
 )
 
 func TestExecuteCreatesIssue(t *testing.T) {
@@ -149,5 +152,27 @@ func TestBodyLinksTheTrackingIssueFromInitiatives(t *testing.T) {
 	task.Kind = domain.KindTask
 	if body := bodyForItem(task, input, "<!-- marker -->"); strings.Contains(body, "Tracking issue:") {
 		t.Fatalf("body = %q, want no tracking link on a task", body)
+	}
+}
+
+func TestGitHubAuthErrorKeepsATimeout(t *testing.T) {
+	timeout := fmt.Errorf("gh auth token did not finish within 15s: %w", githubclient.ErrAuthTimedOut)
+	err := githubAuthError(timeout)
+	if err != timeout || !errors.Is(err, githubclient.ErrAuthTimedOut) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestGitHubAuthErrorRewritesUnavailable(t *testing.T) {
+	err := githubAuthError(githubclient.ErrAuthUnavailable)
+	if errors.Is(err, githubclient.ErrAuthUnavailable) || !strings.Contains(err.Error(), "gh auth login") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestNewRejectsARelativeGitHubAPIURL(t *testing.T) {
+	_, err := New(false, config.Target{GitHub: &config.GitHubTarget{APIURL: "api.github.com"}})
+	if err == nil || !strings.Contains(err.Error(), "absolute http or https url") {
+		t.Fatalf("err = %v", err)
 	}
 }

@@ -2,8 +2,8 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,7 +12,7 @@ import (
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
-	"github.com/project-init/devex/internal/githubclient"
+	"github.com/project-init/gommon/pkg/githubclient"
 )
 
 const (
@@ -32,10 +32,11 @@ type Adapter struct {
 func New(authenticated bool, target config.Target) (*Adapter, error) {
 	token := ""
 	if authenticated {
-		token = os.Getenv("GITHUB_TOKEN")
-		if token == "" {
-			return nil, fmt.Errorf("GITHUB_TOKEN environment variable not set")
+		resolved, err := githubclient.ResolveToken()
+		if err != nil {
+			return nil, githubAuthError(err)
 		}
+		token = resolved
 	}
 
 	baseURL := ""
@@ -53,6 +54,13 @@ func New(authenticated bool, target config.Target) (*Adapter, error) {
 
 func NewWithClient(client *gh.Client) *Adapter {
 	return &Adapter{client: client}
+}
+
+func githubAuthError(err error) error {
+	if errors.Is(err, githubclient.ErrAuthUnavailable) {
+		return fmt.Errorf("GitHub auth required (run `gh auth login` or set GITHUB_TOKEN)")
+	}
+	return err
 }
 
 func (a *Adapter) ID() string { return providerID }
