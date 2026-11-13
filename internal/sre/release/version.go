@@ -2,7 +2,6 @@ package release
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -40,17 +39,30 @@ func (b bumpType) String() string {
 	}
 }
 
-func fetchLatestTag() (version, error) {
-	if err := runGit("fetch", "--tags"); err != nil {
-		return version{}, fmt.Errorf("failed to fetch tags: %w", err)
-	}
-
-	out, err := exec.Command("git", "describe", "--tags", "--abbrev=0").Output()
+// versionAtTip returns the semver of the latest tag on tip's first-parent history.
+// baseline is that tag name. With no such tag, the version is v0.0.0 and baseline is empty.
+func versionAtTip(tip string) (version, string, error) {
+	out, err := gitOutput("describe", "--tags", "--abbrev=0", "--first-parent", tip)
 	if err != nil {
-		return version{}, nil // no tags yet, start at v0.0.0
+		if describeFoundNoTag(err) {
+			return version{}, "", nil
+		}
+		return version{}, "", fmt.Errorf("failed to describe %s: %w", tip, err)
 	}
+	tag := strings.TrimSpace(out)
+	v, err := parseVersion(tag)
+	if err != nil {
+		return version{}, "", err
+	}
+	return v, tag, nil
+}
 
-	return parseVersion(strings.TrimSpace(string(out)))
+// describeFoundNoTag reports the two messages git uses when no tag is reachable.
+// Any other describe failure, such as a bad revision, must surface git's stderr.
+func describeFoundNoTag(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "No names found, cannot describe anything") ||
+		strings.Contains(msg, "No tags can describe")
 }
 
 func parseVersion(tag string) (version, error) {
