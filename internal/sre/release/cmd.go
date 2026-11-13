@@ -2,23 +2,32 @@ package release
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/gommon/pkg/githubclient"
 	"github.com/spf13/cobra"
 )
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "release",
-		Short: "Fetches the latest git tag, lists merged PRs to main since the last tag, prompts for a version bump type\n\t(major/minor/patch), and creates + pushes the new tag.",
+		Short: "Fetches origin/main, lists commits since the last tag, prompts for a version bump type\n\t(major/minor/patch), and creates + pushes the new tag on origin/main.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireGitHubReleaseReady(); err != nil {
+			token, err := githubclient.ResolveToken()
+			if err != nil {
+				return githubAuthError(err)
+			}
+			if err := requireGitHubOrigin(); err != nil {
 				return err
 			}
 
-			current, err := fetchLatestTag()
+			tip, err := fetchOriginMain()
+			if err != nil {
+				return err
+			}
+
+			current, baseline, err := versionAtTip(tip)
 			if err != nil {
 				return err
 			}
@@ -33,7 +42,7 @@ func Command() *cobra.Command {
 				fmt.Println("\n⚠️  WARNING: allowMajorVersionBump not set in config, defaulting to false")
 			}
 
-			if err = displayReleasePullRequests(cmd.Context()); err != nil {
+			if err = displayReleaseCommits(cmd.Context(), token, tip, baseline); err != nil {
 				return err
 			}
 
@@ -51,12 +60,11 @@ func Command() *cobra.Command {
 			fmt.Printf("\nNew version will be: %s\n", next)
 
 			if err = confirmRelease(next); err != nil {
-				fmt.Println("Tag creation cancelled.")
-				os.Exit(1)
+				return cancelledRelease(err)
 			}
 			fmt.Printf("Creating and pushing tag %s...\n", next)
 
-			if err = createAndPushTag(next.String()); err != nil {
+			if err = createAndPushTag(next.String(), tip); err != nil {
 				return err
 			}
 

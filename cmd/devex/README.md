@@ -120,7 +120,7 @@ devex sre postgres access
 devex sre release
 ```
 
-Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists merged PRs into `main` since the latest tag (all such PRs on the first tag).
+Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists commits on `origin/main` since the latest tag (full first-parent history when nothing is tagged). Squash merges show the pull request title and author; other commits are listed too. The new tag points at `origin/main`.
 
 #### Dependencies
 

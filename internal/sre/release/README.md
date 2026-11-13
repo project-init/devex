@@ -19,16 +19,18 @@ The above will generate a git tag and trigger your release if it is coupled with
 
 GitHub auth is required (`gh auth login` or `GITHUB_TOKEN`). `origin` must be a github.com remote.
 
-Before confirmation the tool lists merged pull requests into `main`. See [PR preview](#pr-preview) for what is included.
+Before confirmation the tool lists commits on `origin/main` since the previous tag. See [PR preview](#pr-preview) for what is included.
 
 #### PR preview
 
-Before you confirm the tag, the tool prints merged GitHub pull requests into **`main`** only.
+Before you confirm the tag, the tool fetches `origin/main` and prints the commits on that tip.
 
-- **With an existing tag:** PRs merged into `main` after the **latest tag's commit time** (from `git describe` and `git log` on that tag).
-- **No tags yet:** heading `all history` — every merged PR into `main` (the tool fetches all pages from the GitHub API, 100 PRs per request).
+- **With an existing tag:** `git log <tag>..origin/main --first-parent`. The tag is the latest tag on the first-parent history of `origin/main`.
+- **No tags yet:** heading `all history` — the full first-parent history of `origin/main`.
 
-**Not included:** PRs merged into other branches (for example stacked or feature branches), closed-but-unmerged PRs, and commits that never went through a PR.
+Squash-merge subjects that end in `(#N)` are shown with that pull request's title and author, loaded in one GitHub request. A commit without that suffix is listed as itself (short SHA, git author, and subject). The new tag is created on the fetched `origin/main` tip, including when the checked-out branch is behind.
+
+**Not included:** commits that are not on the first-parent history of `origin/main`, such as commits that only exist on a merged side branch.
 
 #### Description
 
