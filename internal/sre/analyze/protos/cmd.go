@@ -9,9 +9,10 @@ import (
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "protos",
-		Short: "Handle proto analysis",
-		Args:  cobra.NoArgs,
+		Use:    "protos",
+		Hidden: true,
+		Short:  "Handle proto analysis",
+		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, ok := config.GetConfig(cmd.Context())
 			if !ok || cfg == nil {

@@ -43,7 +43,6 @@ Manage gotext translations and generate platform localization bundles.
 devex localize audit
 devex localize html
 devex localize mobile
-devex localize translate
 ```
 
 The `mobile` command generates localization bundles for the platforms present in its
@@ -86,7 +85,6 @@ Site Reliability Engineering toolbox for common operational tasks.
 - [release](../../internal/sre/release/README.md) - Git tag and release management with a merged-PR list preview
 - [dependencies](../../internal/sre/dependencies/README.md) - Upgrade dependencies and keep every Go version pin in step
 - analyze - Code analysis operations, including [slos](../../internal/sre/analyze/slos/README.md): score OpenSLO SLOs against Datadog, with an error budget for each
-- echo - Print and transform arguments
 
 **Usage:**
 
@@ -100,12 +98,7 @@ Create a `.sre` directory in your project root to store configuration files. The
 
 **Additional Dependencies:**
 
-Some SRE tools require AWS CLI:
-
-```toml
-[tools]
-awscli = "latest"  # Required for some postgres operations
-```
+`postgres access` runs `psql`, so install a PostgreSQL client. The `postgres` tools call AWS through the SDK and read credentials from the standard AWS configuration, so they work without the AWS CLI. To sign in through AWS SSO, run `aws sso login` from the AWS CLI first.
 
 **Examples:**
 
@@ -379,7 +372,7 @@ JIRA is the most common work tracking tool used by the project-init team. While 
 
 ### Contributions
 
-A lightweight, opinionated contribution signal generator for GitHub-based engineering teams. Analyzes PR and review activity over configurable time windows (10 / 30 / 90 days) and produces structured output for evaluating contribution patterns.
+A lightweight, opinionated contribution signal generator for GitHub-based engineering teams. Analyzes PR and review activity over the look-back window set by `numLookBackDays` and produces structured output for evaluating contribution patterns.
 
 **What It Provides:**
 
@@ -395,8 +388,6 @@ A lightweight, opinionated contribution signal generator for GitHub-based engine
 
 This is **NOT** a replacement for leadership judgment.  
 It **IS** a visibility tool.
-
-For design intent and cultural philosophy, see [PHILOSOPHY.md](contributions/PHILOSOPHY.md)
 
 **Usage:**
 
@@ -420,17 +411,17 @@ devex contributions signal contributions_config.yaml
 User signal output:
 
 ```csv
-user,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,TotalTimeToMerge,average_days_to_merge
-user1,107.98,73.58,34.40,0.68,0.32,74,172,724538000000000,0.11
-user2,49.21,39.61,9.60,0.80,0.20,42,48,4127456000000000,1.14
+user,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,weighted_distribution_modifier,num_prs,num_reviews,average_days_to_merge
+user1,107.98172,73.58172,34.4,0.6814287,0.3185713,1,74,172,0.1133184
+user2,49.2104,39.6104,9.6,0.8049193,0.1950807,1,42,48,1.1373741
 ```
 
 Repository signal output:
 
 ```csv
-repo,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,TotalTimeToMerge,average_days_to_merge
-business-platform,72.69,45.09,27.60,0.62,0.38,48,138,5021492000000000,1.21
-admin-platform,48.03,39.63,8.40,0.83,0.17,40,42,637432000000000,0.18
+repo,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,num_contributors,average_days_to_merge
+business-platform,72.6928,45.0928,27.6,0.6203197,0.3796803,48,138,6,1.2108122
+admin-platform,48.0317,39.6317,8.4,0.8251176,0.1748824,40,42,4,0.1844425
 ```
 
 These CSV outputs are easily imported into spreadsheets or analyzed with AI tools.
@@ -454,7 +445,7 @@ devex components <configuration_file_path>
 **Example:**
 
 ```shell
-devex components .components
+devex components cmd/devex/components/example_config.yaml
 ```
 
 **Configuration Example:**

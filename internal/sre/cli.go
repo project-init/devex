@@ -56,8 +56,6 @@ func Command() *cobra.Command {
 	rootCmd.AddCommand(postgres.Command())
 	rootCmd.AddCommand(release.Command())
 
-	// Example Tools
-	rootCmd.AddCommand(echoCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	return rootCmd
