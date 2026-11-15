@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -35,9 +35,7 @@ type options struct {
 type deps struct {
 	getenv    func(string) string
 	newClient func(baseURL, apiKey, appKey string) querier
-	stdout    io.Writer
-	stderr    io.Writer
-	live      bool // stderr is a terminal, so progress can redraw one line
+	ui        *ui.UI // status, progress, and warnings on stderr
 	now       func() time.Time
 }
 
@@ -59,17 +57,13 @@ site other than datadoghq.com sets DD_SITE or passes --datadog-site.`,
 		Annotations: map[string]string{config.OptionalAnnotation: "true"},
 		Args:        cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
-			defer stop()
-			return run(ctx, o, deps{
+			return run(cmd.Context(), o, deps{
 				getenv: os.Getenv,
 				newClient: func(baseURL, apiKey, appKey string) querier {
 					return newDatadogClient(baseURL, apiKey, appKey)
 				},
-				stdout: cmd.OutOrStdout(),
-				stderr: cmd.ErrOrStderr(),
-				live:   isTerminal(os.Stderr),
-				now:    time.Now,
+				ui:  ui.New(cmd),
+				now: time.Now,
 			})
 		},
 	}
@@ -117,7 +111,7 @@ func run(ctx context.Context, o options, d deps) error {
 
 	src := datadogSource{}
 	if o.DryRun {
-		return printQueries(d.stdout, src, slos)
+		return printQueries(d.ui.Out(), src, slos)
 	}
 	apiKey, appKey, err := loadKeys(d.getenv)
 	if err != nil {
@@ -125,7 +119,7 @@ func run(ctx context.Context, o options, d deps) error {
 	}
 	src.dd = d.newClient(datadogBaseURL(o.DatadogSite, d.getenv), apiKey, appKey)
 
-	results, err := fetchAndScore(ctx, src, slos, at, o.Batch, o.MinEvents, progress{w: d.stderr, live: d.live})
+	results, err := fetchAndScore(ctx, src, slos, at, o.Batch, o.MinEvents, d.ui)
 	if err != nil {
 		return err
 	}
@@ -152,7 +146,7 @@ func endOfWindows(at string, now time.Time) (time.Time, error) {
 // the last report in out, not an empty file.
 func writeOutput(d deps, out, format string, rs []result, info reportInfo) error {
 	if out == "" {
-		return writeReport(d.stdout, format, rs, info)
+		return writeReport(d.ui.Out(), format, rs, info)
 	}
 	var buf bytes.Buffer
 	if err := writeReport(&buf, format, rs, info); err != nil {
@@ -161,7 +155,7 @@ func writeOutput(d deps, out, format string, rs []result, info reportInfo) error
 	if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintln(d.stderr, "Wrote", out)
+	d.ui.Success("Wrote %s", out)
 	return nil
 }
 
@@ -189,13 +183,6 @@ func windowText(d time.Duration) string {
 		return fmt.Sprintf("%dd", d/day)
 	}
 	return shortDuration(d)
-}
-
-// isTerminal is true when f is a terminal, where a "\r" can redraw one progress line. A file or a pipe gets the
-// final count only.
-func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 // shortDuration drops the zero units time.Duration prints: 15m0s -> 15m, 1h0m0s -> 1h.

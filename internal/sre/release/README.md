@@ -12,8 +12,13 @@ release:
 ## Usage
 
 ```shell
-sre release
+devex sre release
+
+# Without prompts, as in CI:
+devex sre release --bump patch --yes
 ```
+
+`--bump` takes `patch`, `minor`, or `major`; `major` needs `allowMajorVersionBump: true`. Without `--bump` the tool prompts on a terminal and fails with `pass --bump` otherwise. `--yes` skips the confirmation.
 
 The above will generate a git tag and trigger your release if it is coupled with a GH workflow like [this](../../../.github/workflows/release.yaml).
 

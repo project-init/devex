@@ -1,11 +1,12 @@
 package release
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/manifoldco/promptui"
+	"github.com/project-init/devex/internal/ui"
 )
 
 type version struct {
@@ -103,39 +104,36 @@ func bump(v version, bump bumpType) version {
 	}
 }
 
-func selectBumpType(allowMajor bool) (bumpType, error) {
-
-	items := []string{
-		"patch (bug fixes)",
-		"minor (new features, backward compatible)",
+// parseBumpType parses a --bump value. major needs allowMajorVersionBump in the config.
+func parseBumpType(value string, allowMajor bool) (bumpType, error) {
+	switch value {
+	case "patch":
+		return BumpPatch, nil
+	case "minor":
+		return BumpMinor, nil
+	case "major":
+		if !allowMajor {
+			return 0, fmt.Errorf("--bump major needs release.allowMajorVersionBump: true in the sre config")
+		}
+		return BumpMajor, nil
+	default:
+		return 0, fmt.Errorf("--bump must be patch, minor, or major, got %q", value)
 	}
+}
 
-	// Only add the major option if the config explicitly allows it
+// selectBumpType prompts for a version bump. The major option appears only when the config
+// allows it. The command validates --bump itself, before any network work.
+func selectBumpType(ctx context.Context, u *ui.UI, allowMajor bool) (bumpType, error) {
+	options := []ui.Option{
+		{Label: "patch (bug fixes)", Value: "patch"},
+		{Label: "minor (new features, backward compatible)", Value: "minor"},
+	}
 	if allowMajor {
-		items = append(items, "major (breaking changes)")
+		options = append(options, ui.Option{Label: "major (breaking changes)", Value: "major"})
 	}
-
-	prompt := promptui.Select{
-		Label: "Select version bump type",
-		Items: items,
-	}
-
-	idx, _, err := prompt.Run()
+	choice, err := u.Select(ctx, "Select version bump type", options, "patch", bumpFlag)
 	if err != nil {
 		return 0, err
 	}
-
-	switch idx {
-	case 0:
-		return BumpPatch, nil
-	case 1:
-		return BumpMinor, nil
-	case 2:
-		if allowMajor {
-			return BumpMajor, nil
-		}
-		return 0, fmt.Errorf("invalid selection")
-	default:
-		return 0, fmt.Errorf("invalid selection")
-	}
+	return parseBumpType(choice, allowMajor)
 }

@@ -31,6 +31,19 @@ Run `devex --help` to see all available subcommands, or `devex <subcommand> --he
 
 Press Ctrl-C to cancel a running command; press it again to terminate devex immediately.
 
+### Global flags
+
+Every command accepts these flags, so scripts and CI can run devex without a terminal:
+
+| Flag                      | Effect                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `-o, --output text\|json` | Write JSON to stdout instead of text. A command that has no JSON form rejects `json`.                                                     |
+| `-q, --quiet`             | Print only data, warnings, and errors.                                                                                                    |
+| `--no-color`              | Turn off color and borders. devex also turns them off when `NO_COLOR` is set, when `TERM=dumb`, and for any stream that isn't a terminal. |
+| `-y, --yes`               | Answer yes to every confirmation.                                                                                                         |
+
+devex writes data to stdout and status, warnings, prompts, spinners, and progress to stderr, so `devex ... > file` captures only data. It prompts only when stdin and stderr are terminals. Without one, a command that needs an answer fails and names the flag that supplies it, such as `pass --env`.
+
 ---
 
 ## Subcommands
@@ -109,10 +122,13 @@ Create a `.sre` directory in your project root to store configuration files. The
 devex sre keygen
 
 # Access a postgres database
-devex sre postgres access
+devex sre postgres access --env staging-readonly
 
 # Create a new release
 devex sre release
+
+# Release a patch from CI
+devex sre release --bump patch --yes
 ```
 
 Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists commits on `origin/main` since the latest tag (full first-parent history when nothing is tagged). Squash merges show the pull request title and author; other commits are listed too. The new tag points at `origin/main`.
@@ -186,7 +202,7 @@ Discovery replaces the deprecated `workplan` command.
 
 Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you don't need a checkout of the devex source repository.
 
-Run the top-level command from an interactive terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
+Run the top-level command from a terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
 
 ```shell
 devex discovery
@@ -221,7 +237,7 @@ devex discovery doctor
 devex discovery doctor --harness codex
 ```
 
-`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Results are grouped as passed, flagged, and failed, with failures rendered last and highlighted in interactive terminals.
+`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Results are grouped as passed, flagged, and failed, with failures rendered last and highlighted on a terminal.
 
 At least one selected harness must have the skill installed. Once one is installed, missing additional harness integrations are flagged for awareness rather than treated as failures. Modified installed skills and missing, invalid, or placeholder configuration remain failures. Missing credentials are warnings because they are only required by `publish apply` and `publish plan --sync`. The command exits nonzero only when failures are present.
 

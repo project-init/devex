@@ -21,6 +21,8 @@ import (
 const defaultConfigPath = ".sre/discovery.yaml"
 
 func Command() *cobra.Command {
+	var configurationPath string
+	var harnessValues []string
 	command := &cobra.Command{
 		Use:           "discovery",
 		Short:         "Turn product discovery into reviewable plans and published work",
@@ -28,9 +30,11 @@ func Command() *cobra.Command {
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSetup(cmd, ".", defaultConfigPath, nil, false)
+			return runSetup(cmd, ".", configurationPath, harnessValues)
 		},
 	}
+	command.Flags().StringVar(&configurationPath, "config", defaultConfigPath, "target configuration file")
+	command.Flags().StringSliceVar(&harnessValues, harnessFlag, nil, "AI harness: codex, claude, cursor, or all")
 	command.AddCommand(initCommand())
 	command.AddCommand(validateCommand())
 	command.AddCommand(configCommand())

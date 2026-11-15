@@ -7,12 +7,13 @@ import (
 	"strings"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/project-init/gommon/pkg/aws"
 	"github.com/project-init/gommon/pkg/postgres"
 )
 
-func loadPGAccessEnvironment(ctx context.Context, environmentConfig config.PostgresEnvironmentConfig) (*config.PsqlConfig, error) {
-	fmt.Printf("Logging in to %s as %s via psql.\n", environmentConfig.Host, environmentConfig.UserName)
+func loadPGAccessEnvironment(ctx context.Context, u *ui.UI, environmentConfig config.PostgresEnvironmentConfig) (*config.PsqlConfig, error) {
+	u.Status("Logging in to %s as %s via psql.", environmentConfig.Host, environmentConfig.UserName)
 
 	password, err := getPassword(ctx, environmentConfig)
 	if err != nil {

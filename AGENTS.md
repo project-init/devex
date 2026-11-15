@@ -48,6 +48,7 @@ This file provides architectural context and conventions for AI agents working o
 ## Agent Working Notes
 
 - If changing user-facing CLI behavior, update `cmd/devex/README.md` and relevant examples under `cmd/devex/**`.
+- Render output through `internal/ui`: data to stdout with `Printf`, `Table`, or `WriteJSON`; status, warnings, spinners, and progress to stderr. Prompt with `ui.Select` or `ui.Confirm`, and give each prompt a flag. Mark a command that supports `--output json` with `ui.JSONAnnotation`.
 - Keep command errors returned to Cobra; top-level execution prints errors in `internal/root`. Never call `log.Fatal`, `os.Exit`, or `panic` outside `cmd/devex/main.go`.
 - Use `cmd.Context()` for network and long-running work; `internal/root` cancels it on Ctrl-C or SIGTERM.
 - Do not add tests for simple Cobra command wiring, argument-count checks, or usage output behavior unless explicitly requested. Prefer direct CLI smoke checks for those cases.

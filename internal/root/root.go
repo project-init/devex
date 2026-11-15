@@ -9,6 +9,7 @@ import (
 	"github.com/project-init/devex/internal/discovery"
 	"github.com/project-init/devex/internal/localize"
 	"github.com/project-init/devex/internal/sre"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/project-init/devex/internal/version"
 	"github.com/project-init/devex/internal/workplan"
 	gommoncmd "github.com/project-init/gommon/pkg/cmd"
@@ -29,6 +30,12 @@ func Execute() error {
 	return nil
 }
 
+func init() {
+	// Run every PersistentPreRun from the root down, so the root's flag checks and a tool's
+	// config loading both apply.
+	cobra.EnableTraverseRunHooks = true
+}
+
 func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "devex",
@@ -36,7 +43,11 @@ func newRootCmd() *cobra.Command {
 		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return ui.Validate(cmd)
+		},
 	}
+	ui.AddFlags(rootCmd)
 
 	rootCmd.AddCommand(versionCmd())
 	rootCmd.AddCommand(sre.Command())
@@ -51,11 +62,17 @@ func newRootCmd() *cobra.Command {
 
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the devex version",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "devex version %s\n", version.String())
+		Use:         "version",
+		Short:       "Print the devex version",
+		Args:        cobra.NoArgs,
+		Annotations: map[string]string{ui.JSONAnnotation: "true"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			u := ui.New(cmd)
+			if u.JSON() {
+				return u.WriteJSON(map[string]string{"version": version.String()})
+			}
+			u.Printf("devex version %s\n", version.String())
+			return nil
 		},
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manifoldco/promptui"
 	"github.com/project-init/gommon/pkg/githubclient"
 )
 
@@ -354,12 +353,18 @@ func TestFetchOriginMainUpdatesTipWhenATagWouldBeClobbered(t *testing.T) {
 	}
 }
 
-func TestCancelledReleaseHidesEmptyAbort(t *testing.T) {
-	for _, err := range []error{promptui.ErrAbort, promptui.ErrInterrupt} {
-		got := cancelledRelease(err)
-		if got == nil || got.Error() != "tag creation cancelled" {
-			t.Errorf("cancelledRelease(%v) = %v", err, got)
-		}
+func TestParseBumpTypeGuardsMajor(t *testing.T) {
+	if got, err := parseBumpType("minor", false); err != nil || got != BumpMinor {
+		t.Errorf("parseBumpType(minor) = %v, %v; want minor", got, err)
+	}
+	if _, err := parseBumpType("major", false); err == nil || !strings.Contains(err.Error(), "allowMajorVersionBump") {
+		t.Errorf("parseBumpType(major, disallowed) error = %v, want the config guard", err)
+	}
+	if got, err := parseBumpType("major", true); err != nil || got != BumpMajor {
+		t.Errorf("parseBumpType(major, allowed) = %v, %v; want major", got, err)
+	}
+	if _, err := parseBumpType("huge", true); err == nil {
+		t.Error("parseBumpType(huge) error = nil, want an invalid value error")
 	}
 }
 
