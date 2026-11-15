@@ -180,9 +180,9 @@ See the [slos README](../../internal/sre/analyze/slos/README.md) for every flag 
 
 Guide an idea through discovery, produce reviewable Markdown and YAML artifacts, and publish the resulting work breakdown to Jira or GitHub Issues after human review.
 
-The discovery feature is separate from the existing `workplan` command.
+Discovery replaces the deprecated `workplan` command.
 
-Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you do not run discovery from a checkout of the devex source repository.
+Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you don't need a checkout of the devex source repository.
 
 Run the top-level command from an interactive terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
 
@@ -316,6 +316,8 @@ Published issues footer the discovery document as a URL on the repository's defa
 ---
 
 ### Workplan
+
+> **Deprecated:** use [`devex discovery init`](#discovery) and `devex discovery publish` instead. A future release removes `workplan`.
 
 Generate and publish workplan templates for investigating features or problems. Workplans help estimate the effort needed to complete a task and can be published directly to JIRA.
 
