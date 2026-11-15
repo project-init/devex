@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -110,43 +112,101 @@ func (a *Adapter) Plan(
 	return operations, warnings, nil
 }
 
+// Resolve finds the pending operations' issues among the discovery's. It lists only the
+// discovery's label once that label records it labels every issue. Until then it scans the
+// repository, labels each of the discovery's issues it finds, and then marks the label
+// complete, so a backfill cut short resumes on the next apply. Resolve runs only during apply,
+// so it may write.
 func (a *Adapter) Resolve(
 	ctx context.Context,
 	target config.Target,
-	_ *provider.Plan,
+	plan *provider.Plan,
 	pending []provider.Operation,
 ) (map[string]provider.RemoteRef, error) {
-	wanted := make(map[string]bool, len(pending))
-	for _, operation := range pending {
-		wanted[operation.IdempotencyKey] = true
-	}
-	issues, err := a.markedIssues(ctx, target, func(marker string) bool { return wanted[marker] })
+	issues, complete, err := a.markedIssues(ctx, target, plan.DiscoveryID)
 	if err != nil {
 		return nil, err
 	}
-	published := make(map[string]provider.RemoteRef, len(issues))
-	for foundMarker, issue := range issues {
-		published[foundMarker] = issueRef(issue)
+	// The scan already found every issue, so a backfill this token may not make, such as one
+	// GitHub forbids without push access, leaves the label incomplete for the next apply.
+	if !complete && ctx.Err() == nil {
+		_ = a.backfill(ctx, target, plan.DiscoveryID, issues)
+	}
+	published := make(map[string]provider.RemoteRef, len(pending))
+	for _, operation := range pending {
+		if issue, found := issues[operation.IdempotencyKey]; found {
+			published[operation.IdempotencyKey] = issueRef(issue)
+		}
 	}
 
 	return published, nil
 }
 
-// markedIssues lists the repository's issues by the idempotency markers keep accepts.
-func (a *Adapter) markedIssues(
-	ctx context.Context,
-	target config.Target,
-	keep func(marker string) bool,
-) (map[string]*gh.Issue, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("github client is unavailable")
+// backfill labels each of the discovery's issues, then records in the label's description that
+// it labels them all.
+func (a *Adapter) backfill(ctx context.Context, target config.Target, discoveryID string, issues map[string]*gh.Issue) error {
+	owner, repository := target.GitHub.Owner, target.GitHub.Repository
+	name, description := discoveryLabel(discoveryID), labelDescription(discoveryID)
+	for _, issue := range issues {
+		if slices.ContainsFunc(issue.Labels, func(label *gh.Label) bool { return label.GetName() == name }) {
+			continue // an earlier, interrupted backfill reached it
+		}
+		if _, _, err := a.client.Issues.AddLabelsToIssue(ctx, owner, repository, issue.GetNumber(), []string{name}); err != nil {
+			return fmt.Errorf("label GitHub issue #%d for its discovery: %w", issue.GetNumber(), err)
+		}
 	}
-	marked := make(map[string]*gh.Issue)
+	label := &gh.Label{Name: &name, Description: &description}
+	_, response, err := a.client.Issues.EditLabel(ctx, owner, repository, name, label)
+	if response != nil && response.StatusCode == http.StatusNotFound {
+		label.Color = gh.Ptr("ededed")
+		_, _, err = a.client.Issues.CreateLabel(ctx, owner, repository, label)
+	}
+	if err != nil {
+		return fmt.Errorf("record GitHub label %s: %w", name, err)
+	}
+	return nil
+}
+
+// discoveryLabel names the label devex puts on every issue of a discovery. GitHub caps label
+// names at 50 characters, so a long ID ends in a digest instead.
+func discoveryLabel(discoveryID string) string {
+	return fit("discovery:"+discoveryID, 50, discoveryID)
+}
+
+// labelDescription marks a discovery label that labels every one of the discovery's issues.
+// GitHub caps descriptions at 100 characters.
+func labelDescription(discoveryID string) string {
+	return fit("devex labels every issue of discovery "+discoveryID, 100, discoveryID)
+}
+
+// fit cuts text to limit characters, ending a cut text in a digest of id so cut texts stay
+// distinct.
+func fit(text string, limit int, id string) string {
+	if len(text) <= limit {
+		return text
+	}
+	return text[:limit-9] + "-" + provider.Digest(id)[:8]
+}
+
+// markedIssues returns the discovery's issues by idempotency marker. When the discovery's label
+// is complete, it lists only that label and reports complete; otherwise it scans every issue.
+func (a *Adapter) markedIssues(ctx context.Context, target config.Target, discoveryID string) (map[string]*gh.Issue, bool, error) {
+	if a.client == nil {
+		return nil, false, fmt.Errorf("github client is unavailable")
+	}
 	options := &gh.IssueListByRepoOptions{State: "all", ListOptions: gh.ListOptions{PerPage: 100}}
+	name := discoveryLabel(discoveryID)
+	// Any failure to read the label falls back to the scan.
+	if label, _, err := a.client.Issues.GetLabel(ctx, target.GitHub.Owner, target.GitHub.Repository, name); err == nil && label.GetDescription() == labelDescription(discoveryID) {
+		options.Labels = []string{name}
+	}
+	complete := len(options.Labels) > 0
+	prefix := markerPrefix(discoveryID)
+	marked := make(map[string]*gh.Issue)
 	for {
 		issues, response, err := a.client.Issues.ListByRepo(ctx, target.GitHub.Owner, target.GitHub.Repository, options)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, issue := range issues {
 			if issue.IsPullRequest() {
@@ -154,13 +214,13 @@ func (a *Adapter) markedIssues(
 			}
 			for _, foundMarker := range markerPattern.FindAllString(issue.GetBody(), -1) {
 				// A copied body copies the marker too; the original is the oldest issue.
-				if existing, exists := marked[foundMarker]; keep(foundMarker) && (!exists || issue.GetNumber() < existing.GetNumber()) {
+				if existing, exists := marked[foundMarker]; strings.HasPrefix(foundMarker, prefix) && (!exists || issue.GetNumber() < existing.GetNumber()) {
 					marked[foundMarker] = issue
 				}
 			}
 		}
 		if response == nil || response.NextPage == 0 {
-			return marked, nil
+			return marked, complete, nil
 		}
 		options.ListOptions.Page = response.NextPage
 	}
@@ -197,6 +257,11 @@ func (a *Adapter) Execute(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
+	// Every write carries the discovery label, whatever devex wrote the plan, so a lookup that
+	// trusts the label misses nothing devex created.
+	if discoveryID, ok := discoveryOf(operation.IdempotencyKey); ok {
+		labels = provider.UniqueSorted(append(labels, discoveryLabel(discoveryID)))
+	}
 	resolvedBody = stampedBody(operation, title, resolvedBody)
 	if operation.Action == provider.ActionUpdateIssue {
 		return a.executeUpdateIssue(ctx, target, operation, resolved, resolvedBody, title, labels)
@@ -209,11 +274,29 @@ func (a *Adapter) Execute(
 	if err != nil {
 		return provider.RemoteRef{}, err
 	}
+	// Preflight cannot judge every token, so restore a discovery label GitHub dropped. The issue
+	// exists either way, so a failed label must not fail the create.
+	if discoveryID, ok := discoveryOf(operation.IdempotencyKey); ok {
+		name := discoveryLabel(discoveryID)
+		if !slices.ContainsFunc(issue.Labels, func(label *gh.Label) bool { return label.GetName() == name }) {
+			_, _, _ = a.client.Issues.AddLabelsToIssue(ctx, target.GitHub.Owner, target.GitHub.Repository, issue.GetNumber(), []string{name})
+		}
+	}
 	return issueRef(issue), nil
 }
 
 func marker(discoveryID string, itemID domain.ItemID) string {
 	return markerPrefix(discoveryID) + string(itemID) + " -->"
+}
+
+// discoveryOf reads the discovery ID back out of a marker.
+func discoveryOf(marker string) (string, bool) {
+	inner, ok := strings.CutPrefix(marker, "<!-- "+generatedMarker+": ")
+	slash := strings.LastIndex(inner, "/")
+	if !ok || slash <= 0 {
+		return "", false
+	}
+	return inner[:slash], true
 }
 
 // markerPrefix starts every marker of one discovery.
@@ -311,4 +394,23 @@ func (a *Adapter) CheckAccess(ctx context.Context, target config.Target) (string
 	}
 
 	return fmt.Sprintf("repository %s/%s is reachable and takes issues", owner, name), nil
+}
+
+// Preflight stops apply before it creates issues the token cannot label. GitHub silently drops
+// the labels of an issue created without write access, and a lookup that trusts the discovery
+// label would miss the issue and create it again. A GitHub App token gets no permissions back,
+// so only a reported lack of write access stops apply.
+func (a *Adapter) Preflight(ctx context.Context, target config.Target, creates []provider.Operation) error {
+	if len(creates) == 0 {
+		return nil
+	}
+	owner, name := target.GitHub.Owner, target.GitHub.Repository
+	repository, _, err := a.client.Repositories.Get(ctx, owner, name)
+	if err != nil {
+		return fmt.Errorf("read GitHub repository %s/%s: %w", owner, name, err)
+	}
+	if repository.Permissions != nil && !repository.Permissions["push"] {
+		return fmt.Errorf("creating issues in GitHub repository %s/%s needs write access; without it, GitHub drops the labels devex uses to find them", owner, name)
+	}
+	return nil
 }

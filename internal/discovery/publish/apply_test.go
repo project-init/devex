@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 )
 
 type fakeAdapter struct {
+	mu           sync.Mutex // apply runs operations side by side
+	delay        time.Duration
+	running      int
+	peak         int
 	executions   map[string]int
 	resolvedAt   map[string][]domain.ItemID
 	lookups      []string
@@ -53,6 +58,14 @@ func (f *fakeAdapter) Execute(
 	operation provider.Operation,
 	resolved map[domain.ItemID]provider.RemoteRef,
 ) (provider.RemoteRef, error) {
+	f.mu.Lock()
+	f.running++
+	f.peak = max(f.peak, f.running)
+	f.mu.Unlock()
+	time.Sleep(f.delay) // a remote call's latency, slept without the lock so calls overlap
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.running--
 	f.executions[operation.ID]++
 	if f.resolvedAt != nil {
 		items := make([]domain.ItemID, 0, len(resolved))
@@ -147,8 +160,8 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 		SourceDigest: mustBundleDigest(t, bundleDirectory),
 		Operations: []provider.Operation{
 			{ID: "create-WI-001", ItemID: "WI-001", IdempotencyKey: "one"},
-			{ID: "link-WI-001-WI-002", IdempotencyKey: "link"},
-			{ID: "create-WI-002", ItemID: "WI-002", IdempotencyKey: "two"},
+			{ID: "link-WI-001-WI-002", IdempotencyKey: "link", DependsOn: []string{"create-WI-001", "create-WI-002"}},
+			{ID: "create-WI-002", ItemID: "WI-002", IdempotencyKey: "two", DependsOn: []string{"create-WI-001"}},
 		},
 	}
 	plan.PlanDigest, err = PlanDigest(plan)

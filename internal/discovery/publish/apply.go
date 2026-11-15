@@ -1,9 +1,11 @@
 package publish
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,8 +44,14 @@ func (h ApplyHooks) remote(ctx context.Context, title string, read func(context.
 	return h.Remote(ctx, title, read)
 }
 
-// Apply runs the plan at planPath, recording each outcome in its receipt so a rerun resumes.
-// It stops at the first failed operation.
+// defaultConcurrency runs one operation at a time, unless the adapter declares it is safe to run
+// more.
+const defaultConcurrency = 1
+
+// Apply runs the plan at planPath, recording each outcome in its receipt so a rerun resumes. It
+// runs operations whose dependencies have finished side by side, up to the adapter's limit, and
+// writes the receipt from one goroutine. After a failed operation it lets the operations already
+// running finish and starts no more.
 func Apply(
 	ctx context.Context,
 	planPath string,
@@ -109,35 +117,85 @@ func Apply(
 			return receipt, errors.Join(err, saveReceipt(receiptPath, receipt))
 		}
 	}
-	report := func(index int, operation provider.Operation, result provider.OperationResult, resumed bool) {
+	completed := 0
+	report := func(operation provider.Operation, result provider.OperationResult, resumed bool) {
+		completed++
 		if hooks.Progress != nil {
-			hooks.Progress(Progress{Index: index + 1, Total: len(plan.Operations), Operation: operation, Result: result, Resumed: resumed})
+			hooks.Progress(Progress{Index: completed, Total: len(plan.Operations), Operation: operation, Result: result, Resumed: resumed})
 		}
 	}
-	for index, operation := range plan.Operations {
-		previous, exists := receipt.Operations[operation.ID]
-		if exists && settled(previous) {
-			if operation.ItemID != "" {
-				resolved[operation.ItemID] = *previous.Remote
-			}
-			report(index, operation, previous, true)
+	// unfinished holds the operations still to succeed. resolvedItems already loaded the
+	// remote work of those a receipt settled.
+	unfinished := make(map[string]bool, len(plan.Operations))
+	var waiting []provider.Operation
+	for _, operation := range plan.Operations {
+		if previous, exists := receipt.Operations[operation.ID]; exists && settled(previous) {
+			report(operation, previous, true)
 			continue
 		}
+		unfinished[operation.ID] = true
+		waiting = append(waiting, operation)
+	}
+	// An operation runs once everything it depends on has finished, so it can reference the
+	// remote work those produced.
+	ready := func(operation provider.Operation) bool {
+		return !slices.ContainsFunc(operation.DependsOn, func(id string) bool { return unfinished[id] })
+	}
 
-		result := applyOperation(ctx, plan, adapter, operation, published, resolved)
+	type outcome struct {
+		operation provider.Operation
+		result    provider.OperationResult
+	}
+	limit := defaultConcurrency
+	if limited, ok := adapter.(provider.ConcurrencyLimiter); ok {
+		limit = max(1, limited.MaxConcurrent())
+	}
+	// Buffered for every operation, so no worker blocks when a failure stops the loop early.
+	outcomes := make(chan outcome, len(waiting))
+	inFlight := 0
+	var failure error
+	for len(waiting) > 0 || inFlight > 0 {
+		// After a failure, the work already started finishes, but nothing new starts.
+		for index := 0; failure == nil && inFlight < limit && index < len(waiting); {
+			operation := waiting[index]
+			if !ready(operation) {
+				index++
+				continue
+			}
+			waiting = slices.Delete(waiting, index, index+1)
+			view := maps.Clone(resolved) // a worker's own copy, holding every dependency's result
+			inFlight++
+			go func() { outcomes <- outcome{operation, applyOperation(ctx, plan, adapter, operation, published, view)} }()
+		}
+		if inFlight == 0 {
+			break // stopped by a failure, or the rest wait on each other
+		}
+		done := <-outcomes
+		inFlight--
+		operation, result := done.operation, done.result
 		receipt.Operations[operation.ID] = result
 		if result.Status == "failed" {
 			receipt.Status = "partial"
+			failure = cmp.Or(failure, fmt.Errorf("operation %s failed: %s", operation.ID, result.Error))
 		} else {
-			receipt.Status = "applying"
+			delete(unfinished, operation.ID)
+			if operation.ItemID != "" {
+				resolved[operation.ItemID] = *result.Remote
+			}
 		}
 		if err := saveReceipt(receiptPath, receipt); err != nil {
-			return nil, err
+			receipt.Status = "partial"
+			failure = cmp.Or(failure, err)
 		}
-		report(index, operation, result, false)
-		if result.Status == "failed" {
-			return receipt, fmt.Errorf("operation %s failed: %s", operation.ID, result.Error)
-		}
+		report(operation, result, false)
+	}
+	if failure == nil && len(waiting) > 0 {
+		receipt.Status = "partial"
+		failure = fmt.Errorf("%d operations depend on each other in a cycle, so none can run; plan again", len(waiting))
+		_ = saveReceipt(receiptPath, receipt)
+	}
+	if failure != nil {
+		return receipt, failure
 	}
 
 	receipt.Status = "complete"
@@ -169,7 +227,8 @@ func resolvePending(
 	return adapter.Resolve(ctx, plan.Target, plan, pending)
 }
 
-// applyOperation runs one operation. A planned create reuses a matching remote issue instead of
+// applyOperation runs one operation. resolved is the caller's copy: the scheduler records each
+// result in the shared map itself. A planned create reuses a matching remote issue instead of
 // creating a second one. A reuse or update fails when the issue the plan saw is gone; an update
 // then executes against that issue.
 func applyOperation(
@@ -187,14 +246,13 @@ func applyOperation(
 		case found && operation.Action != provider.ActionUpdateIssue:
 			result.Status = "reused"
 			result.Remote = &remote
-			resolved[operation.ItemID] = remote
 			return result
 		case !found && (operation.Action == provider.ActionReuseIssue || operation.Action == provider.ActionUpdateIssue):
 			result.Status = "failed"
 			result.Error = "the issue this plan expected is gone; plan again"
 			return result
 		case found:
-			resolved[operation.ItemID] = remote
+			resolved[operation.ItemID] = remote // the update's target, which Execute reads
 		}
 	}
 
@@ -206,9 +264,6 @@ func applyOperation(
 	}
 	result.Status = executedStatus(operation.Action)
 	result.Remote = &executed
-	if operation.ItemID != "" {
-		resolved[operation.ItemID] = executed
-	}
 
 	return result
 }

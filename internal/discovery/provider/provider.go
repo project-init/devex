@@ -29,7 +29,8 @@ type Adapter interface {
 	Plan(context.Context, PlanInput, config.Target) ([]Operation, []string, error)
 	// Resolve reports which of the given operations already exist remotely, keyed by
 	// idempotency key. Apply calls it once with the operations a receipt has not already
-	// accounted for, so an adapter can search for exactly the work that remains.
+	// accounted for, so an adapter can search for exactly the work that remains. Only apply
+	// calls it, so it may write, such as to label issues for a cheaper next lookup.
 	Resolve(context.Context, config.Target, *Plan, []Operation) (map[string]RemoteRef, error)
 	Execute(context.Context, config.Target, Operation, map[domain.ItemID]RemoteRef) (RemoteRef, error)
 }
@@ -44,6 +45,12 @@ type AccessChecker interface {
 // lacks.
 type IssueTypeChecker interface {
 	MissingIssueTypes(context.Context, config.Target) ([]string, error)
+}
+
+// ConcurrencyLimiter declares how many operations an adapter can execute at once; apply runs one
+// at a time for an adapter without it.
+type ConcurrencyLimiter interface {
+	MaxConcurrent() int
 }
 
 // Preflighter checks the creates apply has left to make against the remote before it writes

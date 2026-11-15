@@ -30,10 +30,7 @@ func (a *Adapter) Sync(
 	target config.Target,
 	request provider.SyncRequest,
 ) ([]provider.Operation, []string, error) {
-	prefix := markerPrefix(request.DiscoveryID)
-	published, err := a.markedIssues(ctx, target, func(marker string) bool {
-		return strings.HasPrefix(marker, prefix)
-	})
+	published, _, err := a.markedIssues(ctx, target, request.DiscoveryID)
 	if err != nil {
 		return nil, nil, err
 	}
