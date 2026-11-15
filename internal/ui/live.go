@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/progress"
@@ -23,21 +24,30 @@ const progressBarWidth = 24
 // prints title once as a status line instead. Ctrl-C still reaches the process, which
 // cancels ctx.
 func (u *UI) Spin(ctx context.Context, title string, fn func(context.Context) error) error {
+	return u.SpinStatus(ctx, title, func(ctx context.Context, _ func(string)) error { return fn(ctx) })
+}
+
+// SpinStatus is Spin with a label fn can change as it works, such as a task's status and elapsed
+// time. Off a live terminal, label changes are dropped.
+func (u *UI) SpinStatus(ctx context.Context, title string, fn func(ctx context.Context, setTitle func(string)) error) error {
 	if !u.live {
 		u.Status("%s", title)
-		return fn(ctx)
+		return fn(ctx, func(string) {})
 	}
-	frames := make([]string, len(spinner.Dot.Frames))
+	glyphs := make([]string, len(spinner.Dot.Frames))
 	for index, glyph := range spinner.Dot.Frames {
-		frames[index] = u.errStyle(accentStyle, glyph) + " " + title
+		glyphs[index] = u.errStyle(accentStyle, glyph)
 	}
+	var current atomic.Pointer[string]
+	current.Store(&title)
+	setTitle := func(text string) { current.Store(&text) }
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		ticker := time.NewTicker(spinner.Dot.FPS)
 		defer ticker.Stop()
 		for frame := 0; ; frame++ {
-			u.setLive(frames[frame%len(frames)])
+			u.setLive(glyphs[frame%len(glyphs)] + " " + *current.Load())
 			select {
 			case <-done:
 				return
@@ -45,7 +55,7 @@ func (u *UI) Spin(ctx context.Context, title string, fn func(context.Context) er
 			}
 		}
 	})
-	err := fn(ctx)
+	err := fn(ctx, setTitle)
 	close(done)
 	wg.Wait()
 	u.clearLive()

@@ -61,7 +61,8 @@ func TestPlacementDefaultsToFargate(t *testing.T) {
 }
 
 func TestCommandReadsLaunchTypeFromEnvironment(t *testing.T) {
-	t.Setenv("LAUNCH_TYPE", "EC2")
+	t.Setenv("DEVEX_LAUNCH_TYPE", "EC2")
+	t.Setenv("LAUNCH_TYPE", "EXTERNAL") // unprefixed variables no longer count
 
 	cmd := Command()
 	flag := cmd.Flags().Lookup("launch-type")
@@ -277,24 +278,21 @@ func TestMigrationExitCodeFallsBackWhenECSGivesNoReason(t *testing.T) {
 	}
 }
 
-func TestOverrideImageSetsTheNamedContainer(t *testing.T) {
+func TestFindDefinitionReturnsTheNamedContainerInPlace(t *testing.T) {
 	containers := []ecstypes.ContainerDefinition{
 		{Name: aws.String("log-router"), Image: aws.String("fluent:1")},
 		{Name: aws.String("migrator"), Image: aws.String("migration:v1")},
 	}
 
-	if err := overrideImage(containers, "migrator", "migration:v2"); err != nil {
-		t.Fatalf("overrideImage(): %v", err)
+	found := findDefinition(containers, "migrator")
+	if found == nil {
+		t.Fatal("findDefinition() = nil, want the migrator")
 	}
+	found.Image = aws.String("migration:v2")
 	if aws.ToString(containers[1].Image) != "migration:v2" || aws.ToString(containers[0].Image) != "fluent:1" {
-		t.Fatalf("overrideImage() images = %q, %q, want only the migrator changed", aws.ToString(containers[0].Image), aws.ToString(containers[1].Image))
+		t.Fatalf("images = %q, %q, want only the migrator changed", aws.ToString(containers[0].Image), aws.ToString(containers[1].Image))
 	}
-}
-
-func TestOverrideImageRejectsAnUnknownContainer(t *testing.T) {
-	containers := []ecstypes.ContainerDefinition{{Name: aws.String("migrator"), Image: aws.String("migration:v1")}}
-
-	if err := overrideImage(containers, "migrate", "migration:v2"); err == nil {
-		t.Fatal("overrideImage() accepted a container name the task definition lacks")
+	if findDefinition(containers, "migrate") != nil {
+		t.Fatal("findDefinition() found a container name the task definition lacks")
 	}
 }

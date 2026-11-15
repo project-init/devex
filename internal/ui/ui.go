@@ -76,6 +76,7 @@ type UI struct {
 	err  io.Writer
 	opts Options
 
+	outTerminal bool // stdout is a terminal, maybe the one stderr's live line is on
 	outStyled   bool // stdout takes color and borders
 	errStyled   bool // stderr takes color
 	interactive bool // stdin and stderr are terminals, so prompts can run
@@ -116,6 +117,7 @@ func newUI(in io.Reader, out, errOut io.Writer, opts Options, getenv func(string
 		out:         out,
 		err:         errOut,
 		opts:        opts,
+		outTerminal: isTerminal(out),
 		outStyled:   color && isTerminal(out),
 		errStyled:   color && errTerminal,
 		interactive: errTerminal && isTerminal(in),
@@ -152,9 +154,14 @@ func (u *UI) Interactive() bool { return u.interactive }
 // Live reports whether stderr can redraw a line in place, for spinners and progress.
 func (u *UI) Live() bool { return u.live }
 
-// Printf writes data to stdout.
+// Printf writes data to stdout. When stdout and a live spinner or progress line share a
+// terminal, it lifts the live line out of the way and redraws it underneath.
 func (u *UI) Printf(format string, args ...any) {
-	_, _ = fmt.Fprintf(u.out, format, args...)
+	if !u.outTerminal {
+		_, _ = fmt.Fprintf(u.out, format, args...)
+		return
+	}
+	u.lifted(func() { _, _ = fmt.Fprintf(u.out, format, args...) })
 }
 
 // WriteJSON writes v to stdout as indented JSON.
@@ -185,12 +192,17 @@ func (u *UI) Warn(format string, args ...any) {
 // writeErr writes one line to stderr, lifting any live line out of the way and redrawing it
 // underneath.
 func (u *UI) writeErr(line string) {
+	u.lifted(func() { _, _ = io.WriteString(u.err, line+"\n") })
+}
+
+// lifted runs write with the live line, if any, cleared from stderr, then redraws it.
+func (u *UI) lifted(write func()) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.liveLine != "" {
 		_, _ = io.WriteString(u.err, clearLine)
 	}
-	_, _ = io.WriteString(u.err, line+"\n")
+	write()
 	if u.liveLine != "" {
 		_, _ = io.WriteString(u.err, u.liveLine)
 	}
