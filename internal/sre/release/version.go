@@ -42,8 +42,8 @@ func (b bumpType) String() string {
 
 // versionAtTip returns the semver of the latest tag on tip's first-parent history.
 // baseline is that tag name. With no such tag, the version is v0.0.0 and baseline is empty.
-func versionAtTip(tip string) (version, string, error) {
-	out, err := gitOutput("describe", "--tags", "--abbrev=0", "--first-parent", tip)
+func versionAtTip(ctx context.Context, tip string) (version, string, error) {
+	out, err := gitOutput(ctx, "describe", "--tags", "--abbrev=0", "--first-parent", tip)
 	if err != nil {
 		if describeFoundNoTag(err) {
 			return version{}, "", nil
@@ -121,9 +121,10 @@ func parseBumpType(value string, allowMajor bool) (bumpType, error) {
 	}
 }
 
-// selectBumpType prompts for a version bump. The major option appears only when the config
-// allows it. The command validates --bump itself, before any network work.
-func selectBumpType(ctx context.Context, u *ui.UI, allowMajor bool) (bumpType, error) {
+// selectBumpType prompts for a version bump, preselecting and labelling suggested. The major
+// option appears only when the config allows it. The command validates --bump itself, before
+// any network work.
+func selectBumpType(ctx context.Context, u *ui.UI, allowMajor bool, suggested bumpType) (bumpType, error) {
 	options := []ui.Option{
 		{Label: "patch (bug fixes)", Value: "patch"},
 		{Label: "minor (new features, backward compatible)", Value: "minor"},
@@ -131,7 +132,12 @@ func selectBumpType(ctx context.Context, u *ui.UI, allowMajor bool) (bumpType, e
 	if allowMajor {
 		options = append(options, ui.Option{Label: "major (breaking changes)", Value: "major"})
 	}
-	choice, err := u.Select(ctx, "Select version bump type", options, "patch", bumpFlag)
+	for index := range options {
+		if options[index].Value == suggested.String() {
+			options[index].Label += " — suggested"
+		}
+	}
+	choice, err := u.Select(ctx, "Select version bump type", options, suggested.String(), bumpFlag)
 	if err != nil {
 		return 0, err
 	}
