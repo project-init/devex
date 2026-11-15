@@ -36,7 +36,7 @@ func CreatePlan(
 	}
 	input := provider.PlanInput{
 		WorkBreakdown: bundle.WorkBreakdown,
-		DocumentURL:   source.DocumentURL(bundle.Directory, bundle.WorkBreakdown.Discovery.Document),
+		DocumentURL:   source.DocumentURL(ctx, bundle.Directory, bundle.WorkBreakdown.Discovery.Document),
 		TrackingURL:   artifact.TrackingURL(bundle.DiscoveryContent),
 	}
 	operations, warnings, err := adapter.Plan(ctx, input, target)

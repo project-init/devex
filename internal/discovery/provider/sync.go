@@ -80,6 +80,26 @@ func FieldDigests(operation Operation, names ...string) map[string]string {
 	return digests
 }
 
+// FieldChange is one field an update rewrites, as plan output shows it: the remote's value and
+// the plan's, or a note where a value is too long to show.
+type FieldChange struct {
+	Before string `yaml:"before,omitempty" json:"before,omitempty"`
+	After  string `yaml:"after,omitempty" json:"after,omitempty"`
+	Note   string `yaml:"note,omitempty" json:"note,omitempty"`
+}
+
+// Rewritten notes a field too long to show, such as a description.
+var Rewritten = FieldChange{Note: "rewritten from the bundle"}
+
+// LabelChange shows the labels an update leaves on an issue: it adds the desired ones and removes
+// none.
+func LabelChange(existing []string, desired []string) FieldChange {
+	return FieldChange{
+		Before: strings.Join(UniqueSorted(existing), ", "),
+		After:  strings.Join(UniqueSorted(append(slices.Clone(existing), desired...)), ", "),
+	}
+}
+
 // NewStamp records the named fields of the operation just written and the remote's live digest.
 func NewStamp(operation Operation, names []string, live string) Stamp {
 	return Stamp{ID: operation.IdempotencyKey, Source: FieldDigests(operation, names...), Live: live}

@@ -60,7 +60,7 @@ func TestApplyUpdatesPublishedIssuesAndUnlinks(t *testing.T) {
 		},
 	}
 
-	receipt, err := Apply(context.Background(), planPath, adapter, nil)
+	receipt, err := Apply(context.Background(), planPath, adapter, ApplyHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestApplyFailsWhenAPlannedIssueIsGone(t *testing.T) {
 		})
 		adapter := &fakeAdapter{executions: make(map[string]int)}
 
-		_, err := Apply(context.Background(), planPath, adapter, nil)
+		_, err := Apply(context.Background(), planPath, adapter, ApplyHooks{})
 		if err == nil || !strings.Contains(err.Error(), "plan again") {
 			t.Fatalf("%s: err = %v, want a gone-issue failure", action, err)
 		}
@@ -115,11 +115,11 @@ func TestApplyResumeSkipsSettledUpdatesAndUnlinks(t *testing.T) {
 		failOnce:   "create-WI-003",
 		published:  map[string]provider.RemoteRef{"two": {ID: "2", Key: "DEVEX-2"}},
 	}
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err == nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err == nil {
 		t.Fatal("first Apply() succeeded, want temporary failure")
 	}
 
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err != nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err != nil {
 		t.Fatal(err)
 	}
 

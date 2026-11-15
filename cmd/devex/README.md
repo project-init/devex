@@ -274,6 +274,8 @@ devex discovery doctor --harness codex
 
 At least one selected harness must have the skill installed. Once one is installed, missing additional harness integrations are flagged for awareness rather than treated as failures. Modified installed skills and missing, invalid, or placeholder configuration remain failures. Missing credentials are warnings because they are only required by `publish apply` and `publish plan --sync`. The command exits nonzero only when failures are present.
 
+`doctor --online` also signs in to each configured target. It confirms the credentials work and can see the target's project or repository, and, for Jira, that every issue type `kind_mapping` names exists in the project. An invalid token or a missing issue type is a failure that names the problem. `--output json` prints the checks as JSON; the exit status still reflects failures.
+
 **Create and validate a bundle:**
 
 ```shell
@@ -335,7 +337,9 @@ devex discovery publish plan docs/discoveries/audit-logs --target jira-project
 devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
 ```
 
-`plan` performs no remote mutations; with `--sync` it reads the target but still writes nothing. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.
+`plan` performs no remote mutations; with `--sync` it reads the target but still writes nothing. It writes a frozen plan and lists its operations grouped by action, with counts, and each update's fields with their before and after values. Warnings go to stderr. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation. It reports each operation with an `[n/N]` counter, including failed ones and those an earlier run already finished, and ends with a count of created, updated, reused, and failed operations. On Jira, `apply` first checks that the project has every issue type the plan creates, so a bad `kind_mapping` fails before anything is created.
+
+When `apply` finds that its plan's receipt records another plan, as after re-planning an edited bundle, it moves the receipt into an `archive/` directory beside the plan and starts a fresh one. It still reuses everything the old receipt recorded, which it finds remotely. `plan`, `apply`, `validate`, and `doctor` accept `--output json`.
 
 Planning without `--sync` is reproducible: an unchanged bundle and target produce the same operations and the same `plan_digest` on any machine. Only `generated_at` records the run, and it is excluded from the digest. `apply` never re-plans; it executes the frozen artifact and refuses to run against a bundle that changed after the plan was written.
 

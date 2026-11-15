@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/project-init/devex/internal/discovery/artifact"
@@ -12,11 +15,40 @@ import (
 	"github.com/project-init/devex/internal/discovery/provider"
 )
 
+// Progress reports one operation's outcome during apply: its position among the plan's
+// operations, and whether a previous run's receipt had already settled it.
+type Progress struct {
+	Index     int // from 1
+	Total     int
+	Operation provider.Operation
+	Result    provider.OperationResult
+	Resumed   bool
+}
+
+// ApplyHooks lets the caller watch an apply. Any hook may be nil.
+type ApplyHooks struct {
+	// Remote wraps each remote read that precedes writing, such as with a spinner.
+	Remote func(ctx context.Context, title string, read func(context.Context) error) error
+	// Progress receives each operation's outcome, in plan order.
+	Progress func(Progress)
+	// Archived receives where a receipt for another plan went.
+	Archived func(path string)
+}
+
+func (h ApplyHooks) remote(ctx context.Context, title string, read func(context.Context) error) error {
+	if h.Remote == nil {
+		return read(ctx)
+	}
+	return h.Remote(ctx, title, read)
+}
+
+// Apply runs the plan at planPath, recording each outcome in its receipt so a rerun resumes.
+// It stops at the first failed operation.
 func Apply(
 	ctx context.Context,
 	planPath string,
 	adapter provider.Adapter,
-	onProgress func(provider.Operation, provider.OperationResult),
+	hooks ApplyHooks,
 ) (*provider.Receipt, error) {
 	plan, err := LoadPlan(planPath)
 	if err != nil {
@@ -34,9 +66,12 @@ func Apply(
 	}
 
 	receiptPath := DefaultReceiptPath(planPath)
-	receipt, err := existingReceipt(receiptPath, plan)
+	receipt, archived, err := existingReceipt(receiptPath, plan)
 	if err != nil {
 		return nil, err
+	}
+	if archived != "" && hooks.Archived != nil {
+		hooks.Archived(archived)
 	}
 	resolved := resolvedItems(receipt)
 	receipt.Status = "applying"
@@ -46,7 +81,12 @@ func Apply(
 
 	// A failed search leaves the receipt on disk claiming it is mid-apply, so record the stop
 	// and hand the receipt back rather than returning nil and losing the trail.
-	published, resolveErr := resolvePending(ctx, plan, adapter, receipt)
+	var published map[string]provider.RemoteRef
+	resolveErr := hooks.remote(ctx, "Checking for work already published", func(ctx context.Context) error {
+		var err error
+		published, err = resolvePending(ctx, plan, adapter, receipt)
+		return err
+	})
 	if resolveErr != nil {
 		receipt.Status = "partial"
 		if err := saveReceipt(receiptPath, receipt); err != nil {
@@ -55,12 +95,32 @@ func Apply(
 		return receipt, fmt.Errorf("resolve already published work: %w", resolveErr)
 	}
 
-	for _, operation := range plan.Operations {
+	if preflighter, ok := adapter.(provider.Preflighter); ok {
+		// Only the creates left matter: one the receipt settled, or the remote already holds, is reused.
+		pending := slices.DeleteFunc(slices.Clone(plan.Operations), func(operation provider.Operation) bool {
+			_, reused := published[operation.IdempotencyKey]
+			return operation.Action != provider.ActionCreateIssue || reused || !outstanding(receipt, operation)
+		})
+		err := hooks.remote(ctx, "Checking the plan against the target", func(ctx context.Context) error {
+			return preflighter.Preflight(ctx, plan.Target, pending)
+		})
+		if err != nil {
+			receipt.Status = "partial"
+			return receipt, errors.Join(err, saveReceipt(receiptPath, receipt))
+		}
+	}
+	report := func(index int, operation provider.Operation, result provider.OperationResult, resumed bool) {
+		if hooks.Progress != nil {
+			hooks.Progress(Progress{Index: index + 1, Total: len(plan.Operations), Operation: operation, Result: result, Resumed: resumed})
+		}
+	}
+	for index, operation := range plan.Operations {
 		previous, exists := receipt.Operations[operation.ID]
 		if exists && settled(previous) {
 			if operation.ItemID != "" {
 				resolved[operation.ItemID] = *previous.Remote
 			}
+			report(index, operation, previous, true)
 			continue
 		}
 
@@ -74,9 +134,7 @@ func Apply(
 		if err := saveReceipt(receiptPath, receipt); err != nil {
 			return nil, err
 		}
-		if onProgress != nil {
-			onProgress(operation, result)
-		}
+		report(index, operation, result, false)
 		if result.Status == "failed" {
 			return receipt, fmt.Errorf("operation %s failed: %s", operation.ID, result.Error)
 		}
@@ -101,14 +159,9 @@ func resolvePending(
 ) (map[string]provider.RemoteRef, error) {
 	pending := make([]provider.Operation, 0, len(plan.Operations))
 	for _, operation := range plan.Operations {
-		if operation.ItemID == "" {
-			continue
+		if operation.ItemID != "" && outstanding(receipt, operation) {
+			pending = append(pending, operation)
 		}
-		previous, exists := receipt.Operations[operation.ID]
-		if exists && settled(previous) {
-			continue
-		}
-		pending = append(pending, operation)
 	}
 	if len(pending) == 0 {
 		return nil, nil
@@ -171,6 +224,11 @@ func executedStatus(action string) string {
 	}
 }
 
+func outstanding(receipt *provider.Receipt, operation provider.Operation) bool {
+	previous, exists := receipt.Operations[operation.ID]
+	return !exists || !settled(previous)
+}
+
 // settled reports whether a receipt entry needs no further work on resume.
 func settled(result provider.OperationResult) bool {
 	switch result.Status {
@@ -181,20 +239,32 @@ func settled(result provider.OperationResult) bool {
 	}
 }
 
-func existingReceipt(path string, plan *provider.Plan) (*provider.Receipt, error) {
-	receipt, err := LoadReceipt(path)
-	if err == nil {
-		if receipt.PlanDigest != plan.PlanDigest {
-			return nil, fmt.Errorf(
-				"existing receipt %s belongs to a different plan; delete it to apply this one, "+
-					"which republishes nothing already recorded remotely",
-				path,
-			)
+// existingReceipt loads the receipt at path, or starts one. A receipt for another plan, such as
+// the one a re-plan replaced, moves to archive/ first: apply still reuses the work it recorded,
+// which it finds remotely. archived is where it went, or "".
+func existingReceipt(path string, plan *provider.Plan) (receipt *provider.Receipt, archived string, err error) {
+	receipt, err = LoadReceipt(path)
+	switch {
+	case err == nil && receipt.PlanDigest == plan.PlanDigest:
+		return receipt, "", nil
+	case err == nil:
+		// The digest names the file, so only its hex survives: the receipt is a file on disk.
+		digest := strings.Map(func(r rune) rune {
+			if strings.ContainsRune("0123456789abcdef", r) {
+				return r
+			}
+			return -1
+		}, strings.TrimPrefix(receipt.PlanDigest, "sha256:"))
+		name := fmt.Sprintf("receipt-%s-%.12s.yaml", receipt.UpdatedAt.UTC().Format("20060102T150405Z"), digest)
+		archived = filepath.Join(filepath.Dir(path), "archive", name)
+		if err := os.MkdirAll(filepath.Dir(archived), 0o755); err != nil {
+			return nil, "", err
 		}
-		return receipt, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		if err := os.Rename(path, archived); err != nil {
+			return nil, "", err
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return nil, "", err
 	}
 	return &provider.Receipt{
 		SchemaVersion: provider.SchemaVersion,
@@ -204,7 +274,7 @@ func existingReceipt(path string, plan *provider.Plan) (*provider.Receipt, error
 		PlanDigest:    plan.PlanDigest,
 		Status:        "planned",
 		Operations:    make(map[string]provider.OperationResult),
-	}, nil
+	}, archived, nil
 }
 
 func resolvedItems(receipt *provider.Receipt) map[domain.ItemID]provider.RemoteRef {

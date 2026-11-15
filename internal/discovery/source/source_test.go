@@ -1,6 +1,7 @@
 package source
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,11 +15,11 @@ func TestDocumentURL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := DocumentURL(bundle, "discovery.md")
+	got := DocumentURL(context.Background(), bundle, "discovery.md")
 	// A space in the path must survive as an escape rather than break the link.
 	want := "https://github.com/project-init/business-platform/blob/main/docs/investigations/audit%20logs/discovery.md"
 	if got != want {
-		t.Fatalf("DocumentURL() = %q, want %q", got, want)
+		t.Fatalf("DocumentURL(context.Background(), ) = %q, want %q", got, want)
 	}
 }
 
@@ -26,13 +27,13 @@ func TestDocumentURL(t *testing.T) {
 func TestDocumentURLFollowsOriginHead(t *testing.T) {
 	repository := newRepository(t, "git@github.com:project-init/devex.git")
 	runGit(t, repository, "update-ref", "refs/remotes/origin/trunk",
-		gitOutput(repository, "rev-parse", "refs/remotes/origin/main"))
+		gitOutput(context.Background(), repository, "rev-parse", "refs/remotes/origin/main"))
 	runGit(t, repository, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
 
-	got := DocumentURL(repository, "discovery.md")
+	got := DocumentURL(context.Background(), repository, "discovery.md")
 	want := "https://github.com/project-init/devex/blob/trunk/discovery.md"
 	if got != want {
-		t.Fatalf("DocumentURL() = %q, want %q", got, want)
+		t.Fatalf("DocumentURL(context.Background(), ) = %q, want %q", got, want)
 	}
 }
 
@@ -40,14 +41,14 @@ func TestDocumentURLFollowsOriginHead(t *testing.T) {
 func TestDocumentURLWithoutGitHubRemote(t *testing.T) {
 	repository := newRepository(t, "git@gitlab.test:project-init/business-platform.git")
 
-	if got := DocumentURL(repository, "discovery.md"); got != "" {
-		t.Fatalf("DocumentURL() = %q, want empty", got)
+	if got := DocumentURL(context.Background(), repository, "discovery.md"); got != "" {
+		t.Fatalf("DocumentURL(context.Background(), ) = %q, want empty", got)
 	}
 }
 
 func TestDocumentURLOutsideARepository(t *testing.T) {
-	if got := DocumentURL(t.TempDir(), "discovery.md"); got != "" {
-		t.Fatalf("DocumentURL() = %q, want empty", got)
+	if got := DocumentURL(context.Background(), t.TempDir(), "discovery.md"); got != "" {
+		t.Fatalf("DocumentURL(context.Background(), ) = %q, want empty", got)
 	}
 }
 
@@ -100,7 +101,7 @@ func newRepository(t *testing.T, remote string) string {
 	runGit(t, directory, "init", "--quiet")
 	runGit(t, directory, "remote", "add", "origin", remote)
 	runGit(t, directory, "update-ref", "refs/remotes/origin/main",
-		gitOutput(directory, "hash-object", "-t", "tree", "-w", "--stdin"))
+		gitOutput(context.Background(), directory, "hash-object", "-t", "tree", "-w", "--stdin"))
 
 	return directory
 }
@@ -117,7 +118,7 @@ func runGit(t *testing.T, directory string, args ...string) {
 func TestDocumentURLRejectsAnEscapingPath(t *testing.T) {
 	repository := newRepository(t, "git@github.com:project-init/devex.git")
 
-	if got := DocumentURL(repository, "../../evil/repo/blob/main/x.md"); got != "" {
-		t.Fatalf("DocumentURL() = %q, want empty", got)
+	if got := DocumentURL(context.Background(), repository, "../../evil/repo/blob/main/x.md"); got != "" {
+		t.Fatalf("DocumentURL(context.Background(), ) = %q, want empty", got)
 	}
 }

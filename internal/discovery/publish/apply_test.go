@@ -105,10 +105,10 @@ func TestApplyResumesFromFileReceipt(t *testing.T) {
 	}
 
 	adapter := &fakeAdapter{executions: make(map[string]int), failOnce: "create-WI-001"}
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err == nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err == nil {
 		t.Fatal("first Apply() succeeded, want temporary failure")
 	}
-	receipt, err := Apply(context.Background(), planPath, adapter, nil)
+	receipt, err := Apply(context.Background(), planPath, adapter, ApplyHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 		executions: make(map[string]int),
 		resolvedAt: make(map[string][]domain.ItemID),
 	}
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err != nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,7 +186,7 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 
 	// A resumed run reads the receipt instead of the live map, so it must skip the link too.
 	second := &fakeAdapter{executions: make(map[string]int)}
-	if _, err := Apply(context.Background(), planPath, second, nil); err != nil {
+	if _, err := Apply(context.Background(), planPath, second, ApplyHooks{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(second.executions) != 0 {

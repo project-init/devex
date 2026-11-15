@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -237,5 +238,20 @@ func TestSyncKeepsAnIssueWhoseOnlyLabelChangeIsARemoval(t *testing.T) {
 
 	if synced[0].Action != provider.ActionReuseIssue {
 		t.Fatalf("operation = %#v, want a reuse", synced[0])
+	}
+}
+
+func TestDescribeUpdateShowsTitleAndLabels(t *testing.T) {
+	operation := provider.Operation{Fields: map[string]any{
+		"changed": []string{"body", "labels", "title"}, "title": "Ship audit logs", "labels": []string{"audit"},
+	}}
+	describeUpdate(&operation, &gh.Issue{Title: gh.Ptr("Audit logs"), Labels: []*gh.Label{{Name: gh.Ptr("discovery")}}})
+	want := map[string]provider.FieldChange{
+		"title":  {Before: "Audit logs", After: "Ship audit logs"},
+		"labels": {Before: "discovery", After: "audit, discovery"},
+		"body":   {Note: "rewritten from the bundle"},
+	}
+	if got := operation.Diff; !maps.Equal(got, want) {
+		t.Errorf("Diff() = %#v, want %#v", got, want)
 	}
 }
