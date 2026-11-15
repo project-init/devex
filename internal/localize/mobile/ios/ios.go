@@ -4,21 +4,20 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/project-init/devex/internal/localize/catalog"
 	"github.com/project-init/devex/internal/localize/config"
+	"github.com/project-init/devex/internal/ui"
 )
 
 const (
-	defaultSourceLanguage = "en-US"
-	outCatalogName        = "out.gotext.json"
+	defaultSourceLanguage = catalog.BaseLocale
 )
 
 var (
@@ -28,37 +27,6 @@ var (
 	translationPattern  = regexp.MustCompile(`translate\("([^"\r\n]+)"`)
 	stringPattern       = regexp.MustCompile(`"([^"\r\n]*)"`)
 )
-
-type catalog struct {
-	Language string    `json:"language"`
-	Messages []message `json:"messages"`
-}
-
-// gotextID handles the gotext format where "id" may be a plain string or a
-// [key, fallbackText] array; we always use the first element as the ID.
-type gotextID string
-
-func (g *gotextID) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err == nil {
-		*g = gotextID(s)
-		return nil
-	}
-	var arr []string
-	if err := json.Unmarshal(data, &arr); err != nil {
-		return err
-	}
-	if len(arr) == 0 {
-		return fmt.Errorf("gotext id array is empty")
-	}
-	*g = gotextID(arr[0])
-	return nil
-}
-
-type message struct {
-	ID          gotextID `json:"id"`
-	Translation any      `json:"translation"`
-}
 
 type bundle struct {
 	Language string          `json:"language"`
@@ -83,8 +51,7 @@ func Generate(
 	sourceLanguage string,
 	registryPath string,
 	cfg config.IOSConfiguration,
-	stdout io.Writer,
-	stderr io.Writer,
+	u *ui.UI,
 ) error {
 	if err := validateConfig(localesDir, registryPath, cfg); err != nil {
 		return err
@@ -99,19 +66,16 @@ func Generate(
 		return err
 	}
 
-	directories, err := filepath.Glob(filepath.Join(localesDir, "*/"))
+	directories, err := catalog.LocaleDirs(localesDir)
 	if err != nil {
 		return err
-	}
-	if len(directories) == 0 {
-		return fmt.Errorf("no locale directories found in %s", localesDir)
 	}
 
 	bundles := make([]generatedBundle, 0, len(directories))
 	for _, directory := range directories {
-		language := filepath.Base(filepath.Clean(directory))
-		catalogPath := filepath.Join(directory, outCatalogName)
-		cat, err := loadCatalog(catalogPath)
+		language := filepath.Base(directory)
+		catalogPath := filepath.Join(directory, catalog.OutFile)
+		cat, err := catalog.Load(catalogPath)
 		if err != nil {
 			return err
 		}
@@ -122,7 +86,7 @@ func Generate(
 
 		messages := make(orderedMessages, 0)
 		for _, msg := range cat.Messages {
-			translation, ok := msg.Translation.(string)
+			translation, ok := msg.Text()
 			if !ok || translation == "" {
 				continue
 			}
@@ -142,14 +106,11 @@ func Generate(
 		})
 	}
 
-	if err := validateSourceUsage(cfg.SourceDir, registryPath, ids, stderr); err != nil {
+	if err := validateSourceUsage(cfg.SourceDir, registryPath, ids, u); err != nil {
 		return err
 	}
 
-	if err := writeBundles(cfg.OutputDir, bundles, stdout); err != nil {
-		return err
-	}
-	return nil
+	return writeBundles(cfg.OutputDir, bundles, u)
 }
 
 func (messages orderedMessages) MarshalJSON() ([]byte, error) {
@@ -230,23 +191,7 @@ func loadRegistryIDs(path string) (map[string]struct{}, error) {
 	return ids, nil
 }
 
-func loadCatalog(path string) (*catalog, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("missing %s", path)
-		}
-		return nil, err
-	}
-
-	var cat catalog
-	if err := json.Unmarshal(data, &cat); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return &cat, nil
-}
-
-func validateCatalog(path string, cat *catalog, ids map[string]struct{}, source bool) error {
+func validateCatalog(path string, cat *catalog.Catalog, ids map[string]struct{}, source bool) error {
 	for _, msg := range cat.Messages {
 		if _, object := msg.Translation.(map[string]any); object {
 			return fmt.Errorf("%s contains plural/select translations; the iOS converter does not support them", path)
@@ -271,7 +216,7 @@ func validateCatalog(path string, cat *catalog, ids map[string]struct{}, source 
 
 	badTokens := make([]string, 0)
 	for _, msg := range cat.Messages {
-		translation, ok := msg.Translation.(string)
+		translation, ok := msg.Text()
 		if !ok || translation == "" {
 			continue
 		}
@@ -292,7 +237,7 @@ func validateCatalog(path string, cat *catalog, ids map[string]struct{}, source 
 	return nil
 }
 
-func validateSourceUsage(sourceDir string, registryPath string, ids map[string]struct{}, stderr io.Writer) error {
+func validateSourceUsage(sourceDir string, registryPath string, ids map[string]struct{}, u *ui.UI) error {
 	usedKeys := make(map[string]struct{})
 	sourceLiterals := make(map[string]struct{})
 
@@ -332,15 +277,15 @@ func validateSourceUsage(sourceDir string, registryPath string, ids map[string]s
 
 	unused := difference(ids, sourceLiterals)
 	for _, id := range unused {
-		_, _ = fmt.Fprintf(stderr, "warning: registry string not referenced by Swift code: %s\n", id)
+		u.Warn("registry string not referenced by Swift code: %s", id)
 	}
 	if len(unused) > 0 {
-		_, _ = fmt.Fprintf(stderr, "warning: %d unreferenced registry string(s) — dead copy candidates\n", len(unused))
+		u.Warn("%d unreferenced registry string(s) — dead copy candidates", len(unused))
 	}
 	return nil
 }
 
-func writeBundles(outputDir string, bundles []generatedBundle, stdout io.Writer) error {
+func writeBundles(outputDir string, bundles []generatedBundle, u *ui.UI) error {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return err
 	}
@@ -360,7 +305,7 @@ func writeBundles(outputDir string, bundles []generatedBundle, stdout io.Writer)
 		if err := os.WriteFile(path, generated.data, 0o644); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stdout, "wrote %s (%d messages)\n", path, generated.count)
+		u.Success("Wrote %s (%d messages)", path, generated.count)
 	}
 	return nil
 }

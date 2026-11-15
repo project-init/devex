@@ -60,6 +60,10 @@ devex localize html
 devex localize mobile
 ```
 
+The `audit` command checks that every `en-US` message has a translation and that each locale's
+`messages.gotext.json` holds every message gotext extracted into `out.gotext.json`. It prints
+findings to stdout and exits non-zero when it finds any.
+
 The `mobile` command generates localization bundles for the platforms present in its
 configuration. The currently supported iOS generator distills registered strings from each
 `out.gotext.json` catalog into an `l10n-<locale>.json` bundle. It also validates registry
@@ -70,7 +74,9 @@ single combined HTML report to `localize.html.outputPath`, with one column per l
 row per message id, so English source strings and their translations can be reviewed side by
 side in a browser. The report includes the full set of ids found across all catalogs, including
 new English ids that do not yet exist in another locale; their missing translations appear as
-empty cells.
+highlighted cells. A tile per locale shows its translation coverage, and a search box and a
+"Missing only" filter narrow the rows. The report is a single file with inline styles, so it
+renders offline.
 
 Configure repository paths under `.localize/*.yaml`:
 

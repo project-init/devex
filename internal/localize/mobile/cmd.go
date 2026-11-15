@@ -5,6 +5,7 @@ import (
 
 	"github.com/project-init/devex/internal/localize/config"
 	"github.com/project-init/devex/internal/localize/mobile/ios"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -29,8 +30,7 @@ func Command() *cobra.Command {
 				mobileConfig.SourceLanguage,
 				mobileConfig.RegistryPath,
 				mobileConfig.IOS,
-				cmd.OutOrStdout(),
-				cmd.ErrOrStderr(),
+				ui.New(cmd),
 			)
 		},
 	}

@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/project-init/devex/internal/localize/catalog"
 	"github.com/project-init/devex/internal/localize/config"
+	"github.com/project-init/devex/internal/ui"
 )
 
 func TestGenerate(t *testing.T) {
@@ -29,7 +31,7 @@ func strings(p *message.Printer) {
 let title = translate("Sign in")
 let welcome = translate("Welcome, {Email}")
 `)
-	writeTestFile(t, filepath.Join(localesDir, "en-US", outCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.OutFile), `{
   "language": "en-US",
   "messages": [
     {"id": "Welcome, {Email}", "translation": "Welcome, {Email}"},
@@ -38,7 +40,7 @@ let welcome = translate("Welcome, {Email}")
   ]
 }
 `)
-	writeTestFile(t, filepath.Join(localesDir, "es-US", outCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "es-US", catalog.OutFile), `{
   "language": "es-US",
   "messages": [
     {"id": "Sign in", "translation": "Iniciar sesión"},
@@ -48,6 +50,7 @@ let welcome = translate("Welcome, {Email}")
 `)
 	writeTestFile(t, filepath.Join(outputDir, "l10n-stale.json"), "stale")
 	writeTestFile(t, filepath.Join(outputDir, "keep.json"), "keep")
+	writeTestFile(t, filepath.Join(localesDir, ".DS_Store"), "junk")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -59,8 +62,7 @@ let welcome = translate("Welcome, {Email}")
 			SourceDir: sourceDir,
 			OutputDir: outputDir,
 		},
-		&stdout,
-		&stderr,
+		ui.NewWithStreams(nil, &stdout, &stderr, ui.Options{}),
 	)
 	if err != nil {
 		t.Fatalf("generate() error = %v", err)
@@ -85,11 +87,11 @@ let welcome = translate("Welcome, {Email}")
 		t.Errorf("stale bundle was not removed")
 	}
 	assertTestFile(t, filepath.Join(outputDir, "keep.json"), "keep")
-	if !strings.Contains(stdout.String(), "l10n-en-US.json (2 messages)") {
-		t.Errorf("stdout = %q", stdout.String())
-	}
-	if stderr.Len() != 0 {
+	if !strings.Contains(stderr.String(), "l10n-en-US.json (2 messages)") || strings.Contains(stderr.String(), "warning:") {
 		t.Errorf("stderr = %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want nothing", stdout.String())
 	}
 }
 
@@ -152,7 +154,7 @@ func TestGenerateValidatesCatalogAndSource(t *testing.T) {
 			outputDir := filepath.Join(root, "output")
 
 			writeTestFile(t, registryPath, tt.registry+"\n")
-			writeTestFile(t, filepath.Join(localesDir, "en-US", outCatalogName), tt.catalog)
+			writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.OutFile), tt.catalog)
 			writeTestFile(t, filepath.Join(sourceDir, "View.swift"), tt.source)
 
 			var stderr bytes.Buffer
@@ -164,8 +166,7 @@ func TestGenerateValidatesCatalogAndSource(t *testing.T) {
 					SourceDir: sourceDir,
 					OutputDir: outputDir,
 				},
-				&bytes.Buffer{},
-				&stderr,
+				ui.NewWithStreams(nil, &bytes.Buffer{}, &stderr, ui.Options{}),
 			)
 
 			if tt.wantError != "" {
