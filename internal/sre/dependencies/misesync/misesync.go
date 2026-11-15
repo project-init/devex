@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/project-init/devex/internal/sre/dependencies/edit"
+	"github.com/project-init/devex/internal/sre/dependencies/lookup"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"github.com/project-init/devex/internal/sre/dependencies/policy"
 	"golang.org/x/mod/semver"
@@ -82,6 +83,15 @@ func (p Plan) UpgradeCommand() []string {
 	}
 
 	return cmd
+}
+
+// Commands are the mise commands an upgrade runs, in order: the capped tools, then the rest.
+func (p Plan) Commands() [][]string {
+	if capped := p.CapCommand(); capped != nil {
+		return [][]string{capped, p.UpgradeCommand()}
+	}
+
+	return [][]string{p.UpgradeCommand()}
 }
 
 // CapCommand returns the mise command that installs each capped tool within the range its
@@ -157,7 +167,11 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 	// A tool is capped only when every config that pins it can hold the cap, since mise upgrade
 	// <tool> follows whichever config wins; otherwise none of its pins move.
 	capped := map[string]bool{}
-	latest := map[string]string{}
+	type lookupNeed struct {
+		tool  pins.MiseTool
+		query string
+	}
+	var needs []lookupNeed
 	for _, c := range candidates {
 		if uncappable[c.tool.Key] {
 			continue
@@ -168,7 +182,15 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 		if policy.Components(c.tool.Version) == c.pol.Fixed() {
 			continue
 		}
-		change, err := p.cap(ctx, c.tool, c.pol, latest)
+		needs = append(needs, lookupNeed{c.tool, capQuery(c.tool, c.pol)})
+	}
+	queries := make([]string, len(needs))
+	for i, need := range needs {
+		queries[i] = need.query
+	}
+	latest := lookup.All(ctx, queries, p.latest)
+	for _, need := range needs {
+		change, err := capChange(need.tool, latest[need.query])
 		if err != nil {
 			return Plan{}, err
 		}
@@ -217,24 +239,34 @@ func (p Planner) checkUnknown(policies map[string]policy.Policy, seen map[string
 	return nil
 }
 
-// cap resolves the newest release of tool that pol allows, caching mise latest by query.
-func (p Planner) cap(ctx context.Context, tool pins.MiseTool, pol policy.Policy, latest map[string]string) (*edit.Change, error) {
+// capQuery is the mise latest query for the newest release pol allows tool.
+func capQuery(tool pins.MiseTool, pol policy.Policy) string {
 	// Only the go backend matches a v-prefixed query; aqua and others print nothing for @v2.
-	query := tool.Key + "@" + policy.Prefix(strings.TrimPrefix(tool.Version, "v"), pol.Fixed())
-	newest, ok := latest[query]
-	if !ok {
-		out, err := p.Run.Output(ctx, p.Root, nil, "mise", "latest", query)
-		if err != nil {
-			return nil, err
-		}
-		if newest = strings.TrimSpace(string(out)); newest == "" {
-			return nil, fmt.Errorf("mise latest %s found no release", query)
-		}
-		latest[query] = newest
+	return tool.Key + "@" + policy.Prefix(strings.TrimPrefix(tool.Version, "v"), pol.Fixed())
+}
+
+// latest asks mise for the newest release matching query.
+func (p Planner) latest(ctx context.Context, query string) (string, error) {
+	out, err := p.Run.Output(ctx, p.Root, nil, "mise", "latest", query)
+	if err != nil {
+		return "", err
+	}
+	newest := strings.TrimSpace(string(out))
+	if newest == "" {
+		return "", fmt.Errorf("mise latest %s found no release", query)
+	}
+	return newest, nil
+}
+
+// capChange moves tool to newest, mise's answer for its capped query. It returns nil when tool
+// already holds that release.
+func capChange(tool pins.MiseTool, newest lookup.Result[string]) (*edit.Change, error) {
+	if newest.Err != nil {
+		return nil, newest.Err
 	}
 	// A newer patch leaves a two-component pin, such as 3.14 for 3.14.2, as written.
-	to := policy.Format(tool.Version, newest)
-	if !policy.Newer(tool.Version, newest) || to == tool.Version {
+	to := policy.Format(tool.Version, newest.Value)
+	if !policy.Newer(tool.Version, newest.Value) || to == tool.Version {
 		return nil, nil
 	}
 

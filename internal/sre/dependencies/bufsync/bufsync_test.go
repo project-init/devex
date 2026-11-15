@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -332,18 +333,19 @@ func TestPlanAsksTheRegistryOncePerPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Changes) != 2 || reg.calls != 2 {
-		t.Errorf("changes = %d, registry calls = %d; want 2 changes from 2 calls", len(plan.Changes), reg.calls)
+	if len(plan.Changes) != 2 || reg.calls.Load() != 2 {
+		t.Errorf("changes = %d, registry calls = %d; want 2 changes from 2 calls", len(plan.Changes), reg.calls.Load())
 	}
 }
 
+// countingRegistry counts lookups, which run concurrently.
 type countingRegistry struct {
 	fakeRegistry
-	calls int
+	calls atomic.Int32
 }
 
 func (c *countingRegistry) LatestPlugin(ctx context.Context, plugin string) (string, error) {
-	c.calls++
+	c.calls.Add(1)
 
 	return c.fakeRegistry.LatestPlugin(ctx, plugin)
 }

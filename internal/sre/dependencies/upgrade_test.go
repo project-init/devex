@@ -3,7 +3,10 @@ package dependencies
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,9 +15,12 @@ import (
 	"testing"
 
 	"github.com/project-init/devex/internal/sre/config"
+	"github.com/project-init/devex/internal/sre/dependencies/bufsync"
 	"github.com/project-init/devex/internal/sre/dependencies/gosync"
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
+	"github.com/project-init/devex/internal/sre/dependencies/misesync"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
+	"github.com/project-init/devex/internal/ui"
 )
 
 type fakeResolver []string
@@ -67,6 +73,11 @@ func (r *recordingRunner) Output(_ context.Context, _ string, _ []string, name s
 	}
 
 	return []byte(out), nil
+}
+
+// testUI writes data, status, and warnings alike to w.
+func testUI(w io.Writer) *ui.UI {
+	return ui.NewWithStreams(nil, w, w, ui.Options{})
 }
 
 func copyTree(t *testing.T, src string) string {
@@ -145,7 +156,7 @@ func TestUpgradeMatchesGoldenTree(t *testing.T) {
 	var out bytes.Buffer
 
 	o := upgradeOptions{goFlag: true, miseFlag: true, bufFlag: true}
-	if err := runUpgrade(context.Background(), &out, o, policyConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&out), o, policyConfig, env); err != nil {
 		t.Fatalf("runUpgrade: %v\n%s", err, out.String())
 	}
 
@@ -168,7 +179,7 @@ func TestUpgradeMiseAloneLeavesGoPut(t *testing.T) {
 	root := copyTree(t, "testdata/upgrade/input")
 	env, run := testEnvironment(root)
 
-	if err := runUpgrade(context.Background(), &bytes.Buffer{}, upgradeOptions{miseFlag: true}, exactConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), upgradeOptions{miseFlag: true}, exactConfig, env); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +195,7 @@ func TestUpgradeStopsOnAnOldMiseBeforeWriting(t *testing.T) {
 	run.outputs["mise --version"] = "2025.12.13 macos-arm64 (2025-12-30)\n"
 
 	o := upgradeOptions{goFlag: true, miseFlag: true}
-	err := runUpgrade(context.Background(), &bytes.Buffer{}, o, policyConfig, env)
+	err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), o, policyConfig, env)
 	if err == nil || !strings.Contains(err.Error(), "mise 2025.12.13 is too old") {
 		t.Fatalf("err = %v, want mise too old", err)
 	}
@@ -199,7 +210,7 @@ func TestUpgradeDryRunWritesNothing(t *testing.T) {
 	env, run := testEnvironment(root)
 	var out bytes.Buffer
 
-	if err := runUpgrade(context.Background(), &out, upgradeOptions{goFlag: true, dryRun: true}, exactConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&out), upgradeOptions{goFlag: true, dryRun: true}, exactConfig, env); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,7 +231,7 @@ func TestUpgradeDryRunShowsMiseAndBufPlans(t *testing.T) {
 	var out bytes.Buffer
 
 	o := upgradeOptions{miseFlag: true, bufFlag: true, dryRun: true}
-	if err := runUpgrade(context.Background(), &out, o, policyConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&out), o, policyConfig, env); err != nil {
 		t.Fatal(err)
 	}
 
@@ -255,7 +266,7 @@ func TestUpgradeRegeneratesEveryTemplateWhenALockMoves(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(dir, "buf.lock"), []byte("version: v2\n"), 0o644)
 	}}
 
-	if err := runUpgrade(context.Background(), &bytes.Buffer{}, upgradeOptions{bufFlag: true}, policyConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), upgradeOptions{bufFlag: true}, policyConfig, env); err != nil {
 		t.Fatal(err)
 	}
 	want := "[.] buf dep update\n[.] buf generate\n[gen] buf generate"
@@ -271,7 +282,7 @@ func TestUpgradeStopsBeforeWritingWhenAPolicyIsWrong(t *testing.T) {
 	cfg.Buf.Policies = map[string]string{"buf.build/protocolbuffers/go": "minor"}
 
 	o := upgradeOptions{goFlag: true, miseFlag: true, bufFlag: true}
-	if err := runUpgrade(context.Background(), &bytes.Buffer{}, o, cfg, env); err == nil || !strings.Contains(err.Error(), "remote plugins take latest or pin") {
+	if err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), o, cfg, env); err == nil || !strings.Contains(err.Error(), "remote plugins take latest or pin") {
 		t.Fatalf("err = %v, want the plugin policy rejected", err)
 	}
 	assertTree(t, root, "testdata/upgrade/input")
@@ -286,13 +297,13 @@ func TestUpgradeWithoutMiseSkipsInstall(t *testing.T) {
 	env.HasMise = false
 	var out bytes.Buffer
 
-	if err := runUpgrade(context.Background(), &out, upgradeOptions{goFlag: true, dryRun: true}, exactConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&out), upgradeOptions{goFlag: true, dryRun: true}, exactConfig, env); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "mise install") {
 		t.Errorf("dry run lists mise install without mise on PATH:\n%s", out.String())
 	}
-	if err := runUpgrade(context.Background(), &out, upgradeOptions{goFlag: true}, exactConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&out), upgradeOptions{goFlag: true}, exactConfig, env); err != nil {
 		t.Fatal(err)
 	}
 	if slices.ContainsFunc(run.calls, func(c string) bool { return strings.Contains(c, "mise install") }) {
@@ -305,7 +316,7 @@ func TestUpgradeStopsBeforeWritingWhenTagMissing(t *testing.T) {
 	env, run := testEnvironment(root)
 	env.Registry = fakeRegistry{}
 
-	err := runUpgrade(context.Background(), &bytes.Buffer{}, upgradeOptions{goFlag: true, miseFlag: true}, exactConfig, env)
+	err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), upgradeOptions{goFlag: true, miseFlag: true}, exactConfig, env)
 	if err == nil || !strings.Contains(err.Error(), "golang:1.26.9-alpine3.24 is not published") {
 		t.Fatalf("err = %v, want the missing tag named", err)
 	}
@@ -317,7 +328,7 @@ func TestUpgradeStopsBeforeWritingWhenTagMissing(t *testing.T) {
 
 func TestCheckPassesOnGoldenAndFailsOnDrift(t *testing.T) {
 	var out bytes.Buffer
-	if err := runCheck(&out, exactConfig, copyTree(t, "testdata/upgrade/golden")); err != nil {
+	if err := runCheck(testUI(&out), exactConfig, copyTree(t, "testdata/upgrade/golden")); err != nil {
 		t.Fatalf("check on golden tree: %v", err)
 	}
 	if !strings.Contains(out.String(), "Go 1.26.9: 4 pins in step") {
@@ -328,7 +339,7 @@ func TestCheckPassesOnGoldenAndFailsOnDrift(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(drifted, "mise.toml"), []byte("[tools]\ngo = \"1.27.1\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := runCheck(&bytes.Buffer{}, exactConfig, drifted); err == nil || !strings.Contains(err.Error(), "drift") {
+	if err := runCheck(testUI(&bytes.Buffer{}), exactConfig, drifted); err == nil || !strings.Contains(err.Error(), "drift") {
 		t.Errorf("err = %v, want drift", err)
 	}
 }
@@ -344,7 +355,7 @@ func TestUpgradeMovesALinkedTagWhereGoGetLeftItsModule(t *testing.T) {
 		_ = os.WriteFile(goMod, []byte("module example.com/app\n\ngo 1.26.9\n\nrequire github.com/acme/protos v1.9.0\n"), 0o644)
 	}}
 
-	if err := runUpgrade(context.Background(), &bytes.Buffer{}, upgradeOptions{goFlag: true, bufFlag: true}, exactConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), upgradeOptions{goFlag: true, bufFlag: true}, exactConfig, env); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "buf.gen.yaml"))
@@ -371,7 +382,7 @@ func TestCheckFailsWhenALinkedTagDriftsFromGoMod(t *testing.T) {
 	if err := os.WriteFile(goMod, append(data, "\nrequire github.com/acme/protos v1.9.1\n"...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := runCheck(&bytes.Buffer{}, exactConfig, root); err == nil || !strings.Contains(err.Error(), "go.mod builds against github.com/acme/protos v1.9.1") {
+	if err := runCheck(testUI(&bytes.Buffer{}), exactConfig, root); err == nil || !strings.Contains(err.Error(), "go.mod builds against github.com/acme/protos v1.9.1") {
 		t.Errorf("err = %v, want the linked tag's drift", err)
 	}
 }
@@ -381,7 +392,7 @@ func TestUpgradeWithoutGoIgnoresGoConfig(t *testing.T) {
 	env, run := testEnvironment(root)
 	badGo := config.DependenciesConfiguration{Go: config.GoDependenciesConfiguration{Target: "nightly"}}
 
-	if err := runUpgrade(context.Background(), &bytes.Buffer{}, upgradeOptions{bufFlag: true}, badGo, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), upgradeOptions{bufFlag: true}, badGo, env); err != nil {
 		t.Fatalf("--buf failed on unrelated Go config: %v", err)
 	}
 	if want := "[.] buf dep update\n[.] buf generate"; strings.Join(run.calls, "\n") != want {
@@ -417,7 +428,7 @@ func TestCheckRejectsAPolicyOnALinkedInput(t *testing.T) {
 	}
 	cfg := exactConfig
 	cfg.Buf.Policies = map[string]string{"https://github.com/acme/protos.git": "pin"}
-	if err := runCheck(&bytes.Buffer{}, cfg, root); err == nil || !strings.Contains(err.Error(), "takes no policy") {
+	if err := runCheck(testUI(&bytes.Buffer{}), cfg, root); err == nil || !strings.Contains(err.Error(), "takes no policy") {
 		t.Errorf("err = %v, want the linked policy rejected", err)
 	}
 }
@@ -434,7 +445,7 @@ func TestUpgradeGoAloneWarnsWhenALinkedTagTrails(t *testing.T) {
 	}}
 
 	var out bytes.Buffer
-	if err := runUpgrade(context.Background(), &out, upgradeOptions{goFlag: true}, exactConfig, env); err != nil {
+	if err := runUpgrade(context.Background(), testUI(&out), upgradeOptions{goFlag: true}, exactConfig, env); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "warning: buf.gen.yaml:4: tag v1.8.2, but go.mod builds against github.com/acme/protos v1.9.0; run upgrade --buf") {
@@ -460,5 +471,146 @@ func TestHeldWarningExplainsEachHold(t *testing.T) {
 		if got := heldWarning(tc.held, target); got != tc.want {
 			t.Errorf("heldWarning(%+v) = %q, want %q", tc.held, got, tc.want)
 		}
+	}
+}
+
+func TestCheckJSONListsEveryProblem(t *testing.T) {
+	// Go drift in mise.toml, a policy on a linked input, and that input's tag off go.mod's version.
+	root := copyTree(t, "testdata/upgrade/golden")
+	if err := os.WriteFile(filepath.Join(root, "mise.toml"), []byte("[tools]\ngo = \"1.27.1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goMod := filepath.Join(root, "go.mod")
+	data, err := os.ReadFile(goMod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goMod, append(data, "\nrequire github.com/acme/protos v1.9.1\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := exactConfig
+	cfg.Buf.Policies = map[string]string{"https://github.com/acme/protos.git": "pin"}
+
+	var out, errOut bytes.Buffer
+	u := ui.NewWithStreams(nil, &out, &errOut, ui.Options{Format: ui.FormatJSON})
+	err = runCheck(u, cfg, root)
+	var report checkReport
+	if jsonErr := json.Unmarshal(out.Bytes(), &report); jsonErr != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", jsonErr, out.String())
+	}
+	checks := map[string]bool{}
+	for _, p := range report.Problems {
+		checks[p.Check] = true
+	}
+	for _, want := range []string{"go version drift: toolchain pins disagree", "linked buf.gen input takes a policy", "buf.gen git input out of step with go.mod"} {
+		if !checks[want] {
+			t.Errorf("problems lack %q: %+v", want, report.Problems)
+		}
+	}
+	if report.Go != nil || err == nil || !strings.Contains(err.Error(), "dependency problems") {
+		t.Errorf("go = %+v, err = %v; want no agreed version and a failing exit", report.Go, err)
+	}
+}
+
+func TestCheckJSONOnAHealthyTree(t *testing.T) {
+	var out bytes.Buffer
+	u := ui.NewWithStreams(nil, &out, &bytes.Buffer{}, ui.Options{Format: ui.FormatJSON})
+	if err := runCheck(u, exactConfig, copyTree(t, "testdata/upgrade/golden")); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, `"problems": []`) || !strings.Contains(got, `"version": "1.26.9"`) {
+		t.Errorf("stdout = %s, want an empty problem list and the agreed version", got)
+	}
+}
+
+func TestDryRunJSONIsThePlan(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/input")
+	env, run := testEnvironment(root)
+	var out bytes.Buffer
+	u := ui.NewWithStreams(nil, &out, &bytes.Buffer{}, ui.Options{Format: ui.FormatJSON})
+	o := upgradeOptions{goFlag: true, miseFlag: true, bufFlag: true, dryRun: true}
+	if err := runUpgrade(context.Background(), u, o, policyConfig, env); err != nil {
+		t.Fatal(err)
+	}
+	var doc planJSON
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out.String())
+	}
+	if doc.Go == nil || doc.Go.Current != "1.26.6" || doc.Go.Target != "1.26.9" || len(doc.Go.Changes) == 0 {
+		t.Errorf("go = %+v, want 1.26.6 → 1.26.9 with changes", doc.Go)
+	}
+	if doc.Mise == nil || len(doc.Mise.Commands) != 2 || doc.Buf == nil || len(doc.Buf.Templates) == 0 {
+		t.Errorf("mise = %+v, buf = %+v; want the capped and bump commands and the templates", doc.Mise, doc.Buf)
+	}
+	if len(run.calls) != 0 {
+		t.Errorf("dry run ran %q", run.calls)
+	}
+}
+
+func TestPlanWarningsGoToStderrInEcosystemOrder(t *testing.T) {
+	var out, errOut bytes.Buffer
+	p := plans{mise: misesync.Plan{Warnings: []string{"mise warns"}}, buf: bufsync.Plan{Warnings: []string{"buf warns"}}}
+	p.goPlan.Warnings = []string{"go warns"}
+	printWarnings(ui.NewWithStreams(nil, &out, &errOut, ui.Options{}), p.warnings())
+	if out.Len() != 0 || errOut.String() != "warning: go warns\nwarning: mise warns\nwarning: buf warns\n" {
+		t.Errorf("stdout %q, stderr %q; want the warnings on stderr, go then mise then buf", out.String(), errOut.String())
+	}
+}
+
+// failingResolver stands in for go.dev being down.
+type failingResolver struct{}
+
+func (failingResolver) Releases(context.Context) ([]goversion.Version, error) {
+	return nil, errors.New("go.dev is down")
+}
+
+func TestPlanReportsTheFirstEcosystemsFailure(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/input")
+	env, run := testEnvironment(root)
+	env.Resolver = failingResolver{}
+	delete(run.outputs, "mise --version") // mise fails too
+	err := runUpgrade(context.Background(), testUI(&bytes.Buffer{}), upgradeOptions{goFlag: true, miseFlag: true, dryRun: true}, policyConfig, env)
+	if err == nil || !strings.Contains(err.Error(), "go.dev is down") {
+		t.Errorf("err = %v, want go's failure, reported before mise's", err)
+	}
+}
+
+func TestCheckPrintsWarningsBeforeALinkFailure(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/golden")
+	// An alias the finders cannot read warns; an unreadable buf.gen.yaml fails the link check,
+	// which alone reads it.
+	if err := os.WriteFile(filepath.Join(root, ".mise.toml"), []byte("[tools]\ngolang = \"1.26.9\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, "buf.gen.yaml"), 0); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := runCheck(testUI(&out), exactConfig, root)
+	if err == nil || !strings.Contains(out.String(), "warning: .mise.toml") {
+		t.Errorf("err = %v, output %q; want the failure and the warning found before it", err, out.String())
+	}
+}
+
+func TestCheckJSONReportsALinkFailureAlongsideGoProblems(t *testing.T) {
+	root := copyTree(t, "testdata/upgrade/golden")
+	if err := os.WriteFile(filepath.Join(root, "mise.toml"), []byte("[tools]\ngo = \"1.27.1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, "buf.gen.yaml"), 0); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := runCheck(ui.NewWithStreams(nil, &out, &bytes.Buffer{}, ui.Options{Format: ui.FormatJSON}), exactConfig, root)
+	var report checkReport
+	if jsonErr := json.Unmarshal(out.Bytes(), &report); jsonErr != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", jsonErr, out.String())
+	}
+	checks := map[string]bool{}
+	for _, p := range report.Problems {
+		checks[p.Check] = true
+	}
+	if !checks["read buf.gen inputs"] || !checks["go version drift: toolchain pins disagree"] || err == nil {
+		t.Errorf("problems = %+v, err = %v; want the link failure beside the Go drift", report.Problems, err)
 	}
 }
