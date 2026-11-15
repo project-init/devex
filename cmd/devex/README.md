@@ -504,8 +504,10 @@ Generate component skeleton code from YAML configuration files. Currently focuse
 **Usage:**
 
 ```shell
-devex components <configuration_file_path>
+devex components <configuration_file_path> [--dry-run] [--force]
 ```
+
+`components` renders every template before it writes anything, so a template error leaves no partial file. It then lists each file with its action, `create`, `overwrite`, or `skip`, and a summary. It skips files a team edits, such as `structure.sql`, the init SQL, the seed data, and `sqlc.yaml`, when they exist; `--force` overwrites them. `--dry-run` lists the same actions and writes nothing, and `--output json` prints them as JSON. It writes shell scripts as executable.
 
 **Example:**
 
@@ -523,6 +525,8 @@ db:
 ```
 
 See [example_config.yaml](components/example_config.yaml) for a complete example.
+
+`db.schemaName` is required. The templates use it unquoted in SQL and in role names, so it must be a lowercase PostgreSQL identifier (letters, digits, and underscores, starting with a letter or underscore), at most 34 characters, not a reserved word, not a schema or database every cluster already has (`public`, `postgres`, and the like), and free of the `pg_` prefix. An unknown configuration key fails.
 
 **DB Components:**
 
