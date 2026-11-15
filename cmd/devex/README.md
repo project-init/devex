@@ -27,7 +27,9 @@ The `devex` CLI provides a unified interface for all developer experience tools:
 devex <subcommand> [options]
 ```
 
-Run `devex --help` to see all available subcommands, or `devex <subcommand> --help` for detailed help on a specific command.
+Run `devex --help` to see all available subcommands, or `devex <subcommand> --help` for detailed help on a specific command. Run `devex version` or `devex --version` to print the installed version.
+
+Press Ctrl-C to cancel a running command; press it again to terminate devex immediately.
 
 ---
 
@@ -94,7 +96,7 @@ devex sre <tool> [args]
 
 **Configuration:**
 
-Create a `.sre` directory in your project root to store configuration files. The tool looks for this directory by default, but you can override it with the `--configDir` flag.
+Create a `.sre` directory in your project root to store configuration files. The tool looks for this directory by default, but you can override it with the `--config-dir` flag (`--configDir` still works). devex merges every `*.yaml` file in the directory and rejects unknown keys, naming the file. It skips files with a top-level `targets` key, which hold `devex discovery` configuration.
 
 **Additional Dependencies:**
 

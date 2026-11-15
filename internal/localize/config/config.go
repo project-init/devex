@@ -2,11 +2,8 @@ package config
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"sort"
 
-	"gopkg.in/yaml.v3"
+	"github.com/project-init/devex/internal/configdir"
 )
 
 type Configuration struct {
@@ -64,18 +61,9 @@ func GetConfig(ctx context.Context) (*Configuration, bool) {
 }
 
 func LoadConfig(configDirPath string) (*Configuration, error) {
-	files, _ := filepath.Glob(filepath.Join(configDirPath, "*.yaml"))
-	sort.Strings(files)
-
 	var config Configuration
-	for _, f := range files {
-		bytes, err := os.ReadFile(f)
-		if err != nil {
-			return nil, err
-		}
-		if err = yaml.Unmarshal(bytes, &config); err != nil {
-			return nil, err
-		}
+	if err := configdir.Load(configDirPath, &config); err != nil {
+		return nil, err
 	}
 	return &config, nil
 }

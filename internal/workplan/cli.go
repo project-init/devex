@@ -1,7 +1,6 @@
 package workplan
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -51,7 +50,7 @@ func publishCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return PublishWorkPlanToJira(context.Background(), args[0])
+			return PublishWorkPlanToJira(cmd.Context(), args[0])
 		},
 	}
 }

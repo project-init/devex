@@ -12,8 +12,8 @@ This file applies to work under `internal/sre`.
 ## Configuration
 
 - SRE config is loaded once by `PersistentPreRunE` in `internal/sre/cli.go`.
-- The config directory defaults to `.sre` and can be overridden with `--configDir`.
-- `config.LoadConfig` reads sorted `*.yaml` files from the config directory and unmarshals them into one `config.Configuration`.
+- The config directory defaults to `.sre` and can be overridden with `--config-dir` (alias `--configDir`).
+- `config.LoadConfig` strictly decodes the sorted `*.yaml` files in the config directory, except discovery files (top-level `targets`), into one `config.Configuration`. An unknown key fails with the file name.
 - Add new config structs under `internal/sre/config`, expose them from `Configuration`, and use explicit `yaml` tags.
 - Commands should read configuration with `config.GetConfig(cmd.Context())`; avoid reloading the config directory inside subcommands.
 - Keep example files under `.sre/` aligned with new or changed configuration fields.

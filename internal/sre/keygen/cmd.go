@@ -11,9 +11,10 @@ import (
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "keygen",
-		Short: "Print an API Key based on the sre configuration file.",
-		Args:  cobra.NoArgs,
+		Use:         "keygen",
+		Short:       "Print an API Key based on the sre configuration file.",
+		Args:        cobra.NoArgs,
+		Annotations: map[string]string{config.OptionalAnnotation: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			length := 32
 			cfg, _ := config.GetConfig(cmd.Context())

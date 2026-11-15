@@ -11,10 +11,10 @@ import (
 	"github.com/project-init/gommon/pkg/postgres"
 )
 
-func loadPGAccessEnvironment(environmentConfig config.PostgresEnvironmentConfig) (*config.PsqlConfig, error) {
+func loadPGAccessEnvironment(ctx context.Context, environmentConfig config.PostgresEnvironmentConfig) (*config.PsqlConfig, error) {
 	fmt.Printf("Logging in to %s as %s via psql.\n", environmentConfig.Host, environmentConfig.UserName)
 
-	password, err := getPassword(environmentConfig)
+	password, err := getPassword(ctx, environmentConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func resolveEnvPassword(password string) (string, error) {
 	return password, nil
 }
 
-func getPassword(environmentConfig config.PostgresEnvironmentConfig) (string, error) {
+func getPassword(ctx context.Context, environmentConfig config.PostgresEnvironmentConfig) (string, error) {
 	if environmentConfig.Password != nil {
 		return resolveEnvPassword(*environmentConfig.Password)
 	}
@@ -50,7 +50,7 @@ func getPassword(environmentConfig config.PostgresEnvironmentConfig) (string, er
 		return "", fmt.Errorf("require password or use of iam rds connect")
 	}
 
-	return postgres.BuildAuthToken(context.Background(), postgres.ConnectionConfig{
+	return postgres.BuildAuthToken(ctx, postgres.ConnectionConfig{
 		Host:     environmentConfig.Host,
 		Port:     "5432",
 		User:     environmentConfig.UserName,

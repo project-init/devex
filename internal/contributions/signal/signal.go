@@ -29,6 +29,5 @@ func Run(cfg *config.Config) error {
 		return err
 	}
 
-	getRepoSignal(cfg, allPrs)
-	return nil
+	return getRepoSignal(cfg, allPrs)
 }

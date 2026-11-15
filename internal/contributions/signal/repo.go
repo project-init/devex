@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"log"
 	"math"
 	"sort"
 	"strings"
@@ -10,17 +9,14 @@ import (
 	"github.com/project-init/devex/internal/contributions/types"
 )
 
-func getRepoSignal(cfg *config.Config, prs []types.PR) {
+func getRepoSignal(cfg *config.Config, prs []types.PR) error {
 	signalMapRepos := getRepoGHSignal(prs)
 	sortedRepos := sortByRepoSignal(signalMapRepos)
 	repoSignals := make([]*types.RepoSignal, len(sortedRepos))
 	for index, repo := range sortedRepos {
 		repoSignals[index] = signalMapRepos[repo]
 	}
-	err := signalsToCSVRepos(repoSignals, cfg)
-	if err != nil {
-		log.Fatal(err)
-	}
+	return signalsToCSVRepos(repoSignals, cfg)
 }
 
 func sortByRepoSignal(signalMap map[string]*types.RepoSignal) []string {

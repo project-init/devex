@@ -22,7 +22,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	repos, err := github.GetRepos(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	log.Printf("Collecting from %d repositories:\n", len(repos))
