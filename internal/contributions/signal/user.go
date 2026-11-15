@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -10,10 +9,10 @@ import (
 	"github.com/project-init/devex/internal/contributions/types"
 )
 
-func getUserSignal(cfg *config.Config, prs []types.PR) error {
+func getUserSignal(cfg *config.Config, prs []types.PR) (string, error) {
 	signalMap, err := getUserGHSignal(cfg, prs)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	sortedUsers := sortByUserSignal(signalMap)
@@ -21,11 +20,7 @@ func getUserSignal(cfg *config.Config, prs []types.PR) error {
 	for index, user := range sortedUsers {
 		userSignals[index] = signalMap[user]
 	}
-	err = signalsToCSVUsers(userSignals, cfg)
-	if err != nil {
-		return err
-	}
-	return nil
+	return writeSignals(cfg, "user", userSignals)
 }
 
 func sortByUserSignal(signalMap map[string]*types.UserSignal) []string {
@@ -55,27 +50,22 @@ func getUserGHSignal(cfg *config.Config, prs []types.PR) (map[string]*types.User
 
 		reviewerPlusStates := strings.Split(pr.Reviews, "!")
 		for _, reviewerPlusState := range reviewerPlusStates {
-			reviewer := strings.Split(reviewerPlusState, ":")[0]
+			reviewer := reviewerOf(reviewerPlusState)
 			if _, found := signalMap[reviewer]; !found {
 				signalMap[reviewer] = &types.UserSignal{User: reviewer}
 			}
 			reviewerSignal := signalMap[reviewer]
 			reviewerSignal.NumReviews++
-			if isBot(pr.Author) {
-				reviewerSignal.WeightedReviews += 0.01
-			} else {
-				reviewerSignal.WeightedReviews += 0.20
-			}
+			reviewerSignal.WeightedReviews += reviewWeight(reviewer)
 		}
 	}
 
 	// Set the weighted total after everything is done.
 	for _, signal := range signalMap {
 		modifier, found := weightModifierByAuthor[signal.User]
-		if !found && !strings.Contains(signal.User, "[bot]") {
-			// Most likely the user only reviewed content in this repo so give them a base level modifier.
+		if !found && !isBot(signal.User) {
+			// The user most likely only reviewed in this window, so give them a base modifier.
 			modifier = 0.75
-			fmt.Printf("user signal (%s) weight modifier not found, using %2f\n", signal.User, modifier)
 		}
 		signal.WeightedDistributionModifier = modifier
 		signal.WeightedTotal = signal.WeightedPRs + signal.WeightedReviews
