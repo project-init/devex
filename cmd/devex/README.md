@@ -183,7 +183,7 @@ it. A git input whose repository a `go.mod` requires follows that module's versi
 devex sre dependencies upgrade --go
 
 # Upgrade the ecosystems listed in dependencies.upgrade, printing the plan without writing.
-devex sre dependencies upgrade --all --show-commands
+devex sre dependencies upgrade --all --dry-run
 
 # Fail when Go pins disagree; run in pull request CI.
 devex sre dependencies check

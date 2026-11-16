@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var (
@@ -40,10 +41,18 @@ var manifestTypes = strings.Join([]string{
 
 var challengeParam = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
-// Client resolves image tags against their registries.
+// Client resolves image tags against their registries. It is safe for concurrent use.
 type Client struct {
 	// HTTP is the client used for every request. Nil uses http.DefaultClient.
 	HTTP *http.Client
+	// tokens holds a pull token per repository; nil fetches one for every tag.
+	tokens *tokenCache
+}
+
+// NewClient returns a Client that reuses each repository's pull token across tags, so checking
+// five tags of one image costs 7 requests rather than 15.
+func NewClient(httpClient *http.Client) Client {
+	return Client{HTTP: httpClient, tokens: &tokenCache{entries: map[string]*tokenEntry{}}}
 }
 
 // Digest returns the manifest digest of image:tag. It returns ErrNotFound when the registry
@@ -52,20 +61,10 @@ func (c Client) Digest(ctx context.Context, image, tag string) (string, error) {
 	host, repo := parseImage(image)
 	manifest := fmt.Sprintf("https://%s/v2/%s/manifests/%s", host, repo, url.PathEscape(tag))
 
-	var token string
-	resp, err := c.head(ctx, manifest, token)
+	resp, token, err := c.authorizedHead(ctx, manifest, host+"/"+repo, repo)
 	if err != nil {
 		return "", err
 	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		if token, err = c.token(ctx, resp.Header.Get("WWW-Authenticate"), repo); err != nil {
-			return "", err
-		}
-		if resp, err = c.head(ctx, manifest, token); err != nil {
-			return "", err
-		}
-	}
-
 	switch resp.StatusCode {
 	case http.StatusOK:
 		if digest := resp.Header.Get("Docker-Content-Digest"); digest != "" {
@@ -80,6 +79,62 @@ func (c Client) Digest(ctx context.Context, image, tag string) (string, error) {
 	default:
 		return "", fmt.Errorf("%s:%s: registry returned %s", image, tag, resp.Status)
 	}
+}
+
+// authorizedHead requests manifest with the repository's cached token, fetching or renewing the
+// token when the registry refuses it. The first lookup in a repository holds the repository's
+// entry until it learns whether the registry wants a token, so concurrent lookups share its one
+// token fetch instead of each making their own.
+func (c Client) authorizedHead(ctx context.Context, manifest, key, repo string) (*http.Response, string, error) {
+	e := c.tokens.entry(key)
+	e.mu.Lock()
+	first, token := !e.probed, e.token
+	if !first {
+		e.mu.Unlock()
+	}
+	resp, err := c.head(ctx, manifest, token)
+	if err != nil || resp.StatusCode != http.StatusUnauthorized {
+		if first {
+			e.probed = err == nil // the registry serves this repository without a token
+			e.mu.Unlock()
+		}
+		return resp, token, err
+	}
+
+	if !first {
+		e.mu.Lock()
+	}
+	if first || e.token == token {
+		// Nobody renewed the refused token while this lookup waited, so fetch one, unless the
+		// registry already refused this repository anonymous access.
+		if e.denied {
+			err = ErrAuthRequired
+		} else if token, err = c.token(ctx, resp.Header.Get("WWW-Authenticate"), repo); err == nil {
+			e.token = token
+		}
+		// A refusal holds for the rest of the run; an outage or a network error leaves the next
+		// lookup to retry.
+		if err == nil || errors.Is(err, ErrAuthRequired) {
+			e.probed, e.denied = true, err != nil
+		}
+	} else {
+		token = e.token
+	}
+	e.mu.Unlock()
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err = c.head(ctx, manifest, token)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		// The registry grants anonymous tokens but refuses this repository with one, as Docker
+		// Hub does for a private image, so later lookups need not fetch another.
+		e.mu.Lock()
+		if e.token == token {
+			e.denied = true
+		}
+		e.mu.Unlock()
+	}
+	return resp, token, err
 }
 
 func (c Client) head(ctx context.Context, manifest, token string) (*http.Response, error) {
@@ -140,8 +195,13 @@ func (c Client) token(ctx context.Context, challenge, repo string) (string, erro
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return "", ErrAuthRequired
+	default:
+		// An outage, such as a 503, fails like a manifest request would, rather than as a refusal.
+		return "", fmt.Errorf("fetch registry token: registry returned %s", resp.Status)
 	}
 	var body struct {
 		Token       string `json:"token"`
@@ -198,4 +258,33 @@ func parseImage(image string) (host, repo string) {
 	}
 
 	return host, repo
+}
+
+// tokenCache holds one anonymous pull token per registry host and repository.
+type tokenCache struct {
+	mu      sync.Mutex
+	entries map[string]*tokenEntry
+}
+
+// entry returns key's entry. A nil cache, as in a zero Client, returns a fresh entry each time,
+// so every lookup fetches its own token.
+func (c *tokenCache) entry(key string) *tokenEntry {
+	if c == nil {
+		return &tokenEntry{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[key]
+	if !ok {
+		e = &tokenEntry{}
+		c.entries[key] = e
+	}
+	return e
+}
+
+type tokenEntry struct {
+	mu     sync.Mutex
+	token  string
+	probed bool // a lookup learned whether the registry wants a token, and fetched it if so
+	denied bool // the registry refused this repository a token
 }

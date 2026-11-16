@@ -1,6 +1,7 @@
 package gosync
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -38,9 +40,11 @@ var releases = fakeResolver{"1.27.1", "1.27.0", "1.26.9", "1.26.6"}
 type fakeRegistry struct {
 	digests map[string]string
 	err     error
+	lookups atomic.Int32
 }
 
 func (f *fakeRegistry) Digest(_ context.Context, image, tag string) (string, error) {
+	f.lookups.Add(1)
 	if d, ok := f.digests[image+":"+tag]; ok {
 		return d, nil
 	}
@@ -1037,5 +1041,111 @@ func TestExecRunnerStopsWaitingOnALeftoverChild(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 4*time.Second {
 		t.Errorf("took %s, waiting on the leftover sleep", elapsed)
+	}
+}
+
+// splitResolver serves a supported-lines feed and the full one, counting full fetches.
+type splitResolver struct {
+	supported fakeResolver
+	all       fakeResolver
+	fullReads *int
+}
+
+func (r splitResolver) Releases(ctx context.Context) ([]goversion.Version, error) {
+	*r.fullReads++
+	return r.all.Releases(ctx)
+}
+
+func (r splitResolver) Supported(ctx context.Context) ([]goversion.Version, error) {
+	return r.supported.Releases(ctx)
+}
+
+func TestPlanReadsTheSmallFeedWhenItCoversThePlan(t *testing.T) {
+	tree := map[string]string{"go.mod": appTree, "mise.toml": "[tools]\ngo = \"1.26.6\"\n"}
+	override, _ := goversion.Parse("1.26.6") // an older patch, off the small feed
+	cases := []struct {
+		name      string
+		cfg       config.GoDependenciesConfiguration
+		override  *goversion.Version
+		supported fakeResolver
+		fullReads int
+		target    string
+	}{
+		{name: "patch on a supported line", cfg: config.GoDependenciesConfiguration{Directive: DirectiveExact}, supported: fakeResolver{"1.27.1", "1.26.9"}, target: "1.26.9"},
+		{name: "latest", cfg: config.GoDependenciesConfiguration{Target: TargetLatest, Directive: DirectiveExact}, supported: fakeResolver{"1.27.1", "1.26.9"}, target: "1.27.1"},
+		{name: "patch on a retired line", cfg: config.GoDependenciesConfiguration{Directive: DirectiveExact}, supported: fakeResolver{"1.28.0", "1.27.1"}, fullReads: 1, target: "1.26.9"},
+		{name: "override off the feed", cfg: config.GoDependenciesConfiguration{Directive: DirectiveExact}, override: &override, supported: fakeResolver{"1.27.1", "1.26.9"}, fullReads: 1, target: "1.26.6"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reads := 0
+			resolver := splitResolver{supported: tc.supported, all: fakeResolver{"1.28.0", "1.27.1", "1.26.9", "1.26.6"}, fullReads: &reads}
+			planner := Planner{Settings: settings(t, writeTree(t, tree), tc.cfg), Resolver: resolver, Registry: &fakeRegistry{}, Override: tc.override}
+			plan, err := planner.Plan(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.Target.String() != tc.target || reads != tc.fullReads {
+				t.Errorf("target %s after %d full reads, want %s after %d", plan.Target, reads, tc.target, tc.fullReads)
+			}
+		})
+	}
+}
+
+func TestPlanLooksUpOnlyTagsItMustVerify(t *testing.T) {
+	trees := map[string]map[string]string{
+		"an undigested tag already on target": {
+			"go.mod": appTree, "mise.toml": "[tools]\ngo = \"1.26.9\"\n",
+			"docker/api/Dockerfile": "FROM golang:1.26.9-alpine3.24\n",
+		},
+		"a registry from a build arg": {
+			"go.mod": appTree, "mise.toml": "[tools]\ngo = \"1.26.6\"\n",
+			"docker/web/Dockerfile": "ARG REGISTRY\nFROM ${REGISTRY}/golang:1.26.6-alpine3.24\n",
+		},
+	}
+	for name, tree := range trees {
+		t.Run(name, func(t *testing.T) {
+			reg := &fakeRegistry{}
+			planner := Planner{Settings: settings(t, writeTree(t, tree), config.GoDependenciesConfiguration{Directive: DirectiveExact}), Resolver: releases, Registry: reg}
+			if _, err := planner.Plan(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if got := reg.lookups.Load(); got != 0 {
+				t.Errorf("registry lookups = %d, want none", got)
+			}
+		})
+	}
+}
+
+func TestExecRunnerOutputKeepsStderrOffTheTerminal(t *testing.T) {
+	var terminal bytes.Buffer
+	run := ExecRunner{Stdout: &bytes.Buffer{}, Stderr: &terminal}
+	out, err := run.Output(context.Background(), t.TempDir(), nil, "sh", "-c", "echo warn >&2; echo out")
+	if err != nil || string(out) != "out\n" || terminal.Len() != 0 {
+		t.Errorf("Output() = %q, %v, terminal %q; want stdout captured and stderr kept off the terminal", out, err, terminal.String())
+	}
+	if err := run.Run(context.Background(), t.TempDir(), nil, "sh", "-c", "echo warn >&2"); err != nil || terminal.String() != "warn\n" {
+		t.Errorf("Run() = %v, terminal %q; want an upgrade command's stderr streamed", err, terminal.String())
+	}
+	// The message comes from the environment, so only stderr can carry it into the error.
+	_, err = run.Output(context.Background(), t.TempDir(), []string{"MSG=config is not trusted", "HINT=run mise trust"}, "sh", "-c", `echo "$MSG" >&2; echo "$HINT" >&2; exit 3`)
+	if err == nil || !strings.HasSuffix(err.Error(), "(stderr: config is not trusted run mise trust)") {
+		t.Errorf("Output() error = %v, want the command's stderr folded into one clause", err)
+	}
+}
+
+// failingSupported fails the small feed, as a go.dev blip on that URL alone would.
+type failingSupported struct{ fakeResolver }
+
+func (failingSupported) Supported(context.Context) ([]goversion.Version, error) {
+	return nil, errors.New("go.dev returned 502")
+}
+
+func TestPlanFallsBackToTheFullFeedWhenTheSmallOneFails(t *testing.T) {
+	root := writeTree(t, map[string]string{"go.mod": appTree, "mise.toml": "[tools]\ngo = \"1.26.6\"\n"})
+	planner := Planner{Settings: settings(t, root, config.GoDependenciesConfiguration{Directive: DirectiveExact}), Resolver: failingSupported{releases}, Registry: &fakeRegistry{}}
+	plan, err := planner.Plan(context.Background())
+	if err != nil || plan.Target.String() != "1.26.9" {
+		t.Errorf("Plan() = %s, %v; want 1.26.9 from the full feed", plan.Target, err)
 	}
 }

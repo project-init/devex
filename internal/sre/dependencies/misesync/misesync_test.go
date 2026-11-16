@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
@@ -18,7 +19,9 @@ import (
 type fakeRunner struct {
 	configs []string
 	latest  map[string]string
-	calls   int
+
+	mu    sync.Mutex // mise latest queries run concurrently
+	calls int
 }
 
 func (f *fakeRunner) Output(_ context.Context, _ string, _ []string, name string, args ...string) ([]byte, error) {
@@ -31,7 +34,9 @@ func (f *fakeRunner) Output(_ context.Context, _ string, _ []string, name string
 
 		return json.Marshal(listed)
 	case strings.HasPrefix(command, "mise latest "):
+		f.mu.Lock()
 		f.calls++
+		f.mu.Unlock()
 		v, ok := f.latest[args[1]]
 		if !ok {
 			return nil, fmt.Errorf("unexpected query %s", args[1])
@@ -138,7 +143,7 @@ func TestPlanWarnsWhenAPolicyCannotCap(t *testing.T) {
 }
 
 func TestPlanKeepsBroadPinsPinned(t *testing.T) {
-	p, _ := planner(t, map[string]string{"mise.toml": "[tools]\nnode = \"26\"\nruby = \"4.0\"\n"}, []string{"mise.toml"}, map[string]string{"node": "patch", "ruby": "patch"}, nil)
+	p, run := planner(t, map[string]string{"mise.toml": "[tools]\nnode = \"26\"\nruby = \"4.0\"\n"}, []string{"mise.toml"}, map[string]string{"node": "patch", "ruby": "patch"}, nil)
 	plan, err := p.Plan(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -151,6 +156,9 @@ func TestPlanKeepsBroadPinsPinned(t *testing.T) {
 	}
 	if want := []string{"go", "node", "ruby"}; !slices.Equal(plan.Exclude, want) {
 		t.Errorf("exclude = %q, want %q", plan.Exclude, want)
+	}
+	if run.calls != 0 {
+		t.Errorf("mise latest calls = %d, want none: neither pin needs a lookup", run.calls)
 	}
 }
 
@@ -196,13 +204,16 @@ func TestPlanLeavesAToolUncappedWhenAnyConfigCannotCapIt(t *testing.T) {
 		"mise.toml":    "[tools]\nnode = \"26.8.2\"\n",
 		"mise.ci.toml": "[tools]\nnode = \"26\"\n",
 	}
-	p, _ := planner(t, files, []string{"mise.toml", "mise.ci.toml"}, map[string]string{"node": "patch"}, map[string]string{"node@26.8": "26.8.5"})
+	p, run := planner(t, files, []string{"mise.toml", "mise.ci.toml"}, map[string]string{"node": "patch"}, map[string]string{"node@26.8": "26.8.5"})
 	plan, err := p.Plan(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if plan.CapCommand() != nil || len(plan.Changes) != 0 {
 		t.Errorf("CapCommand = %q, changes = %v; want neither while mise.ci.toml's node = 26 spans minors", plan.CapCommand(), plan.Changes)
+	}
+	if run.calls != 0 {
+		t.Errorf("mise latest calls = %d, want none for a tool that stays uncapped", run.calls)
 	}
 }
 
