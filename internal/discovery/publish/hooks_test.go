@@ -10,6 +10,7 @@ import (
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/provider"
 	"github.com/project-init/devex/internal/discovery/templates"
+	"github.com/project-init/devex/internal/strictyaml"
 )
 
 // writePlan writes a plan of operations for a fresh bundle and returns its path.
@@ -177,5 +178,15 @@ func TestArchiveNameStaysInTheArchive(t *testing.T) {
 	}
 	if filepath.Dir(archived) != filepath.Join(filepath.Dir(planPath), "archive") {
 		t.Errorf("archived to %s, want inside the archive directory", archived)
+	}
+}
+
+func TestLoadReceiptReportsAnEmptyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "receipt.yaml")
+	if err := os.WriteFile(path, []byte("# nothing yet\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadReceipt(path); !errors.Is(err, strictyaml.ErrEmpty) {
+		t.Errorf("LoadReceipt(empty) error = %v, want ErrEmpty", err)
 	}
 }

@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+
+	"github.com/project-init/devex/internal/atomicfile"
 )
 
 // Document edits a catalog file without disturbing what it doesn't change: every entry keeps its
@@ -97,27 +98,7 @@ func (d *Document) Save(path string) error {
 		out.WriteByte('\n')
 	}
 
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".catalog-*.json")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(temp.Name()) }()
-	if err := temp.Chmod(mode); err != nil {
-		_ = temp.Close()
-		return err
-	}
-	if _, err := temp.Write(out.Bytes()); err != nil {
-		_ = temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), path)
+	return atomicfile.Write(path, out.Bytes())
 }
 
 // field is one key and its raw JSON value, kept in file order.

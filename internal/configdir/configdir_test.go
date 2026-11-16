@@ -60,6 +60,7 @@ func TestLoadRejectsUnknownKeyNamingFile(t *testing.T) {
 func TestLoadSkipsFilesOwnedByOtherTools(t *testing.T) {
 	dir := writeFiles(t, map[string]string{
 		"jira-targets.yaml": "default_target: jira\ntargets:\n  jira: {}\n",
+		"github.yaml":       "---\n# discovery targets\n---\ntargets:\n  github: {}\n",
 		"keygen.yaml":       "keygen:\n  length: 24\n",
 	})
 	var cfg testConfig
@@ -68,6 +69,15 @@ func TestLoadSkipsFilesOwnedByOtherTools(t *testing.T) {
 	}
 	if cfg.Keygen.Length != 24 {
 		t.Errorf("Keygen.Length = %d, want 24", cfg.Keygen.Length)
+	}
+}
+
+func TestLoadRejectsAStrayForeignDocumentInsteadOfSkippingTheFile(t *testing.T) {
+	// A discovery block pasted after the release settings must not hide those settings.
+	dir := writeFiles(t, map[string]string{"release.yaml": "release:\n  allowMajor: true\n---\ntargets: {}\n"})
+	var cfg testConfig
+	if err := Load(dir, &cfg, "targets"); err == nil || !strings.Contains(err.Error(), "more than one YAML document") {
+		t.Errorf("Load() error = %v, want the multiple-document error", err)
 	}
 }
 

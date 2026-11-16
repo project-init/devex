@@ -1,10 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/project-init/devex/internal/strictyaml"
 )
 
 type OutputDirectories struct {
@@ -28,8 +29,8 @@ func NewConfigFromYaml(configFile string) (*Config, error) {
 	}
 
 	var config Config
-	if err = yaml.Unmarshal(bytes, &config); err != nil {
-		return nil, err
+	if err = strictyaml.Decode(bytes, &config); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", configFile, err)
 	}
 
 	return &config, nil

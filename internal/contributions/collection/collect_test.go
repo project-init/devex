@@ -3,7 +3,6 @@ package collection
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -91,85 +90,15 @@ func TestCollectResumesAfterTheLastMerge(t *testing.T) {
 	}
 }
 
-func TestWritePrsKeepsTheFilesMode(t *testing.T) {
-	dir := t.TempDir()
-	prs := []types.PR{{Author: "octocat", Repo: "devex", Number: 1}}
-	fresh, private := filepath.Join(dir, "devex.csv"), filepath.Join(dir, "secret.csv")
-	if err := os.WriteFile(private, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// os.Create applies the umask, so a file it makes shows the mode a new CSV should get.
-	reference, err := os.Create(filepath.Join(t.TempDir(), "reference"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	referenceInfo, err := reference.Stat()
-	_ = reference.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for path, want := range map[string]os.FileMode{fresh: referenceInfo.Mode().Perm(), private: 0o600} {
-		if err := writePrs(path, prs); err != nil {
-			t.Fatal(err)
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Mode().Perm() != want {
-			t.Errorf("%s mode = %v, want %v", filepath.Base(path), info.Mode().Perm(), want)
-		}
-	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 2 {
-		t.Errorf("directory holds %d entries, want no temporary file left", len(entries))
-	}
-}
-
 func TestGetExistingPRsSkipsALeftoverTemporaryFile(t *testing.T) {
 	dir := t.TempDir()
-	leftover := filepath.Join(dir, ".devex.csv.123"+tempSuffix)
+	leftover := filepath.Join(dir, ".devex.csv.123-1.tmp") // atomicfile's temporary name
 	if err := os.WriteFile(leftover, []byte("half a csv"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	prs, err := GetExistingPRs(&config.Config{OutputDirectories: config.OutputDirectories{Prs: dir}})
 	if err != nil || len(prs) != 0 {
 		t.Errorf("GetExistingPRs() = %v, %v; want the leftover ignored", prs, err)
-	}
-}
-
-func TestWritePrsReplacesAKilledRunsTemporaryFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "devex.csv")
-	leftover := filepath.Join(filepath.Dir(path), fmt.Sprintf(".devex.csv.%d%s", os.Getpid(), tempSuffix))
-	if err := os.WriteFile(leftover, []byte("half a csv"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := writePrs(path, []types.PR{{Author: "octocat", Repo: "devex", Number: 1}}); err != nil {
-		t.Errorf("writePrs() = %v, want the leftover replaced", err)
-	}
-}
-
-func TestWritePrsStopsWhenItCannotReadTheFilesMode(t *testing.T) {
-	// A symlink to itself fails os.Stat with something other than "not exist".
-	path := filepath.Join(t.TempDir(), "devex.csv")
-	if err := os.Symlink("devex.csv", path); err != nil {
-		t.Skip(err)
-	}
-	if err := writePrs(path, []types.PR{{Author: "octocat", Repo: "devex", Number: 1}}); err == nil {
-		t.Error("writePrs() = nil, want the stat error rather than a file of unknown mode")
-	}
-}
-
-func TestWritePrsLeavesAnotherRunsTemporaryFileAlone(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "devex.csv")
-	other := filepath.Join(filepath.Dir(path), ".devex.csv.1"+tempSuffix) // process 1 is never this test
-	if err := os.WriteFile(other, []byte("another run's csv"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := writePrs(path, []types.PR{{Author: "octocat", Repo: "devex", Number: 1}}); err != nil {
-		t.Fatal(err)
-	}
-	if data, err := os.ReadFile(other); err != nil || string(data) != "another run's csv" {
-		t.Errorf("other run's file = %q, %v; want it untouched", data, err)
 	}
 }
 

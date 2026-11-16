@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jszwec/csvutil"
+	"github.com/project-init/devex/internal/atomicfile"
 	"github.com/project-init/devex/internal/contributions/collection/gh"
 	"github.com/project-init/devex/internal/contributions/config"
 	"github.com/project-init/devex/internal/contributions/types"
@@ -137,47 +138,12 @@ func loadPrs(filePath string) ([]types.PR, error) {
 	return prs, nil
 }
 
-// tempSuffix ends writePrs's temporary files. It keeps GetExistingPRs from reading one that a
-// killed run left behind as a repository's.
-const tempSuffix = ".tmp"
-
-// writePrs replaces filePath through a temporary file, so an interrupted run leaves the last
-// complete collection for the next one to resume from. A new file gets the mode os.Create would
-// give it; a replaced one keeps its mode.
+// writePrs replaces filePath atomically, so an interrupted run leaves the last complete
+// collection for the next one to resume from.
 func writePrs(filePath string, prs []types.PR) error {
 	bytes, err := csvutil.Marshal(prs)
 	if err != nil {
 		return err
 	}
-	// The process ID keeps two runs on one directory apart; a leftover with this process's ID is
-	// a killed run's. Creating it with 0666 lets the umask apply, as os.Create did.
-	tempPath := filepath.Join(filepath.Dir(filePath), fmt.Sprintf(".%s.%d%s", filepath.Base(filePath), os.Getpid(), tempSuffix))
-	_ = os.Remove(tempPath)
-	info, statErr := os.Stat(filePath)
-	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-		return statErr
-	}
-	temp, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(tempPath) }()
-	if statErr == nil {
-		if err := temp.Chmod(info.Mode().Perm()); err != nil {
-			_ = temp.Close()
-			return err
-		}
-	}
-	if _, err := temp.Write(bytes); err != nil {
-		_ = temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		_ = temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tempPath, filePath)
+	return atomicfile.Write(filePath, bytes)
 }
