@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // umasked is the mode os.Create gives a new file under this process's umask.
@@ -74,7 +75,7 @@ func TestWriteSkipsAKilledRunsLeftover(t *testing.T) {
 
 func TestWriteLeavesOtherFilesAlone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "devex.csv")
-	other := filepath.Join(filepath.Dir(path), ".devex.csv.1-1"+tempSuffix) // another run's file
+	other := filepath.Join(filepath.Dir(path), ".devex.csv.1-1"+tempSuffix) // a run still writing
 	if err := os.WriteFile(other, []byte("another run's csv"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +84,39 @@ func TestWriteLeavesOtherFilesAlone(t *testing.T) {
 	}
 	if data, err := os.ReadFile(other); err != nil || string(data) != "another run's csv" {
 		t.Errorf("other run's file = %q, %v; want it untouched", data, err)
+	}
+}
+
+func TestWriteRemovesOnlyItsOwnOldLeftovers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "devex.csv")
+	old := time.Now().Add(-2 * leftoverAge)
+	names := map[string]bool{ // name: whether Write should remove it
+		filepath.Base(tempName(path, 7)):           true,  // a killed run's
+		".devex.csv.backup" + tempSuffix:           false, // not a name Write makes
+		"4242-7" + tempSuffix:                      false,
+		".devex.csv.x4242-7" + tempSuffix:          false,
+		".devex.csv.4242-" + tempSuffix:            false,
+		"x.devex.csv.4242-7" + tempSuffix:          false,
+		".devex.csv.4242-7" + tempSuffix + ".keep": false,
+		".other.csv.4242-7" + tempSuffix:           false, // another target's
+	}
+	for name := range names {
+		file := filepath.Join(dir, name)
+		if err := os.WriteFile(file, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(file, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Write(path, []byte("data")); err != nil {
+		t.Fatal(err)
+	}
+	for name, removed := range names {
+		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) != removed {
+			t.Errorf("%s removed = %t, want %t", name, os.IsNotExist(err), removed)
+		}
 	}
 }
 

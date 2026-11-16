@@ -8,7 +8,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // tempSuffix ends every temporary file Write creates beside its target.
@@ -17,13 +20,20 @@ const tempSuffix = ".tmp"
 // sequence keeps concurrent writes in one process apart.
 var sequence atomic.Int64
 
+// leftoverAge is how old a temporary file must be before Write treats it as a killed run's
+// leftover; a younger one may belong to a write still in progress.
+const leftoverAge = time.Hour
+
+// leftoverID matches what tempName puts after a target's own name.
+var leftoverID = regexp.MustCompile(`^[0-9]+-[0-9]+` + regexp.QuoteMeta(tempSuffix) + `$`)
+
 // Write replaces path with data through a temporary file in the same directory, synced before
 // the rename. A replaced file keeps its permission bits; a new one gets the mode os.Create gives
 // it, under the umask. A symlink at path itself is replaced, never written through, and its
 // replacement is no more open than the file it pointed at, when that file exists. Symlinks
 // among path's parent directories are followed as usual. The directory must exist. The temporary
 // file is hidden and ends in .tmp, so a reader that lists the directory by the target's
-// extension skips one a killed run left behind.
+// extension skips one a killed run left behind, and the next Write of path removes it.
 func Write(path string, data []byte) error {
 	temp, err := create(path)
 	if err != nil {
@@ -50,7 +60,27 @@ func Write(path string, data []byte) error {
 		return err
 	}
 	syncDir(filepath.Dir(path))
+	removeLeftovers(path)
 	return nil
+}
+
+// removeLeftovers deletes the temporary files of path that killed runs left behind. It matches
+// only the names tempName makes, older than leftoverAge, and ignores any failure.
+func removeLeftovers(path string) {
+	dir, base := filepath.Split(path)
+	entries, err := os.ReadDir(filepath.Clean(dir))
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		id, ours := strings.CutPrefix(entry.Name(), "."+base+".")
+		if !ours || !leftoverID.MatchString(id) {
+			continue
+		}
+		if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > leftoverAge {
+			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
 }
 
 // replacementMode is the mode the file replacing path needs, if not temp's own. A regular file
