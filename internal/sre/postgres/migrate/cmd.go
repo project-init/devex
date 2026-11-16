@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -22,36 +24,77 @@ type options struct {
 	region           string
 	launchType       string
 	capacityProvider string
+	waitTimeout      time.Duration
+	dryRun           bool
+}
+
+// envPrefix namespaces the environment variables each flag falls back to.
+const envPrefix = "DEVEX_"
+
+// envVariable is the variable, before envPrefix, that a flag falls back to: --task-def reads TASK_DEF.
+func envVariable(flag string) string {
+	return strings.ToUpper(strings.ReplaceAll(flag, "-", "_"))
 }
 
 func Command() *cobra.Command {
 	opts := &options{}
+	var envFlags []string
 
 	cmd := &cobra.Command{
 		Use:   "migrate",
 		Short: "Run a database migration as a one-off ECS task",
-		Args:  cobra.NoArgs,
+		Long: "Register a revision of the task definition that runs the migration container on --image-uri, run it " +
+			"as a one-off ECS task, and stream its logs until it stops. Value flags fall back to DEVEX_-prefixed " +
+			"environment variables, such as DEVEX_CLUSTER. --dry-run shows the change without registering or running.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			u := ui.New(cmd)
+			if err := checkLegacyEnv(cmd, envFlags); err != nil {
+				return err
+			}
 			if missing := opts.missingRequired(); len(missing) > 0 {
 				return fmt.Errorf("missing required parameters: %s", strings.Join(missing, ", "))
 			}
+			if opts.waitTimeout <= 0 {
+				return fmt.Errorf("--wait-timeout must be positive, got %s", opts.waitTimeout)
+			}
 
-			return runMigration(cmd.Context(), opts)
+			return runMigration(cmd.Context(), u, opts, awsClients)
 		},
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&opts.cluster, "cluster", os.Getenv("CLUSTER"), "ECS cluster name")
-	flags.StringVar(&opts.taskDef, "task-def", os.Getenv("TASK_DEF"), "Task definition name")
-	flags.StringVar(&opts.subnets, "subnets", os.Getenv("SUBNETS"), "Comma-separated subnet IDs")
-	flags.StringVar(&opts.securityGroups, "security-groups", os.Getenv("SECURITY_GROUPS"), "Comma-separated security group IDs")
-	flags.StringVar(&opts.container, "container", os.Getenv("CONTAINER"), "Container name")
-	flags.StringVar(&opts.imageURI, "image-uri", os.Getenv("IMAGE_URI"), "Docker image URI")
-	flags.StringVar(&opts.region, "region", cmp.Or(os.Getenv("REGION"), "us-east-1"), "AWS region")
-	flags.StringVar(&opts.launchType, "launch-type", os.Getenv("LAUNCH_TYPE"), "ECS launch type to run the task with; FARGATE when neither this nor --capacity-provider is set")
-	flags.StringVar(&opts.capacityProvider, "capacity-provider", os.Getenv("CAPACITY_PROVIDER"), "ECS capacity provider to run the task on, instead of a launch type")
+	// envString registers a string flag that defaults to its DEVEX_ variable, then to fallback.
+	envString := func(target *string, name, fallback, usage string) {
+		envFlags = append(envFlags, name)
+		flags.StringVar(target, name, cmp.Or(os.Getenv(envPrefix+envVariable(name)), fallback), usage)
+	}
+	envString(&opts.cluster, "cluster", "", "ECS cluster name")
+	envString(&opts.taskDef, "task-def", "", "task definition: family, family:revision, or ARN")
+	envString(&opts.subnets, "subnets", "", "comma-separated subnet IDs")
+	envString(&opts.securityGroups, "security-groups", "", "comma-separated security group IDs")
+	envString(&opts.container, "container", "", "name of the container that runs the migration")
+	envString(&opts.imageURI, "image-uri", "", "image URI to run the migration with")
+	envString(&opts.region, "region", "us-east-1", "AWS region")
+	envString(&opts.launchType, "launch-type", "", "ECS launch type to run the task with; FARGATE when neither this nor --capacity-provider is set")
+	envString(&opts.capacityProvider, "capacity-provider", "", "ECS capacity provider to run the task on, instead of a launch type")
+	flags.DurationVar(&opts.waitTimeout, "wait-timeout", 30*time.Minute, "how long to wait for the task to stop")
+	flags.BoolVar(&opts.dryRun, "dry-run", false, "show the task definition change without registering or running anything")
 
 	return cmd
+}
+
+// checkLegacyEnv fails when an unprefixed variable that earlier releases read is set, and neither
+// its DEVEX_ variable nor its flag replaces it. Ignoring it could quietly migrate another region.
+func checkLegacyEnv(cmd *cobra.Command, flags []string) error {
+	var errs []error
+	for _, flag := range flags {
+		variable := envVariable(flag)
+		if os.Getenv(variable) != "" && os.Getenv(envPrefix+variable) == "" && !cmd.Flags().Changed(flag) {
+			errs = append(errs, fmt.Errorf("%s is set, but migrate reads %s%s now; rename it or pass --%s", variable, envPrefix, variable, flag))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // placement chooses how RunTask places the task. A named capacity provider lets a full cluster scale
@@ -69,7 +112,7 @@ func (o *options) placement() (ecstypes.LaunchType, []ecstypes.CapacityProviderS
 	}
 
 	if o.launchType != "" {
-		return "", nil, errors.New("set --capacity-provider (CAPACITY_PROVIDER) or --launch-type (LAUNCH_TYPE), not both")
+		return "", nil, fmt.Errorf("set --capacity-provider (%sCAPACITY_PROVIDER) or --launch-type (%sLAUNCH_TYPE), not both", envPrefix, envPrefix)
 	}
 
 	return "", []ecstypes.CapacityProviderStrategyItem{{CapacityProvider: &o.capacityProvider, Weight: 1}}, nil

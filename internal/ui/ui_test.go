@@ -8,7 +8,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	"github.com/spf13/cobra"
 )
 
@@ -198,5 +200,42 @@ func TestDumbTerminalPromptsWithoutRedraw(t *testing.T) {
 	u := newUI(&fakeTerminal{}, &fakeTerminal{}, &fakeTerminal{}, Options{}, env(map[string]string{"TERM": "dumb"}), terminalsOnly)
 	if u.Live() || !u.accessible || !u.Interactive() {
 		t.Errorf("live=%v accessible=%v interactive=%v; want a line-based prompt and no redraw", u.Live(), u.accessible, u.Interactive())
+	}
+}
+
+func TestPrintfLiftsTheLiveLine(t *testing.T) {
+	shared := &fakeTerminal{} // stdout and stderr on one terminal
+	u := newUI(&fakeTerminal{}, shared, shared, Options{NoColor: true}, env(nil), terminalsOnly)
+	p := u.Progress("Waiting", 2)
+	u.Printf("log line\n")
+	p.Done()
+	got := shared.String()
+	if !strings.Contains(got, clearLine+"log line\nWaiting [0/2]") {
+		t.Errorf("output = %q, want the live line cleared before the data and redrawn after it", got)
+	}
+}
+
+func TestSpinStatusUpdatesTitleOffTerminalWithoutPanicking(t *testing.T) {
+	var errOut bytes.Buffer
+	u := newUI(strings.NewReader(""), &bytes.Buffer{}, &errOut, Options{}, env(nil), terminalsOnly)
+	err := u.SpinStatus(context.Background(), "Waiting", func(_ context.Context, setTitle func(string)) error {
+		setTitle("Waiting · RUNNING")
+		return nil
+	})
+	if err != nil || errOut.String() != "Waiting\n" {
+		t.Errorf("SpinStatus() = %v, stderr %q; want the title once", err, errOut.String())
+	}
+}
+
+func TestSpinStatusRedrawsTheNewTitle(t *testing.T) {
+	errOut := &fakeTerminal{}
+	u := newUI(&fakeTerminal{}, &fakeTerminal{}, errOut, Options{NoColor: true}, env(nil), terminalsOnly)
+	err := u.SpinStatus(context.Background(), "Waiting", func(_ context.Context, setTitle func(string)) error {
+		setTitle("Waiting · RUNNING")
+		time.Sleep(3 * spinner.Dot.FPS) // let the spinner draw a few frames
+		return nil
+	})
+	if err != nil || !strings.Contains(errOut.String(), "Waiting · RUNNING") {
+		t.Errorf("SpinStatus() = %v, stderr %q; want the new title drawn", err, errOut.String())
 	}
 }

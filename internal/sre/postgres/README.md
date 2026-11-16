@@ -55,54 +55,70 @@ doc, postgres doesn't seem to install via mise on Mac. Instead, the suggested in
 #### Usage
 
 ```shell
-sre postgres migrate \
+devex sre postgres migrate \
   --cluster <ecs-cluster> \
-  --task-def <task-definition> \
+  --task-def <family | family:revision | arn> \
   --subnets <subnet-1,subnet-2> \
   --security-groups <sg-1,sg-2> \
   --container <container-name> \
   --image-uri <docker-image-uri> \
   [--region <aws-region>] \
-  [--launch-type <ecs-launch-type> | --capacity-provider <capacity-provider>]
+  [--launch-type <ecs-launch-type> | --capacity-provider <capacity-provider>] \
+  [--wait-timeout <duration>] \
+  [--dry-run]
 ```
 
-Each flag also falls back to an environment variable, so the command can be driven entirely from the environment in
-CI/CD:
+Each value flag falls back to a `DEVEX_` environment variable, so CI can drive the command from the environment alone:
 
-| Flag                  | Environment variable | Required | Default     |
-| --------------------- | -------------------- | -------- | ----------- |
-| `--cluster`           | `CLUSTER`            | yes      |             |
-| `--task-def`          | `TASK_DEF`           | yes      |             |
-| `--subnets`           | `SUBNETS`            | yes      |             |
-| `--security-groups`   | `SECURITY_GROUPS`    | yes      |             |
-| `--container`         | `CONTAINER`          | yes      |             |
-| `--image-uri`         | `IMAGE_URI`          | yes      |             |
-| `--region`            | `REGION`             | no       | `us-east-1` |
-| `--launch-type`       | `LAUNCH_TYPE`        | no       | `FARGATE`   |
-| `--capacity-provider` | `CAPACITY_PROVIDER`  | no       |             |
+| Flag                  | Environment variable      | Required | Default     |
+| --------------------- | ------------------------- | -------- | ----------- |
+| `--cluster`           | `DEVEX_CLUSTER`           | yes      |             |
+| `--task-def`          | `DEVEX_TASK_DEF`          | yes      |             |
+| `--subnets`           | `DEVEX_SUBNETS`           | yes      |             |
+| `--security-groups`   | `DEVEX_SECURITY_GROUPS`   | yes      |             |
+| `--container`         | `DEVEX_CONTAINER`         | yes      |             |
+| `--image-uri`         | `DEVEX_IMAGE_URI`         | yes      |             |
+| `--region`            | `DEVEX_REGION`            | no       | `us-east-1` |
+| `--launch-type`       | `DEVEX_LAUNCH_TYPE`       | no       | `FARGATE`   |
+| `--capacity-provider` | `DEVEX_CAPACITY_PROVIDER` | no       |             |
+| `--wait-timeout`      |                           | no       | `30m`       |
+
+Earlier releases read the unprefixed names, such as `CLUSTER`. Generic names like `REGION` collide with other tools, so
+migrate reads only the `DEVEX_` names. It fails when an old name is set and neither its `DEVEX_` variable nor its flag
+replaces it, rather than quietly running with a default.
 
 #### Description
 
-The migrate command runs a database migration as a one-off ECS task. It takes an existing task definition,
-registers a new revision pointing the named container at the provided image, then runs that revision in the given
-cluster and waits (up to 30 minutes) for it to complete. On a non-zero exit it pulls the recent CloudWatch logs from
-`/ecs/<task-def>` to help diagnose the failure, and exits non-zero so callers (e.g. a deploy pipeline) can fail fast.
+The migrate command runs a database migration as a one-off ECS task. It describes the task definition, registers a new
+revision that copies everything except the named container's image and the tags, runs that revision in the cluster, and
+waits for it to stop. It exits non-zero when the migration fails, so a deploy pipeline can fail fast.
 
-`--launch-type` defaults to `FARGATE`. Set it to `EC2` when the task definition is backed by container instances rather
-than Fargate — the value has to match the `requiresCompatibilities` on the task definition, or ECS rejects the run with
+While the task runs, migrate streams the container's log lines to stdout and reports the task's status on stderr: a
+live status and elapsed time on a terminal, or a line per status change elsewhere. It finds the logs through the
+container's `awslogs` options: `awslogs-group`, `awslogs-stream-prefix`, and `awslogs-region` when set. A container that
+logs elsewhere, or without a stream prefix, runs without streaming, and migrate says so. CloudWatch can lag behind a
+failing migration's last lines, so migrate reads them once more a poll after the task stops.
+
+`--dry-run` describes the task definition and prints the image change and the planned run, then stops. It registers
+and runs nothing.
+
+`--launch-type` defaults to `FARGATE`. Set it to `EC2` when container instances back the task definition rather than
+Fargate. The value must match the task definition's `requiresCompatibilities`, or ECS rejects the run with
 `InvalidParameterException: Task definition does not support launch_type ...`.
 
-If the wait ends first, at 30 minutes or on a failed status check, the command fails and reports what ECS still knows:
-the task's status, or why it can't tell. It leaves the task alone, since stopping it could interrupt a migration. A
-task in any state but `STOPPED` may yet change the database, so check it before retrying. With `--capacity-provider`,
-the 30 minutes include any wait for the cluster to scale out.
+When `--wait-timeout` passes, or three status checks in a row fail, migrate asks ECS once more. A task that has stopped still
+reports its result; otherwise the command fails with the task's status, or why ECS can't tell. Ctrl-C ends the wait as
+well. Migrate never stops the task, since that could interrupt a migration. It names the task instead: a task in any
+state but `STOPPED` may yet change the database, so check it before retrying. With `--capacity-provider`, the timeout
+includes any wait for the cluster to scale out.
 
 `--capacity-provider` runs the task on a named capacity provider instead of a launch type. On a full EC2-backed
 cluster, a launch type fails the run at once with `RESOURCE:ENI` or `RESOURCE:MEMORY`. A capacity provider with managed
 scaling instead holds the task in `PROVISIONING` and adds an instance for it. Set one or the other, not both.
 
-**NOTE**: This relies on standard AWS credential resolution, so make sure your `AWS_PROFILE`/SSO login (or CI role) is in
-place and has permission to describe/register task definitions and run tasks on the target cluster.
+**NOTE**: Migrate resolves AWS credentials the standard way: `AWS_PROFILE`, an SSO login, or a CI role. That identity
+needs permission to describe and register task definitions, run and describe tasks on the cluster, pass the task's
+roles (`iam:PassRole`), and read the container's log group (`logs:GetLogEvents`).
 
 ## Why psql as the default?
 

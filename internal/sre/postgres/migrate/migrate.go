@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -14,170 +13,150 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/project-init/devex/internal/ui"
 )
 
-const (
-	colorRed   = "\033[0;31m"
-	colorGreen = "\033[0;32m"
-	colorBlue  = "\033[0;34m"
-	colorReset = "\033[0m"
-)
-
-func printInfo(msg string) { fmt.Fprintf(os.Stderr, "%s[INFO]%s %s\n", colorBlue, colorReset, msg) }
-func printSuccess(msg string) {
-	fmt.Fprintf(os.Stderr, "%s[SUCCESS]%s %s\n", colorGreen, colorReset, msg)
+// ecsAPI is the slice of the ECS client a migration uses.
+type ecsAPI interface {
+	DescribeTaskDefinition(context.Context, *ecs.DescribeTaskDefinitionInput, ...func(*ecs.Options)) (*ecs.DescribeTaskDefinitionOutput, error)
+	RegisterTaskDefinition(context.Context, *ecs.RegisterTaskDefinitionInput, ...func(*ecs.Options)) (*ecs.RegisterTaskDefinitionOutput, error)
+	RunTask(context.Context, *ecs.RunTaskInput, ...func(*ecs.Options)) (*ecs.RunTaskOutput, error)
+	ecs.DescribeTasksAPIClient
 }
-func printError(msg string) { fmt.Fprintf(os.Stderr, "%s[ERROR]%s %s\n", colorRed, colorReset, msg) }
 
-// runMigration registers a new task definition revision pointing at the given
-// image and runs it as a one-off ECS task, waiting for it to complete.
-func runMigration(ctx context.Context, opts *options) error {
+// logsAPI is the slice of the CloudWatch Logs client that streams a task's logs.
+type logsAPI interface {
+	cloudwatchlogs.GetLogEventsAPIClient
+}
+
+// clients builds the AWS clients for a migration; tests replace it.
+type clients func(ctx context.Context, region string) (ecsAPI, func(region string) logsAPI, error)
+
+func awsClients(ctx context.Context, region string) (ecsAPI, func(string) logsAPI, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return nil, nil, fmt.Errorf("load AWS configuration: %w", err)
+	}
+	logsFor := func(logRegion string) logsAPI {
+		return cloudwatchlogs.NewFromConfig(cfg, func(o *cloudwatchlogs.Options) {
+			if logRegion != "" {
+				o.Region = logRegion
+			}
+		})
+	}
+	return ecs.NewFromConfig(cfg), logsFor, nil
+}
+
+// runMigration registers a new revision of the task definition that points the migration container
+// at the image, runs it as a one-off ECS task, and streams its logs until it stops.
+func runMigration(ctx context.Context, u *ui.UI, opts *options, newClients clients) error {
+	return runMigrationEvery(ctx, u, opts, newClients, defaultPollInterval)
+}
+
+// runMigrationEvery is runMigration polling the task every poll; tests shorten it.
+func runMigrationEvery(ctx context.Context, u *ui.UI, opts *options, newClients clients, poll time.Duration) error {
 	launchType, capacityProviderStrategy, err := opts.placement()
 	if err != nil {
 		return err
 	}
-
-	printInfo("Starting database migration with parameters:")
-	printInfo(fmt.Sprintf("  Cluster: %s", opts.cluster))
-	printInfo(fmt.Sprintf("  Task Definition: %s", opts.taskDef))
-	printInfo(fmt.Sprintf("  Subnets: %s", opts.subnets))
-	printInfo(fmt.Sprintf("  Security Groups: %s", opts.securityGroups))
-	printInfo(fmt.Sprintf("  Container: %s", opts.container))
-	printInfo(fmt.Sprintf("  Image: %s", opts.imageURI))
-	printInfo(fmt.Sprintf("  Region: %s", opts.region))
-	if len(capacityProviderStrategy) > 0 {
-		printInfo(fmt.Sprintf("  Capacity Provider: %s", aws.ToString(capacityProviderStrategy[0].CapacityProvider)))
-	} else {
-		printInfo(fmt.Sprintf("  Launch Type: %s", launchType))
+	placement := fmt.Sprintf("launch type %s", launchType)
+	if opts.capacityProvider != "" {
+		placement = "capacity provider " + opts.capacityProvider
 	}
+	u.Status("Migrating with task definition %s in cluster %s (%s, %s)", opts.taskDef, opts.cluster, opts.region, placement)
 
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
+	ecsClient, logsFor, err := newClients(ctx, opts.region)
 	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
+		return err
 	}
-
-	ecsClient := ecs.NewFromConfig(cfg)
-
-	taskDefOutput, err := ecsClient.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
-		TaskDefinition: &opts.taskDef,
-	})
+	described, err := ecsClient.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{TaskDefinition: &opts.taskDef})
 	if err != nil {
-		return fmt.Errorf("failed to describe task definition: %w", err)
+		return fmt.Errorf("describe task definition %s: %w", opts.taskDef, err)
+	}
+	td := described.TaskDefinition
+	container := findDefinition(td.ContainerDefinitions, opts.container)
+	if container == nil {
+		// Fail before anything runs, rather than letting the task run its old image.
+		return fmt.Errorf("task definition %s has no %s container", opts.taskDef, opts.container)
+	}
+	oldImage := aws.ToString(container.Image)
+	container.Image = &opts.imageURI
+	logs := logTargetFor(container)
+
+	if opts.dryRun {
+		u.Printf("Would register a new revision of %s from %s:\n", aws.ToString(td.Family), aws.ToString(td.TaskDefinitionArn))
+		u.Printf("  container %s image: %s -> %s\n", opts.container, oldImage, opts.imageURI)
+		u.Printf("Would run it in cluster %s on %s, subnets %s, security groups %s.\n", opts.cluster, placement, opts.subnets, opts.securityGroups)
+		u.Status("Dry run: nothing registered or run.")
+		return nil
 	}
 
-	td := taskDefOutput.TaskDefinition
-	if err := overrideImage(td.ContainerDefinitions, opts.container, opts.imageURI); err != nil {
-		return fmt.Errorf("task definition %s: %w", opts.taskDef, err)
-	}
-
-	registerInput := &ecs.RegisterTaskDefinitionInput{
-		Family:                  &opts.taskDef,
-		ContainerDefinitions:    td.ContainerDefinitions,
-		Cpu:                     td.Cpu,
-		Memory:                  td.Memory,
-		NetworkMode:             td.NetworkMode,
-		RequiresCompatibilities: td.RequiresCompatibilities,
-		TaskRoleArn:             td.TaskRoleArn,
-		ExecutionRoleArn:        td.ExecutionRoleArn,
-		Volumes:                 td.Volumes,
-		PlacementConstraints:    td.PlacementConstraints,
-		RuntimePlatform:         td.RuntimePlatform,
-		EphemeralStorage:        td.EphemeralStorage,
-	}
-
-	registerOutput, err := ecsClient.RegisterTaskDefinition(ctx, registerInput)
+	registered, err := ecsClient.RegisterTaskDefinition(ctx, registerInputFrom(td))
 	if err != nil {
-		return fmt.Errorf("failed to register task definition: %w", err)
+		return fmt.Errorf("register task definition: %w", err)
 	}
-
-	revision := registerOutput.TaskDefinition.Revision
-	fullTaskDef := fmt.Sprintf("%s:%d", opts.taskDef, revision)
-	printInfo(fmt.Sprintf("Registered new task definition: %s", fullTaskDef))
-
-	subnetList := strings.Split(opts.subnets, ",")
-	sgList := strings.Split(opts.securityGroups, ",")
+	revision := aws.ToString(registered.TaskDefinition.TaskDefinitionArn)
+	u.Status("Registered %s with image %s", revision, opts.imageURI)
 
 	runOutput, err := ecsClient.RunTask(ctx, &ecs.RunTaskInput{
 		Cluster:                  &opts.cluster,
-		TaskDefinition:           &fullTaskDef,
+		TaskDefinition:           &revision,
 		LaunchType:               launchType,
 		CapacityProviderStrategy: capacityProviderStrategy,
 		NetworkConfiguration: &ecstypes.NetworkConfiguration{
 			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
-				Subnets:        subnetList,
-				SecurityGroups: sgList,
+				Subnets:        strings.Split(opts.subnets, ","),
+				SecurityGroups: strings.Split(opts.securityGroups, ","),
 				AssignPublicIp: ecstypes.AssignPublicIpDisabled,
 			},
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to run task: %w", err)
+		return fmt.Errorf("run task: %w", err)
 	}
-
 	if len(runOutput.Tasks) == 0 {
-		if len(runOutput.Failures) > 0 {
-			data, _ := json.MarshalIndent(runOutput.Failures, "", "  ")
-			printError(string(data))
-		}
-		return fmt.Errorf("failed to start task: no tasks returned")
+		data, _ := json.Marshal(runOutput.Failures)
+		return fmt.Errorf("ECS started no task: %s", data)
 	}
-
 	taskARN := aws.ToString(runOutput.Tasks[0].TaskArn)
-	printInfo(fmt.Sprintf("Task started with ARN: %s", taskARN))
-	printInfo("Waiting for task to complete...")
+	u.Status("Started task %s", taskARN)
 
-	// A task on a capacity provider can wait in PROVISIONING for a scale-out, so poll often enough to
-	// notice the stop promptly.
-	waiter := ecs.NewTasksStoppedWaiter(ecsClient, func(o *ecs.TasksStoppedWaiterOptions) {
-		o.MaxDelay = 30 * time.Second
-	})
-	describeInput := &ecs.DescribeTasksInput{Cluster: &opts.cluster, Tasks: []string{taskARN}}
-	var task ecstypes.Task
-	describeOutput, err := waiter.WaitForOutput(ctx, describeInput, 30*time.Minute)
-	if err == nil {
-		task = describeOutput.Tasks[0]
+	var stream *logStream
+	if logs != nil {
+		stream = &logStream{client: logsFor(logs.region), group: logs.group, stream: logs.stream(opts.container, taskARN)}
 	} else {
-		var settleErr error
-		task, settleErr = settleAfterWait(ctx, ecsClient, describeInput, opts.container)
-		if settleErr != nil {
-			return fmt.Errorf("error waiting for task to stop: %w; %w", err, settleErr)
-		}
+		u.Warn("streaming no logs: container %s needs the awslogs log driver with awslogs-stream-prefix", opts.container)
+	}
+	watch := &taskWatch{
+		client:    ecsClient,
+		logs:      stream,
+		input:     &ecs.DescribeTasksInput{Cluster: &opts.cluster, Tasks: []string{taskARN}},
+		container: opts.container,
+		timeout:   opts.waitTimeout,
+		poll:      poll,
+		missing:   time.Minute,
+	}
+	task, err := watch.run(ctx, u)
+	if err != nil {
+		// The watch ended before the task stopped, whether on Ctrl-C, a timeout, or a failed check.
+		u.Warn("task %s may still be running in ECS and change the database; check it before retrying", taskARN)
+		return err
 	}
 
 	exitCode, err := migrationExitCode(task, opts.container)
 	if err != nil {
 		return err
 	}
-
 	if exitCode != 0 {
-		logGroup := fmt.Sprintf("/ecs/%s", opts.taskDef)
-		printInfo(fmt.Sprintf("Fetching recent logs from %s...", logGroup))
-		fetchLogs(ctx, cfg, logGroup)
 		return fmt.Errorf("migration task failed with exit code %d", exitCode)
 	}
-
-	printSuccess("Migration task completed successfully")
+	u.Success("Migration task completed")
 	return nil
-}
-
-// overrideImage points the named container at image. It fails before anything runs when no container
-// has that name, rather than letting the task run its old image.
-func overrideImage(containers []ecstypes.ContainerDefinition, name, image string) error {
-	for i, container := range containers {
-		if aws.ToString(container.Name) == name {
-			containers[i].Image = &image
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("no %s container", name)
 }
 
 // settleAfterWait reports on a task the wait gave up on. A stopped task, one ECS abandoned before it
 // started, or one whose container already exited still reports its result. Anything else is left
-// alone, since stopping it could interrupt a migration, and the error names its status for the
-// operator to check before retrying. Taking only DescribeTasks keeps it from stopping anything.
+// alone, since stopping it could interrupt a migration, and the error names its status. Taking only DescribeTasks keeps it from stopping anything.
 func settleAfterWait(ctx context.Context, ecsClient ecs.DescribeTasksAPIClient, describeInput *ecs.DescribeTasksInput, containerName string) (ecstypes.Task, error) {
 	current, err := ecsClient.DescribeTasks(ctx, describeInput)
 	if err != nil {
@@ -199,8 +178,7 @@ func settleAfterWait(ctx context.Context, ecsClient ecs.DescribeTasksAPIClient, 
 		return task, nil
 	}
 
-	return ecstypes.Task{}, fmt.Errorf("task %s is still %s and may yet change the database, so check it before retrying",
-		aws.ToString(task.TaskArn), aws.ToString(task.LastStatus))
+	return ecstypes.Task{}, fmt.Errorf("task %s is still %s", aws.ToString(task.TaskArn), aws.ToString(task.LastStatus))
 }
 
 func findContainer(task ecstypes.Task, containerName string) *ecstypes.Container {
@@ -236,24 +214,4 @@ func migrationExitCode(task ecstypes.Task, containerName string) (int32, error) 
 	}
 
 	return 0, fmt.Errorf("migration task stopped mid-run without an exit code, so check the database before retrying: %s", reason)
-}
-
-func fetchLogs(ctx context.Context, cfg aws.Config, logGroup string) {
-	logsClient := cloudwatchlogs.NewFromConfig(cfg)
-
-	since := time.Now().Add(-10 * time.Minute).UnixMilli()
-	input := &cloudwatchlogs.FilterLogEventsInput{
-		LogGroupName: &logGroup,
-		StartTime:    &since,
-	}
-
-	output, err := logsClient.FilterLogEvents(ctx, input)
-	if err != nil {
-		printInfo(fmt.Sprintf("Could not fetch logs: %v", err))
-		return
-	}
-
-	for _, event := range output.Events {
-		fmt.Println(aws.ToString(event.Message))
-	}
 }
