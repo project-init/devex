@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/project-init/devex/internal/ui"
 )
 
 // fakeQuerier records each request and answers each query through answer, matched on the full query string. A
@@ -34,7 +36,7 @@ func (f *fakeQuerier) query(_ context.Context, qs []string, from, to time.Time) 
 	return out, nil
 }
 
-var quietProgress = progress{w: io.Discard}
+var quietProgress = ui.NewWithStreams(nil, io.Discard, io.Discard, ui.Options{})
 
 // thresholdSLO is a 15m Timeslices SLO on query q over window.
 func thresholdSLO(q string, window time.Duration) slo {

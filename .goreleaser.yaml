@@ -8,6 +8,10 @@ builds:
     binary: devex
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/project-init/devex/internal/version.version={{ if .IsSnapshot }}{{ .Version }}{{ else }}{{ .Tag }}{{ end }}
+      - -X github.com/project-init/devex/internal/version.commit={{ .ShortCommit }}
 
 archives:
   - id: devex-archive

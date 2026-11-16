@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 )
 
 type fakeAdapter struct {
+	mu           sync.Mutex // apply runs operations side by side
+	delay        time.Duration
+	running      int
+	peak         int
 	executions   map[string]int
 	resolvedAt   map[string][]domain.ItemID
 	lookups      []string
@@ -53,6 +58,14 @@ func (f *fakeAdapter) Execute(
 	operation provider.Operation,
 	resolved map[domain.ItemID]provider.RemoteRef,
 ) (provider.RemoteRef, error) {
+	f.mu.Lock()
+	f.running++
+	f.peak = max(f.peak, f.running)
+	f.mu.Unlock()
+	time.Sleep(f.delay) // a remote call's latency, slept without the lock so calls overlap
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.running--
 	f.executions[operation.ID]++
 	if f.resolvedAt != nil {
 		items := make([]domain.ItemID, 0, len(resolved))
@@ -105,10 +118,10 @@ func TestApplyResumesFromFileReceipt(t *testing.T) {
 	}
 
 	adapter := &fakeAdapter{executions: make(map[string]int), failOnce: "create-WI-001"}
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err == nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err == nil {
 		t.Fatal("first Apply() succeeded, want temporary failure")
 	}
-	receipt, err := Apply(context.Background(), planPath, adapter, nil)
+	receipt, err := Apply(context.Background(), planPath, adapter, ApplyHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +160,8 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 		SourceDigest: mustBundleDigest(t, bundleDirectory),
 		Operations: []provider.Operation{
 			{ID: "create-WI-001", ItemID: "WI-001", IdempotencyKey: "one"},
-			{ID: "link-WI-001-WI-002", IdempotencyKey: "link"},
-			{ID: "create-WI-002", ItemID: "WI-002", IdempotencyKey: "two"},
+			{ID: "link-WI-001-WI-002", IdempotencyKey: "link", DependsOn: []string{"create-WI-001", "create-WI-002"}},
+			{ID: "create-WI-002", ItemID: "WI-002", IdempotencyKey: "two", DependsOn: []string{"create-WI-001"}},
 		},
 	}
 	plan.PlanDigest, err = PlanDigest(plan)
@@ -163,7 +176,7 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 		executions: make(map[string]int),
 		resolvedAt: make(map[string][]domain.ItemID),
 	}
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err != nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,7 +199,7 @@ func TestApplyKeepsRelationshipOperationsOutOfResolution(t *testing.T) {
 
 	// A resumed run reads the receipt instead of the live map, so it must skip the link too.
 	second := &fakeAdapter{executions: make(map[string]int)}
-	if _, err := Apply(context.Background(), planPath, second, nil); err != nil {
+	if _, err := Apply(context.Background(), planPath, second, ApplyHooks{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(second.executions) != 0 {

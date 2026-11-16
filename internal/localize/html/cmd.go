@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/project-init/devex/internal/localize/config"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +22,7 @@ func Command() *cobra.Command {
 			return Generate(
 				cfg.Localize.LocalesDir,
 				cfg.Localize.HTML.OutputPath,
-				cmd.OutOrStdout(),
-				cmd.ErrOrStderr(),
+				ui.New(cmd),
 			)
 		},
 	}

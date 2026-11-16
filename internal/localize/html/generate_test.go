@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/project-init/devex/internal/localize/catalog"
+	"github.com/project-init/devex/internal/ui"
 )
 
 func TestGenerate(t *testing.T) {
@@ -13,7 +16,7 @@ func TestGenerate(t *testing.T) {
 	localesDir := filepath.Join(root, "locales")
 	outputPath := filepath.Join(root, "report", "translations.html")
 
-	writeTestFile(t, filepath.Join(localesDir, "en-US", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.MessagesFile), `{
   "language": "en-US",
   "messages": [
     {"id": "Sign in", "translation": ""},
@@ -21,7 +24,7 @@ func TestGenerate(t *testing.T) {
   ]
 }
 `)
-	writeTestFile(t, filepath.Join(localesDir, "es-US", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "es-US", catalog.MessagesFile), `{
   "language": "es-US",
   "messages": [
     {"id": "Sign in", "translation": "Iniciar sesión"},
@@ -29,7 +32,7 @@ func TestGenerate(t *testing.T) {
   ]
 }
 `)
-	writeTestFile(t, filepath.Join(localesDir, "fr-FR", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "fr-FR", catalog.MessagesFile), `{
   "language": "fr-FR",
   "messages": [
     {"id": "Sign in", "translation": "Se connecter"}
@@ -39,7 +42,7 @@ func TestGenerate(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := Generate(localesDir, outputPath, &stdout, &stderr)
+	err := Generate(localesDir, outputPath, testUI(&stdout, &stderr))
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -66,11 +69,11 @@ func TestGenerate(t *testing.T) {
 		t.Errorf("output should not include the base locale as a column: %s", html)
 	}
 
-	if !strings.Contains(stdout.String(), "wrote "+outputPath+" (2 locales, 2 strings)") {
-		t.Errorf("stdout = %q", stdout.String())
-	}
-	if stderr.Len() != 0 {
+	if !strings.Contains(stderr.String(), "Wrote "+outputPath+" (2 locales, 2 rows)") || strings.Contains(stderr.String(), "warning:") {
 		t.Errorf("stderr = %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want nothing", stdout.String())
 	}
 }
 
@@ -79,32 +82,29 @@ func TestGenerateIncludesIDOnlyPresentInBaseLocale(t *testing.T) {
 	localesDir := filepath.Join(root, "locales")
 	outputPath := filepath.Join(root, "translations.html")
 
-	writeTestFile(t, filepath.Join(localesDir, "en-US", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.MessagesFile), `{
   "language": "en-US",
   "messages": [
     {"id": "Brand new", "translation": ""}
   ]
 }
 `)
-	writeTestFile(t, filepath.Join(localesDir, "es-US", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "es-US", catalog.MessagesFile), `{
   "language": "es-US",
   "messages": []
 }
 `)
 
 	var stdout, stderr bytes.Buffer
-	if err := Generate(localesDir, outputPath, &stdout, &stderr); err != nil {
+	if err := Generate(localesDir, outputPath, testUI(&stdout, &stderr)); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
 	row := generatedRow(t, outputPath, "Brand new")
-	if !strings.Contains(row, "<td></td>") {
-		t.Errorf("base-only id should have an empty translation cell; row = %q", row)
+	if !strings.Contains(row, `<td class="missing"></td>`) {
+		t.Errorf("base-only id should have a missing translation cell; row = %q", row)
 	}
-	if !strings.Contains(stdout.String(), "(1 locales, 1 strings)") {
-		t.Errorf("stdout = %q", stdout.String())
-	}
-	if stderr.Len() != 0 {
+	if !strings.Contains(stderr.String(), "(1 locales, 1 rows)") || strings.Contains(stderr.String(), "warning:") {
 		t.Errorf("stderr = %q", stderr.String())
 	}
 }
@@ -114,12 +114,12 @@ func TestGenerateMarksNonStringTranslation(t *testing.T) {
 	localesDir := filepath.Join(root, "locales")
 	outputPath := filepath.Join(root, "translations.html")
 
-	writeTestFile(t, filepath.Join(localesDir, "en-US", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.MessagesFile), `{
   "language": "en-US",
   "messages": []
 }
 `)
-	writeTestFile(t, filepath.Join(localesDir, "fr-FR", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "fr-FR", catalog.MessagesFile), `{
   "language": "fr-FR",
   "messages": [
     {"id": "Unread messages", "translation": {"plural": {"one": "Un message", "other": "Des messages"}}}
@@ -128,7 +128,7 @@ func TestGenerateMarksNonStringTranslation(t *testing.T) {
 `)
 
 	var stdout, stderr bytes.Buffer
-	if err := Generate(localesDir, outputPath, &stdout, &stderr); err != nil {
+	if err := Generate(localesDir, outputPath, testUI(&stdout, &stderr)); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -146,24 +146,24 @@ func TestGenerateKeysLocalesByDirectoryName(t *testing.T) {
 	localesDir := filepath.Join(root, "locales")
 	outputPath := filepath.Join(root, "translations.html")
 
-	writeTestFile(t, filepath.Join(localesDir, "en-US", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.MessagesFile), `{
   "language": "en-US",
   "messages": [{"id": "Hello", "translation": ""}]
 }
 `)
-	writeTestFile(t, filepath.Join(localesDir, "fr-CA", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "fr-CA", catalog.MessagesFile), `{
   "language": "fr-FR",
   "messages": [{"id": "Hello", "translation": "Allô"}]
 }
 `)
-	writeTestFile(t, filepath.Join(localesDir, "fr-FR", messagesCatalogName), `{
+	writeTestFile(t, filepath.Join(localesDir, "fr-FR", catalog.MessagesFile), `{
   "language": "fr-FR",
   "messages": [{"id": "Hello", "translation": "Bonjour"}]
 }
 `)
 
 	var stdout, stderr bytes.Buffer
-	if err := Generate(localesDir, outputPath, &stdout, &stderr); err != nil {
+	if err := Generate(localesDir, outputPath, testUI(&stdout, &stderr)); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -182,19 +182,89 @@ func TestGenerateKeysLocalesByDirectoryName(t *testing.T) {
 			t.Errorf("warning missing %q: %q", want, stderr.String())
 		}
 	}
-	if !strings.Contains(stdout.String(), "(2 locales, 1 strings)") {
-		t.Errorf("stdout = %q", stdout.String())
+	if !strings.Contains(stderr.String(), "(2 locales, 1 rows)") {
+		t.Errorf("stderr = %q", stderr.String())
 	}
 }
 
 func TestGenerateMissingConfig(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if err := Generate("", "out.html", &stdout, &stderr); err == nil {
+	if err := Generate("", "out.html", testUI(&stdout, &stderr)); err == nil {
 		t.Fatal("expected error for missing localesDir")
 	}
-	if err := Generate("locales", "", &stdout, &stderr); err == nil {
+	if err := Generate("locales", "", testUI(&stdout, &stderr)); err == nil {
 		t.Fatal("expected error for missing outputPath")
 	}
+}
+
+func TestGenerateReportsCoverageOffline(t *testing.T) {
+	root := t.TempDir()
+	localesDir := filepath.Join(root, "locales")
+	outputPath := filepath.Join(root, "translations.html")
+	writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.MessagesFile), `{"language": "en-US", "messages": [
+  {"id": "One", "message": "One"}, {"id": "Two", "message": "Two"}, {"id": "Three", "message": "Three"}, {"id": "Four", "message": "Four"}]}`)
+	writeTestFile(t, filepath.Join(localesDir, "es-US", catalog.MessagesFile), `{"language": "es-US", "messages": [
+  {"id": "One", "translation": "Uno"}, {"id": "Two", "translation": "Dos"}, {"id": "Three", "translation": "Tres"}, {"id": "Four", "translation": ""}]}`)
+	writeTestFile(t, filepath.Join(localesDir, ".DS_Store"), "junk")
+
+	var stdout, stderr bytes.Buffer
+	if err := Generate(localesDir, outputPath, testUI(&stdout, &stderr)); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(data)
+	for _, want := range []string{
+		`<div class="tile low">`,
+		"<b>75%</b>",
+		"3 of 4 translated",
+		`<tr data-missing>`,
+		`id="search"`,
+		`id="missing-only"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if strings.Contains(html, "<link") || strings.Contains(html, "https://") {
+		t.Error("report loads a remote resource; it must render offline")
+	}
+}
+
+func TestGenerateCountsAbsentTranslationAsMissing(t *testing.T) {
+	root := t.TempDir()
+	localesDir := filepath.Join(root, "locales")
+	outputPath := filepath.Join(root, "translations.html")
+	writeTestFile(t, filepath.Join(localesDir, "en-US", catalog.MessagesFile), `{"language": "en-US", "messages": [
+  {"id": "One", "message": "One"}, {"id": "Two", "message": "Two"}]}`)
+	writeTestFile(t, filepath.Join(localesDir, "es-US", catalog.MessagesFile), `{"language": "es-US", "messages": [
+  {"id": "One", "translation": "Uno"}, {"id": "Two"}]}`)
+	writeTestFile(t, filepath.Join(localesDir, "fr-FR", catalog.MessagesFile), `{"language": "fr-FR", "messages": [
+  {"id": "One", "translation": "Un"}, {"id": "Two", "translation": "Deux"}, {"id": "Removed", "translation": "Retiré"}]}`)
+
+	var stdout, stderr bytes.Buffer
+	if err := Generate(localesDir, outputPath, testUI(&stdout, &stderr)); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if strings.Contains(stderr.String(), "non-string") {
+		t.Errorf("stderr = %q, want no plural warning for an absent translation", stderr.String())
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(data)
+	for _, want := range []string{"1 of 2 translated", "2 of 2 translated", "2 source strings"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+}
+
+func testUI(stdout, stderr *bytes.Buffer) *ui.UI {
+	return ui.NewWithStreams(nil, stdout, stderr, ui.Options{})
 }
 
 func writeTestFile(t *testing.T, path string, contents string) {

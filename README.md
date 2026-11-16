@@ -46,7 +46,7 @@ devex <subcommand> [options]
   devex localize mobile
   ```
 
-- **[workplan](cmd/devex/README.md#workplan)** - Generate and publish workplan investigations to JIRA
+- **[workplan](cmd/devex/README.md#workplan)** - Deprecated; use `discovery` instead. Generate and publish workplan investigations to JIRA
 
   ```bash
   devex workplan generate <directory> <title>
@@ -70,11 +70,6 @@ devex <subcommand> [options]
   ```bash
   devex contributions collect <config_file>
   devex contributions signal <config_file>
-  ```
-
-- **[components](cmd/devex/README.md#components)** - Generate component skeleton code from configuration
-  ```bash
-  devex components <configuration_file_path>
   ```
 
 For detailed documentation on each subcommand, see **[cmd/devex/README.md](cmd/devex/README.md)**.

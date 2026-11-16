@@ -1,9 +1,7 @@
 package sre
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/project-init/devex/internal/configdir"
 	"github.com/project-init/devex/internal/sre/analyze"
 	"github.com/project-init/devex/internal/sre/config"
 	"github.com/project-init/devex/internal/sre/dependencies"
@@ -13,19 +11,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const configFlag = "configDir"
+const defaultConfigDir = ".sre"
 
 func Command() *cobra.Command {
 	// Register tools (subcommands)
 	var sreConfigFile string
-	rootCmd := &cobra.Command{
+	var rootCmd *cobra.Command
+	rootCmd = &cobra.Command{
 		Use:           "sre <tool> [args]",
 		Short:         "sre is a toolbox CLI for site reliability operations",
-		SilenceUsage:  true,                  // don’t print usage on errors by default
-		SilenceErrors: true,                  // we’ll print errors ourselves
-		Args:          cobra.MinimumNArgs(1), // requires <tool> unless help is requested
+		SilenceUsage:  true, // don’t print usage on errors by default
+		SilenceErrors: true, // we’ll print errors ourselves
+		// NoArgs rejects an unknown tool name instead of printing help and exiting 0.
+		Args: cobra.NoArgs,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			path, err := resolveConfigPath(sreConfigFile)
+			if cmd == rootCmd {
+				return nil
+			}
+			path, err := configdir.Resolve(sreConfigFile, defaultConfigDir)
 			if err != nil {
 				if sreConfigFile == "" && configOptional(cmd) {
 					return nil
@@ -43,11 +46,10 @@ func Command() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// This only runs if Args passes, so this is mostly a guardrail.
 			return cmd.Help()
 		},
 	}
-	rootCmd.PersistentFlags().StringVar(&sreConfigFile, configFlag, "", "config directory (default is .sre)")
+	configdir.AddFlag(rootCmd, &sreConfigFile, defaultConfigDir)
 
 	// Sub Commands (Tools)
 	rootCmd.AddCommand(analyze.Command())
@@ -56,20 +58,7 @@ func Command() *cobra.Command {
 	rootCmd.AddCommand(postgres.Command())
 	rootCmd.AddCommand(release.Command())
 
-	// Example Tools
-	rootCmd.AddCommand(echoCmd())
-	rootCmd.AddCommand(versionCmd())
-
 	return rootCmd
-}
-
-// Execute is kept for backwards compatibility if the standalone binary is still used
-func Execute() error {
-	if err := Command().Execute(); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
-		return err
-	}
-	return nil
 }
 
 func configOptional(cmd *cobra.Command) bool {
@@ -80,19 +69,4 @@ func configOptional(cmd *cobra.Command) bool {
 	}
 
 	return false
-}
-
-func resolveConfigPath(explicit string) (string, error) {
-	if explicit != "" {
-		if _, err := os.Stat(explicit); err != nil {
-			return "", fmt.Errorf("config dir %q not found: %w", explicit, err)
-		}
-		return explicit, nil
-	}
-
-	defaultPath := ".sre"
-	if _, err := os.Stat(defaultPath); err != nil {
-		return "", fmt.Errorf("no config found: pass --%s or create %s", configFlag, defaultPath)
-	}
-	return defaultPath, nil
 }

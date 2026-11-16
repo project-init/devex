@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/project-init/devex/internal/localize/config"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,14 +18,10 @@ func Command() *cobra.Command {
 			if !ok || cfg == nil {
 				return fmt.Errorf("config not loaded")
 			}
-
-			err := audit(cfg.Localize.LocalesDir)
-			if err != nil {
-				return err
+			if cfg.Localize.LocalesDir == "" {
+				return fmt.Errorf("missing configuration: localize.localesDir")
 			}
-
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "localize audit passed\n")
-			return nil
+			return audit(cfg.Localize.LocalesDir, ui.New(cmd))
 		},
 	}
 	return cmd

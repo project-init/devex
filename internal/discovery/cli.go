@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,12 +16,15 @@ import (
 	"github.com/project-init/devex/internal/discovery/publish"
 	"github.com/project-init/devex/internal/discovery/skill"
 	"github.com/project-init/devex/internal/discovery/templates"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 const defaultConfigPath = ".sre/discovery.yaml"
 
 func Command() *cobra.Command {
+	var configurationPath string
+	var harnessValues []string
 	command := &cobra.Command{
 		Use:           "discovery",
 		Short:         "Turn product discovery into reviewable plans and published work",
@@ -28,9 +32,11 @@ func Command() *cobra.Command {
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSetup(cmd, ".", defaultConfigPath, nil, false)
+			return runSetup(cmd, ".", configurationPath, harnessValues)
 		},
 	}
+	command.Flags().StringVar(&configurationPath, "config", defaultConfigPath, "target configuration file")
+	command.Flags().StringSliceVar(&harnessValues, harnessFlag, nil, "AI harness: codex, claude, cursor, or all")
 	command.AddCommand(initCommand())
 	command.AddCommand(validateCommand())
 	command.AddCommand(configCommand())
@@ -151,21 +157,20 @@ func loadDefaultLabels(path string) ([]string, error) {
 
 func validateCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "validate <bundle-directory>",
-		Short: "Validate a discovery document and work breakdown",
-		Args:  cobra.ExactArgs(1),
+		Use:         "validate <bundle-directory>",
+		Short:       "Validate a discovery document and work breakdown",
+		Args:        cobra.ExactArgs(1),
+		Annotations: map[string]string{ui.JSONAnnotation: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			u := ui.New(cmd)
 			bundle, err := artifact.Load(args[0])
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintf(
-				cmd.OutOrStdout(),
-				"Valid discovery bundle %s (%d work items, %s)\n",
-				bundle.Directory,
-				len(bundle.WorkBreakdown.Items),
-				bundle.Digest(),
-			)
+			if u.JSON() {
+				return u.WriteJSON(map[string]any{"directory": bundle.Directory, "workItems": len(bundle.WorkBreakdown.Items), "digest": bundle.Digest()})
+			}
+			u.Printf("Valid discovery bundle %s (%d work items, %s)\n", bundle.Directory, len(bundle.WorkBreakdown.Items), bundle.Digest())
 			return nil
 		},
 	}
@@ -187,10 +192,12 @@ func planCommand() *cobra.Command {
 	var outputPath string
 	var options publish.PlanOptions
 	command := &cobra.Command{
-		Use:   "plan <bundle-directory>",
-		Short: "Create a read-only, reviewable publication plan",
-		Args:  cobra.ExactArgs(1),
+		Use:         "plan <bundle-directory>",
+		Short:       "Create a read-only, reviewable publication plan",
+		Args:        cobra.ExactArgs(1),
+		Annotations: map[string]string{ui.JSONAnnotation: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			u := ui.New(cmd)
 			bundle, err := artifact.Load(args[0])
 			if err != nil {
 				return err
@@ -208,7 +215,16 @@ func planCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			plan, err := publish.CreatePlan(cmd.Context(), bundle, targetName, target, adapter, options)
+			var plan *provider.Plan
+			create := func(ctx context.Context) error {
+				plan, err = publish.CreatePlan(ctx, bundle, targetName, target, adapter, options)
+				return err
+			}
+			if options.Sync {
+				err = u.Spin(cmd.Context(), "Reading published work", create)
+			} else {
+				err = create(cmd.Context())
+			}
 			if err != nil {
 				return err
 			}
@@ -225,13 +241,13 @@ func planCommand() *cobra.Command {
 			if err := publish.WriteYAMLAtomic(outputPath, plan); err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Publication plan: %s\n", outputPath)
 			for _, warning := range plan.Warnings {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", warning)
+				u.Warn("%s", warning)
 			}
-			for _, operation := range plan.Operations {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- %s\n", operation.Summary)
+			if u.JSON() {
+				return u.WriteJSON(map[string]any{"path": outputPath, "counts": actionCounts(plan.Operations), "plan": plan})
 			}
+			printPlan(u, outputPath, plan)
 			return nil
 		},
 	}
@@ -246,10 +262,12 @@ func planCommand() *cobra.Command {
 
 func applyCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "apply <plan-file>",
-		Short: "Apply a frozen publication plan and write a resumable receipt",
-		Args:  cobra.ExactArgs(1),
+		Use:         "apply <plan-file>",
+		Short:       "Apply a frozen publication plan and write a resumable receipt",
+		Args:        cobra.ExactArgs(1),
+		Annotations: map[string]string{ui.JSONAnnotation: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			u := ui.New(cmd)
 			plan, err := publish.LoadPlan(args[0])
 			if err != nil {
 				return err
@@ -258,31 +276,33 @@ func applyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			receipt, err := publish.Apply(
-				cmd.Context(),
-				args[0],
-				adapter,
-				func(operation provider.Operation, result provider.OperationResult) {
-					if result.Remote == nil {
-						return
-					}
-					// Relationship operations carry no item, so name them by operation.
-					name := string(result.ItemID)
-					if name == "" {
-						name = operation.ID
-					}
-					_, _ = fmt.Fprintf(
-						cmd.OutOrStdout(),
-						"%s %s: %s\n",
-						result.Status,
-						name,
-						result.Remote.URL,
-					)
+			var outcomes []publish.Progress
+			var archived string
+			receipt, err := publish.Apply(cmd.Context(), args[0], adapter, publish.ApplyHooks{
+				Remote: u.Spin,
+				Progress: func(progress publish.Progress) {
+					outcomes = append(outcomes, progress)
+					printProgress(u, progress)
 				},
-			)
-			if receipt != nil {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Receipt: %s\n", publish.DefaultReceiptPath(args[0]))
+				Archived: func(path string) {
+					archived = path
+					u.Status("Archived the receipt of the plan this one replaced: %s", path)
+				},
+			})
+			if receipt == nil {
+				return err
 			}
+			receiptPath := publish.DefaultReceiptPath(args[0])
+			summary := summarize(plan, receipt, outcomes)
+			if failedThisRun(outcomes) && cmd.Context().Err() == nil {
+				// The progress line already named the operation and its error.
+				err = errors.New("apply stopped at the failed operation above")
+			}
+			if u.JSON() {
+				return errors.Join(u.WriteJSON(applyJSON(receiptPath, archived, receipt.Status, summary, outcomes)), err)
+			}
+			u.Printf("%s\n", summary)
+			u.Printf("Receipt: %s\n", receiptPath)
 			return err
 		},
 	}

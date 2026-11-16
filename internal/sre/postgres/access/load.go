@@ -1,31 +1,47 @@
 package access
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/project-init/devex/internal/sre/config"
-	"github.com/project-init/gommon/pkg/aws"
 	"github.com/project-init/gommon/pkg/postgres"
 )
 
-func loadPGAccessEnvironment(environmentConfig config.PostgresEnvironmentConfig) (*config.PsqlConfig, error) {
-	fmt.Printf("Logging in to %s as %s via psql.\n", environmentConfig.Host, environmentConfig.UserName)
+const (
+	defaultPort = 5432
+	// defaultRegion keeps configs written before region existed signing for the region devex
+	// always used.
+	defaultRegion = "us-east-1"
+)
 
-	password, err := getPassword(environmentConfig)
+// awsLoader loads the standard AWS configuration; tests swap it out.
+type awsLoader func(ctx context.Context) (aws.Config, error)
+
+func loadAWSConfig(ctx context.Context) (aws.Config, error) {
+	return awsconfig.LoadDefaultConfig(ctx)
+}
+
+func loadPGAccessEnvironment(ctx context.Context, env config.PostgresEnvironmentConfig, loadAWS awsLoader) (*config.PsqlConfig, error) {
+	// Resolve the port once, so psql and the IAM token always agree on it.
+	env.Port = cmp.Or(env.Port, defaultPort)
+	password, err := getPassword(ctx, env, loadAWS)
 	if err != nil {
 		return nil, err
 	}
-
 	return &config.PsqlConfig{
-		Host:     environmentConfig.Host,
-		Port:     environmentConfig.Port,
-		Username: environmentConfig.UserName,
+		Host:     env.Host,
+		Port:     env.Port,
+		Username: env.UserName,
 		Password: password,
-		Database: environmentConfig.Database,
-		SSLMode:  environmentConfig.SSLMode,
+		Database: env.Database,
+		SSLMode:  env.SSLMode,
 	}, nil
 }
 
@@ -41,23 +57,29 @@ func resolveEnvPassword(password string) (string, error) {
 	return password, nil
 }
 
-func getPassword(environmentConfig config.PostgresEnvironmentConfig) (string, error) {
-	if environmentConfig.Password != nil {
-		return resolveEnvPassword(*environmentConfig.Password)
+// getPassword returns the configured password, or an RDS IAM auth token signed for the
+// environment's port and region.
+func getPassword(ctx context.Context, env config.PostgresEnvironmentConfig, loadAWS awsLoader) (string, error) {
+	if env.Password != nil {
+		return resolveEnvPassword(*env.Password)
+	}
+	if env.Iam == nil || !*env.Iam {
+		return "", fmt.Errorf("needs a password or iam: true")
 	}
 
-	if environmentConfig.Iam == nil || !*environmentConfig.Iam {
-		return "", fmt.Errorf("require password or use of iam rds connect")
+	awsCfg, err := loadAWS(ctx)
+	if err != nil {
+		return "", fmt.Errorf("load AWS configuration: %w", err)
 	}
-
-	return postgres.BuildAuthToken(context.Background(), postgres.ConnectionConfig{
-		Host:     environmentConfig.Host,
-		Port:     "5432",
-		User:     environmentConfig.UserName,
-		Database: environmentConfig.Database,
-		Password: "",
-	}, postgres.IAMConfig{
-		Credentials: aws.GetConfig().Credentials,
-		Region:      "us-east-1",
-	})
+	region := cmp.Or(env.Region, defaultRegion)
+	token, err := postgres.BuildAuthToken(ctx, postgres.ConnectionConfig{
+		Host:     env.Host,
+		Port:     strconv.Itoa(env.Port),
+		User:     env.UserName,
+		Database: env.Database,
+	}, postgres.IAMConfig{Credentials: awsCfg.Credentials, Region: region})
+	if err != nil {
+		return "", fmt.Errorf("build IAM auth token: %w", err)
+	}
+	return token, nil
 }

@@ -2,81 +2,79 @@ package html
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
+
+	"github.com/project-init/devex/internal/localize/catalog"
+	"github.com/project-init/devex/internal/ui"
 )
 
 const (
-	baseLocale                 = "en-US"
-	messagesCatalogName        = "messages.gotext.json"
 	nonStringTranslationMarker = "[plural/select]"
 )
 
 //go:embed report.html.tmpl
 var reportFs embed.FS
 
-type catalog struct {
-	Language string    `json:"language"`
-	Messages []message `json:"messages"`
+type localeCoverage struct {
+	Name       string
+	Translated int
+	Total      int
 }
 
-// gotextID handles the gotext format where "id" may be a plain string or a
-// [key, fallbackText] array; we always use the first element as the ID.
-type gotextID string
-
-func (g *gotextID) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err == nil {
-		*g = gotextID(s)
-		return nil
+// Percent is the translated share, rounded down so a locale shows 100 only when complete.
+func (c localeCoverage) Percent() int {
+	if c.Total == 0 {
+		return 100
 	}
-	var arr []string
-	if err := json.Unmarshal(data, &arr); err != nil {
-		return err
-	}
-	if len(arr) == 0 {
-		return fmt.Errorf("gotext id array is empty")
-	}
-	*g = gotextID(arr[0])
-	return nil
+	return c.Translated * 100 / c.Total
 }
 
-type message struct {
-	ID          gotextID `json:"id"`
-	Message     string   `json:"message"`
-	Translation any      `json:"translation"`
+func (c localeCoverage) Level() string {
+	switch percent := c.Percent(); {
+	case percent == 100:
+		return "complete"
+	case percent >= 80:
+		return "partial"
+	default:
+		return "low"
+	}
+}
+
+type reportCell struct {
+	Text    string
+	Missing bool
 }
 
 type reportRow struct {
-	English      string
-	Translations []string
+	English string
+	Cells   []reportCell
+	Missing bool
 }
 
 type reportData struct {
-	Locales []string
-	Rows    []reportRow
+	Locales     []localeCoverage
+	Rows        []reportRow
+	Total       int
+	MissingRows int
 }
 
 // Generate reads each locale's messages.gotext.json catalog under localesDir and writes a
-// single combined HTML report to outputPath, with one column per locale and one row per
-// message id, showing the English source text alongside every locale's translation.
-func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.Writer) error {
+// single combined HTML report to outputPath: one column per locale, one row per message id,
+// and each locale's coverage. Rows every locale renders identically to English are left out.
+func Generate(localesDir string, outputPath string, u *ui.UI) error {
 	if err := validateConfig(localesDir, outputPath); err != nil {
 		return err
 	}
 
-	directories, err := filepath.Glob(filepath.Join(localesDir, "*/"))
+	directories, err := catalog.LocaleDirs(localesDir)
 	if err != nil {
 		return err
-	}
-	if len(directories) == 0 {
-		return fmt.Errorf("no locale directories found in %s", localesDir)
 	}
 
 	// locale -> id -> translation
@@ -87,28 +85,22 @@ func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.
 	ids := make(map[string]struct{})
 
 	for _, directory := range directories {
-		locale := filepath.Base(filepath.Clean(directory))
-		catalogPath := filepath.Join(directory, messagesCatalogName)
-		cat, err := loadCatalog(catalogPath)
+		locale := filepath.Base(directory)
+		catalogPath := filepath.Join(directory, catalog.MessagesFile)
+		cat, err := catalog.Load(catalogPath)
 		if err != nil {
 			return err
 		}
 
 		if cat.Language != locale {
-			_, _ = fmt.Fprintf(
-				stderr,
-				"warning: %s declares language %q but was loaded from locale directory %q\n",
-				catalogPath,
-				cat.Language,
-				locale,
-			)
+			u.Warn("%s declares language %q but was loaded from locale directory %q", catalogPath, cat.Language, locale)
 		}
 
 		for _, msg := range cat.Messages {
 			ids[string(msg.ID)] = struct{}{}
 		}
 
-		if locale == baseLocale {
+		if locale == catalog.BaseLocale {
 			for _, msg := range cat.Messages {
 				englishText[string(msg.ID)] = msg.Message
 			}
@@ -117,15 +109,9 @@ func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.
 
 		byID := make(map[string]string, len(cat.Messages))
 		for _, msg := range cat.Messages {
-			translation, ok := msg.Translation.(string)
-			if !ok {
-				_, _ = fmt.Fprintf(
-					stderr,
-					"warning: %s has a non-string translation for %q; rendering as %s\n",
-					catalogPath,
-					msg.ID,
-					nonStringTranslationMarker,
-				)
+			translation, ok := msg.Text()
+			if !ok && !msg.Untranslated() {
+				u.Warn("%s has a non-string translation for %q; rendering as %s", catalogPath, msg.ID, nonStringTranslationMarker)
 				translation = nonStringTranslationMarker
 			}
 			byID[string(msg.ID)] = translation
@@ -134,47 +120,58 @@ func Generate(localesDir string, outputPath string, stdout io.Writer, stderr io.
 	}
 
 	if len(translations) == 0 {
-		return fmt.Errorf("no non-%s locale catalogs found in %s", baseLocale, localesDir)
+		return fmt.Errorf("no non-%s locale catalogs found in %s", catalog.BaseLocale, localesDir)
 	}
 
-	locales := make([]string, 0, len(translations))
-	for locale := range translations {
-		locales = append(locales, locale)
-	}
-	sort.Strings(locales)
+	locales := slices.Sorted(maps.Keys(translations))
+	sortedIDs := slices.Sorted(maps.Keys(ids))
 
-	sortedIDs := make([]string, 0, len(ids))
-	for id := range ids {
-		sortedIDs = append(sortedIDs, id)
+	// Coverage counts the base locale's ids, so an id removed from the source but left in one
+	// locale doesn't lower every other locale's score.
+	sourceIDs := englishText
+	if len(sourceIDs) == 0 {
+		sourceIDs = make(map[string]string, len(ids))
+		for id := range ids {
+			sourceIDs[id] = ""
+		}
 	}
-	sort.Strings(sortedIDs)
-
-	rows := make([]reportRow, 0, len(sortedIDs))
+	data := reportData{Locales: make([]localeCoverage, len(locales)), Total: len(sourceIDs)}
+	for i, locale := range locales {
+		data.Locales[i] = localeCoverage{Name: locale, Total: len(sourceIDs)}
+	}
 	for _, id := range sortedIDs {
 		english := englishText[id]
 		if english == "" {
 			english = id
 		}
-		row := reportRow{English: english, Translations: make([]string, len(locales))}
+		row := reportRow{English: english, Cells: make([]reportCell, len(locales))}
 		allMatch := true
 		for i, locale := range locales {
-			t := translations[locale][id]
-			row.Translations[i] = t
-			if t != english {
+			text := translations[locale][id]
+			missing := text == ""
+			if _, source := sourceIDs[id]; source && !missing {
+				data.Locales[i].Translated++
+			}
+			row.Cells[i] = reportCell{Text: text, Missing: missing}
+			row.Missing = row.Missing || missing
+			if text != english {
 				allMatch = false
 			}
 		}
 		if allMatch {
 			continue
 		}
-		rows = append(rows, row)
+		if row.Missing {
+			data.MissingRows++
+		}
+		data.Rows = append(data.Rows, row)
 	}
 
-	if err := writeReport(outputPath, reportData{Locales: locales, Rows: rows}); err != nil {
+	if err := writeReport(outputPath, data); err != nil {
 		return err
 	}
 
-	_, _ = fmt.Fprintf(stdout, "wrote %s (%d locales, %d strings)\n", outputPath, len(locales), len(rows))
+	u.Success("Wrote %s (%d locales, %d rows)", outputPath, len(locales), len(data.Rows))
 	return nil
 }
 
@@ -190,18 +187,6 @@ func validateConfig(localesDir string, outputPath string) error {
 		return fmt.Errorf("missing configuration: %s", strings.Join(missing, ", "))
 	}
 	return nil
-}
-
-func loadCatalog(path string) (*catalog, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var cat catalog
-	if err := json.Unmarshal(data, &cat); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return &cat, nil
 }
 
 func writeReport(outputPath string, data reportData) error {

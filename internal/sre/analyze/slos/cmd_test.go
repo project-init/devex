@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/project-init/devex/internal/ui"
 )
 
 var testOptions = options{SLOFile: "testdata/openslo.yaml", Group: "orders", Format: "csv", Batch: 8, MinEvents: 100}
@@ -25,8 +27,7 @@ func testDeps(q *fakeQuerier) (deps, *bytes.Buffer) {
 	return deps{
 		getenv:    func(k string) string { return env[k] },
 		newClient: func(string, string, string) querier { return q },
-		stdout:    &stdout,
-		stderr:    io.Discard,
+		ui:        ui.NewWithStreams(nil, &stdout, io.Discard, ui.Options{}),
 		now:       func() time.Time { return testNow },
 	}, &stdout
 }

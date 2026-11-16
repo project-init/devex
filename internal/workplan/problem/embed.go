@@ -2,6 +2,7 @@ package problem
 
 import (
 	"embed"
+	"errors"
 	"os"
 	"path"
 	"text/template"
@@ -25,12 +26,5 @@ func GenerateProblemTemplate(outputPath string) error {
 	if err != nil {
 		return err
 	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(templatizedFile)
-
-	return templ.Execute(templatizedFile, nil)
+	return errors.Join(templ.Execute(templatizedFile, nil), templatizedFile.Close())
 }

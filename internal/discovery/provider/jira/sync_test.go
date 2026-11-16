@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -199,6 +200,9 @@ func TestSyncPlansReusesUpdatesCreatesAndUnlinks(t *testing.T) {
 	}
 	if update.Fields["expected_live"] == "" {
 		t.Fatalf("update fields = %#v", update.Fields)
+	}
+	if diff := update.Diff; diff["description"].Note != "rewritten from the bundle" || len(diff) != 1 {
+		t.Fatalf("update diff = %#v, want the description noted", diff)
 	}
 	if operationByID(synced, "reuse-WI-002").Action != provider.ActionReuseIssue {
 		t.Fatalf("an issue edited in Jira must be kept, not updated: %#v", synced)
@@ -522,5 +526,20 @@ func TestSyncKeepsSkippedChangesPendingAfterAPartialUpdate(t *testing.T) {
 	_, warnings = fake.sync(provider.SyncRequest{Operations: operations})
 	if !strings.Contains(strings.Join(warnings, "\n"), "Jira DEVEX-3 (WI-002) changed since devex last wrote it; skipped description") {
 		t.Fatalf("warnings = %v, want the description change still pending", warnings)
+	}
+}
+
+func TestDescribeUpdateShowsEachFieldBeforeAndAfter(t *testing.T) {
+	operation := provider.Operation{Fields: map[string]any{
+		"changed": []string{"labels", "parent", "summary"}, "title": "Ship audit logs", "parent_item_id": "INIT-001",
+	}}
+	describeUpdate(&operation, publishedIssue{summary: "Audit logs", labels: []string{"discovery"}}, []string{"audit", "discovery"})
+	want := map[string]provider.FieldChange{
+		"summary": {Before: "Audit logs", After: "Ship audit logs"},
+		"labels":  {Before: "discovery", After: "audit, discovery"},
+		"parent":  {Note: "moves under INIT-001"},
+	}
+	if got := operation.Diff; !maps.Equal(got, want) {
+		t.Errorf("Diff() = %#v, want %#v", got, want)
 	}
 }

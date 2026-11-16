@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manifoldco/promptui"
 	"github.com/project-init/gommon/pkg/githubclient"
 )
 
@@ -51,9 +50,9 @@ func TestReleaseLinesKeepOrderAndPlainCommits(t *testing.T) {
 
 	lines := releaseLines(commits, prs)
 	want := []releaseLine{
-		{Ref: "abcdef1", Author: "Ada", Title: "plain commit"},
-		{Ref: "#15", Author: "octocat", Title: "Ship it from API"},
-		{Ref: "#9", Author: "Grace", Title: "gone (#9)"},
+		{Ref: "abcdef1", Author: "Ada", Title: "plain commit", Kind: kindOther},
+		{Ref: "#15", Author: "octocat", Title: "Ship it from API", Kind: kindOther},
+		{Ref: "#9", Author: "Grace", Title: "gone (#9)", Kind: kindOther},
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("len = %d, want %d", len(lines), len(want))
@@ -79,7 +78,7 @@ func TestCommitsSinceFirstParentRange(t *testing.T) {
 	tip := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
 
 	t.Chdir(dir)
-	commits, err := commitsSince("v0.1.0", tip)
+	commits, err := commitsSince(context.Background(), "v0.1.0", tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +250,7 @@ func TestVersionAtTipUsesFirstParentTag(t *testing.T) {
 	tip := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
 
 	t.Chdir(dir)
-	got, baseline, err := versionAtTip(tip)
+	got, baseline, err := versionAtTip(context.Background(), tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +266,7 @@ func TestVersionAtTipReturnsDescribeErrors(t *testing.T) {
 	gitRun(t, dir, "tag", "v1.0.0")
 
 	t.Chdir(dir)
-	_, _, err := versionAtTip("deadbeefdead")
+	_, _, err := versionAtTip(context.Background(), "deadbeefdead")
 	if err == nil || !strings.Contains(err.Error(), "Not a valid object name") {
 		t.Fatalf("error = %v, want git's describe message", err)
 	}
@@ -279,7 +278,7 @@ func TestVersionAtTipWithoutTags(t *testing.T) {
 	sha := commitFile(t, dir, "f", "a\n", "base")
 
 	t.Chdir(dir)
-	got, baseline, err := versionAtTip(sha)
+	got, baseline, err := versionAtTip(context.Background(), sha)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +301,7 @@ func TestCreateAndPushTagUsesFetchedOriginMain(t *testing.T) {
 	gitRun(t, work, "update-ref", "refs/remotes/origin/main", old)
 
 	t.Chdir(work)
-	got, err := fetchOriginMain()
+	got, err := fetchOriginMain(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +312,7 @@ func TestCreateAndPushTagUsesFetchedOriginMain(t *testing.T) {
 	if head == tip {
 		t.Fatal("local checkout moved to origin/main")
 	}
-	if err := createAndPushTag("v1.2.3", got); err != nil {
+	if err := createAndPushTag(context.Background(), "v1.2.3", got); err != nil {
 		t.Fatal(err)
 	}
 	tagged := strings.TrimSpace(gitRun(t, work, "rev-parse", "v1.2.3^{}"))
@@ -345,7 +344,7 @@ func TestFetchOriginMainUpdatesTipWhenATagWouldBeClobbered(t *testing.T) {
 	gitRun(t, work, "update-ref", "refs/remotes/origin/main", old)
 
 	t.Chdir(work)
-	got, err := fetchOriginMain()
+	got, err := fetchOriginMain(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,12 +353,18 @@ func TestFetchOriginMainUpdatesTipWhenATagWouldBeClobbered(t *testing.T) {
 	}
 }
 
-func TestCancelledReleaseHidesEmptyAbort(t *testing.T) {
-	for _, err := range []error{promptui.ErrAbort, promptui.ErrInterrupt} {
-		got := cancelledRelease(err)
-		if got == nil || got.Error() != "tag creation cancelled" {
-			t.Errorf("cancelledRelease(%v) = %v", err, got)
-		}
+func TestParseBumpTypeGuardsMajor(t *testing.T) {
+	if got, err := parseBumpType("minor", false); err != nil || got != BumpMinor {
+		t.Errorf("parseBumpType(minor) = %v, %v; want minor", got, err)
+	}
+	if _, err := parseBumpType("major", false); err == nil || !strings.Contains(err.Error(), "allowMajorVersionBump") {
+		t.Errorf("parseBumpType(major, disallowed) error = %v, want the config guard", err)
+	}
+	if got, err := parseBumpType("major", true); err != nil || got != BumpMajor {
+		t.Errorf("parseBumpType(major, allowed) = %v, %v; want major", got, err)
+	}
+	if _, err := parseBumpType("huge", true); err == nil {
+		t.Error("parseBumpType(huge) error = nil, want an invalid value error")
 	}
 }
 
@@ -371,7 +376,7 @@ func TestFailedTagPushIncludesGitStderr(t *testing.T) {
 	sha := commitFile(t, dir, "g", "b\n", "next")
 
 	t.Chdir(dir)
-	err := createAndPushTag("v1.0.1", sha)
+	err := createAndPushTag(context.Background(), "v1.0.1", sha)
 	if err == nil {
 		t.Fatal("expected push to fail")
 	}
@@ -381,7 +386,7 @@ func TestFailedTagPushIncludesGitStderr(t *testing.T) {
 	if cmd := exec.Command("git", "-C", dir, "rev-parse", "v1.0.1"); cmd.Run() == nil {
 		t.Fatal("unpushed tag v1.0.1 was left in the repo")
 	}
-	got, baseline, err := versionAtTip(sha)
+	got, baseline, err := versionAtTip(context.Background(), sha)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,57 +3,25 @@ package signal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jszwec/csvutil"
+	"github.com/project-init/devex/internal/atomicfile"
 	"github.com/project-init/devex/internal/contributions/config"
-	"github.com/project-init/devex/internal/contributions/types"
 )
 
-func signalsToCSVUsers(signals []*types.UserSignal, cfg *config.Config) error {
-	year, month, day := time.Now().Date()
-	f, err := os.Create(fmt.Sprintf("%s/%d_%02d_%02d_user_%d_days_signal.csv", cfg.OutputDirectories.Signals, year, month, day, cfg.NumLookBackDays))
-	if err != nil {
-		return err
+// writeSignals writes signals as a dated CSV of kind in the signals directory, creating the
+// directory when missing, and returns the file's path.
+func writeSignals(cfg *config.Config, kind string, signals any) (string, error) {
+	if err := os.MkdirAll(cfg.OutputDirectories.Signals, 0o755); err != nil {
+		return "", err
 	}
-
-	defer func(f *os.File) {
-		_ = f.Close()
-	}(f)
-
+	year, month, day := time.Now().Date()
+	path := filepath.Join(cfg.OutputDirectories.Signals, fmt.Sprintf("%d_%02d_%02d_%s_%d_days_signal.csv", year, month, day, kind, cfg.NumLookBackDays))
 	bytes, err := csvutil.Marshal(signals)
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	_, err = f.Write(bytes)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func signalsToCSVRepos(signals []*types.RepoSignal, cfg *config.Config) error {
-	year, month, day := time.Now().Date()
-	f, err := os.Create(fmt.Sprintf("%s/%d_%02d_%02d_repo_%d_days_signal.csv", cfg.OutputDirectories.Signals, year, month, day, cfg.NumLookBackDays))
-	if err != nil {
-		return err
-	}
-
-	defer func(f *os.File) {
-		_ = f.Close()
-	}(f)
-
-	bytes, err := csvutil.Marshal(signals)
-	if err != nil {
-		return err
-	}
-
-	_, err = f.Write(bytes)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return path, atomicfile.Write(path, bytes)
 }

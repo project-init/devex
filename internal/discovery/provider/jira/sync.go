@@ -60,6 +60,7 @@ type publishedIssue struct {
 	ref       provider.RemoteRef
 	stamp     provider.Stamp
 	live      string
+	summary   string
 	issueType string
 	labels    []string
 	links     []jiraclient.IssueLink
@@ -107,6 +108,9 @@ func (a *Adapter) Sync(
 			Stamp: issue.stamp,
 			Live:  issue.live,
 		}, changed, request.Force, liveFields)
+		if operation.Action == provider.ActionUpdateIssue {
+			describeUpdate(&operation, issue, desiredLabels)
+		}
 		if warning != "" {
 			warnings = append(warnings, warning)
 		}
@@ -170,7 +174,7 @@ func (a *Adapter) publishedIssues(
 			if state.links, err = issue.Links(); err != nil {
 				return nil, err
 			}
-			state.ref = provider.RemoteRef{ID: issue.ID, Key: issue.Key, URL: browseURL(target, issue.Key), Type: "issue"}
+			state.ref = issueRef(target, issue.ID, issue.Key)
 			state.stamp = stamp
 			// A lost create response and its retry can mark two issues; the original is the oldest.
 			if existing, exists := published[stamp.ID]; !exists || olderID(issue.ID, existing.ref.ID) {
@@ -319,6 +323,26 @@ func issueLabel(issueKey string) string {
 	return "Jira " + issueKey
 }
 
+// describeUpdate records the before and after of each Jira field an update rewrites.
+func describeUpdate(operation *provider.Operation, issue publishedIssue, desiredLabels []string) {
+	changed, _ := operation.Fields["changed"].([]string)
+	operation.Diff = make(map[string]provider.FieldChange, len(changed))
+	for _, field := range changed {
+		switch field {
+		case "summary":
+			title, _ := operation.Fields["title"].(string)
+			operation.Diff[field] = provider.FieldChange{Before: issue.summary, After: title}
+		case "labels":
+			operation.Diff[field] = provider.LabelChange(issue.labels, desiredLabels)
+		case "parent":
+			parent, _ := operation.Fields["parent_item_id"].(string)
+			operation.Diff[field] = provider.FieldChange{Note: "moves under " + parent}
+		default:
+			operation.Diff[field] = provider.Rewritten
+		}
+	}
+}
+
 // issueState reads an issue's live digest, issue type, and labels. The digest covers the summary
 // and description as Jira stores them; Jira normalizes the description it receives, so a digest
 // must come from a read.
@@ -338,6 +362,7 @@ func issueState(issue jiraclient.Issue) (publishedIssue, error) {
 		}
 	}
 	state.live = provider.Digest(summary, description)
+	state.summary = summary
 	state.issueType = issueType.Name
 
 	return state, nil
@@ -514,7 +539,7 @@ func (a *Adapter) executeUnlink(
 			return provider.RemoteRef{}, fmt.Errorf("remove link %s from %s: %w", linkID, blockedKey, err)
 		}
 	}
-	delete(a.linkCache, blockedKey)
+	a.links.forget(blockedKey)
 
 	return provider.RemoteRef{Key: blockedKey, URL: browseURL(target, blockedKey), Type: "issue_link"}, nil
 }

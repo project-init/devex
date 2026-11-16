@@ -23,9 +23,9 @@ changes to an automated formatter could be seen as substantial enough to warrant
 
 #### **Do you intend to add a new feature or change an existing one?**
 
-- Create a Pull Request with a new workplan. There should be at least a problem.md document and ideally a workplan.yaml
-  as part of the pull request. Use `mise workplan <cmd_to_add_or_alter> <workplan_name>` to generate the workplan documents
-  to build out. Check the [workplans](docs/workplans) folder for example subtypes that have already been used.
+- Open a Pull Request with a discovery bundle. Run `go run ./cmd/devex discovery init docs/discoveries <name>` to
+  generate `discovery.md` and `work-breakdown.yaml`, then fill them in. The
+  [discovery docs](cmd/devex/README.md#discovery) explain each file.
 - Do not open an issue on GitHub until you have collected positive feedback about the change. GitHub issues are
   primarily intended for bug reports and fixes.
 

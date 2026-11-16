@@ -12,9 +12,11 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/project-init/devex/internal/sre/dependencies/edit"
+	"github.com/project-init/devex/internal/sre/dependencies/lookup"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"github.com/project-init/devex/internal/sre/dependencies/policy"
 	"golang.org/x/mod/modfile"
@@ -126,12 +128,31 @@ func (p Planner) Links() ([]Link, []string, error) {
 // LinkedPolicy fails on a policy that names a linked input, which follows go.mod instead.
 func LinkedPolicy(links []Link, policies map[string]string) error {
 	for _, link := range links {
-		if _, ok := policies[link.Key]; ok {
-			return fmt.Errorf("buf.policies.%s: the input follows %s in go.mod, so it takes no policy", link.Key, link.Module)
+		if err := link.PolicyError(policies); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+// PolicyError reports a policy set on l, which takes none, since it follows its module in go.mod.
+func (l Link) PolicyError(policies map[string]string) error {
+	if _, ok := policies[l.Key]; ok {
+		return fmt.Errorf("buf.policies.%s: the input follows %s in go.mod, so it takes no policy", l.Key, l.Module)
+	}
+
+	return nil
+}
+
+// Drift describes how l's tag differs from the version go.mod builds against, or "" when it
+// matches.
+func (l Link) Drift() string {
+	if !l.Moves() {
+		return ""
+	}
+
+	return fmt.Sprintf("tag %s, but go.mod builds against %s %s", l.Change.From, l.Module, l.Required)
 }
 
 func (l loaded) links() []Link {
@@ -400,7 +421,12 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 		return Plan{}, fmt.Errorf("buf.policies names %s, which no buf.gen template references", strings.Join(unknown, ", "))
 	}
 
-	cache := lookups{plugins: map[string]string{}, tags: map[string][]string{}}
+	// resolvable lists the pins that need a lookup, with their policies.
+	type resolvable struct {
+		pin pin
+		pol policy.Policy
+	}
+	var work []resolvable
 	for _, pn := range l.found {
 		pol, ok := policies[pn.key]
 		if !ok {
@@ -418,7 +444,33 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 		if pn.module != "" {
 			continue
 		}
-		to, err := p.resolve(ctx, pn, pol, cache)
+		work = append(work, resolvable{pn, pol})
+	}
+	keys := func(plugin bool) []string {
+		var out []string
+		for _, w := range work {
+			if w.pin.plugin == plugin {
+				out = append(out, w.pin.key)
+			}
+		}
+		return out
+	}
+	// Several templates can share a plugin or input, so each key resolves once. Registry and git
+	// lookups run side by side, and every one finishes before Plan reports the first failure,
+	// in template order.
+	var found lookups
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		// A closure, so a planner without a registry fails only when a plugin needs one.
+		found.plugins = lookup.All(ctx, keys(true), func(ctx context.Context, plugin string) (string, error) {
+			return p.Registry.LatestPlugin(ctx, plugin)
+		})
+	})
+	wg.Go(func() { found.tags = lookup.All(ctx, keys(false), p.listTags) })
+	wg.Wait()
+	for _, w := range work {
+		pn := w.pin
+		to, err := resolve(pn, w.pol, found)
 		if err != nil {
 			return Plan{}, fmt.Errorf("%w; set buf.policies.%s to pin to skip the lookup", err, pn.key)
 		}
@@ -431,60 +483,62 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 	return plan, nil
 }
 
-// lookups caches registry and git answers, since several templates can share a plugin or input.
+// lookups holds the registry and git answers by plugin or input.
 type lookups struct {
-	plugins map[string]string
-	tags    map[string][]string
+	plugins map[string]lookup.Result[string]
+	tags    map[string]lookup.Result[[]string]
 }
 
-// resolve returns the version pol moves pn to, or "" when none is newer. It fails only when a
-// lookup does.
-func (p Planner) resolve(ctx context.Context, pn pin, pol policy.Policy, l lookups) (string, error) {
+// resolve returns the version pol moves pn to, or "" when none is newer. It fails only when
+// pn's lookup did.
+func resolve(pn pin, pol policy.Policy, l lookups) (string, error) {
 	if pn.plugin {
-		latest, ok := l.plugins[pn.key]
-		if !ok {
-			var err error
-			if latest, err = p.Registry.LatestPlugin(ctx, pn.key); err != nil {
-				return "", err
-			}
-			l.plugins[pn.key] = latest
+		latest := l.plugins[pn.key]
+		if latest.Err != nil {
+			return "", latest.Err
 		}
 		// A plugin version is an exact registry identifier, so it moves as published.
-		if !policy.Newer(pn.version, latest) {
+		if !policy.Newer(pn.version, latest.Value) {
 			return "", nil
 		}
 
-		return latest, nil
+		return latest.Value, nil
+	}
+	tags := l.tags[pn.key]
+	if tags.Err != nil {
+		return "", tags.Err
 	}
 
-	tags, ok := l.tags[pn.key]
-	if !ok {
-		var timeout error
-		if p.Timeout > 0 {
-			timeout = fmt.Errorf("timed out after %s: %w", p.Timeout, context.DeadlineExceeded)
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeoutCause(ctx, p.Timeout, timeout)
-			defer cancel()
+	return pol.Pick(pn.version, tags.Value), nil
+}
+
+// listTags lists the tags of the git repository at url.
+func (p Planner) listTags(ctx context.Context, url string) ([]string, error) {
+	var timeout error
+	if p.Timeout > 0 {
+		timeout = fmt.Errorf("timed out after %s: %w", p.Timeout, context.DeadlineExceeded)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, p.Timeout, timeout)
+		defer cancel()
+	}
+	// A private repository without cached credentials fails instead of prompting.
+	env := []string{"GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never"}
+	out, err := p.Run.Output(ctx, p.Root, env, "git", "ls-remote", "--tags", "--refs", "--end-of-options", url)
+	if err != nil && timeout != nil && context.Cause(ctx) == timeout {
+		// A killed git reports only its signal, so the timeout says why it stopped.
+		err = timeout
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list tags of %s: %w", url, err)
+	}
+	var tags []string
+	for line := range strings.Lines(string(out)) {
+		if _, ref, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok {
+			tags = append(tags, strings.TrimPrefix(ref, "refs/tags/"))
 		}
-		// A private repository without cached credentials fails instead of prompting.
-		env := []string{"GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never"}
-		out, err := p.Run.Output(ctx, p.Root, env, "git", "ls-remote", "--tags", "--refs", "--end-of-options", pn.key)
-		if err != nil && timeout != nil && context.Cause(ctx) == timeout {
-			// A killed git reports only its signal, so the timeout says why it stopped.
-			err = timeout
-		}
-		if err != nil {
-			return "", fmt.Errorf("list tags of %s: %w", pn.key, err)
-		}
-		for line := range strings.Lines(string(out)) {
-			if _, ref, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok {
-				tags = append(tags, strings.TrimPrefix(ref, "refs/tags/"))
-			}
-		}
-		l.tags[pn.key] = tags
 	}
 
-	return pol.Pick(pn.version, tags), nil
+	return tags, nil
 }
 
 func templatePins(file pins.File, doc *yaml.Node) []pin {

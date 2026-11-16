@@ -20,14 +20,25 @@ devex sre dependencies upgrade --go
 devex sre dependencies upgrade --all
 
 # Plan and verify without writing anything.
-devex sre dependencies upgrade --all --show-commands
+devex sre dependencies upgrade --all --dry-run
+
+# The same plan as JSON, for scripts.
+devex sre dependencies upgrade --all --dry-run --output json
 
 # Take a deliberate minor bump, or settle existing drift.
 devex sre dependencies upgrade --go --go-version 1.27.1
 
 # Fail when pins disagree. Offline; run it in pull request CI.
 devex sre dependencies check
+
+# List every problem as JSON; the exit status still fails on any.
+devex sre dependencies check --output json
 ```
+
+Planning resolves the go, mise, and buf ecosystems at once, and runs each one's lookups, such
+as image digests, `mise latest`, Buf plugins, and `git ls-remote`, up to eight of each kind at
+a time. The plan and its warnings still print in a fixed order. Warnings and progress go to
+stderr, so stdout carries only the plan or the JSON document.
 
 A `.sre` directory is optional for these commands. Without one, they run on the defaults
 below.
@@ -41,7 +52,9 @@ below.
 | `--buf`           | Move `buf.gen.yaml` plugins and inputs within their policies, regenerate, and refresh `buf.lock`  |
 | `--all`           | Enable the ecosystems in `dependencies.upgrade`                                                   |
 | `--go-version`    | Move Go to this published release, ignoring `target` and waiving existing drift                   |
-| `--show-commands` | Resolve the target and verify image tags, then print each change and command without running them |
+| `--dry-run`       | Resolve the target and verify image tags, then print each change and command without running them |
+| `--show-commands` | Same as `--dry-run`                                                                               |
+| `--output json`   | With `--dry-run`, print the plan as JSON; on `check`, list every problem as JSON                  |
 
 ## Configuration
 

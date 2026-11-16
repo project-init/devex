@@ -1,0 +1,46 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QyMDo0Njo1N1rPAAAAATwKsK0="
+        },
+        "nodes": [
+          {
+            "number": 115,
+            "createdAt": "2026-11-13T20:23:20Z",
+            "mergedAt": "2026-11-13T20:46:55Z",
+            "updatedAt": "2026-11-13T20:46:57Z",
+            "author": {
+              "__typename": "User",
+              "login": "octocat"
+            },
+            "reviews": {
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Y3Vyc29yOnYyOpO0MjAyNi0xMS0xM1QyMDozNjozMFq0MjAyNi0xMS0xM1QyMDozNjozMFrPAAAAAV-H4RM="
+              },
+              "nodes": [
+                {
+                  "author": {
+                    "__typename": "User",
+                    "login": "monalisa"
+                  },
+                  "state": "APPROVED"
+                },
+                {
+                  "author": {
+                    "__typename": "Bot",
+                    "login": "dependabot"
+                  },
+                  "state": "COMMENTED"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

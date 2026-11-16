@@ -16,3 +16,4 @@ postgres:
       sslMode: require
       username: "readonly"
       iam: true
+      region: us-east-1 # signs the IAM token; the default

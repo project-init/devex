@@ -30,10 +30,7 @@ func (a *Adapter) Sync(
 	target config.Target,
 	request provider.SyncRequest,
 ) ([]provider.Operation, []string, error) {
-	prefix := markerPrefix(request.DiscoveryID)
-	published, err := a.markedIssues(ctx, target, func(marker string) bool {
-		return strings.HasPrefix(marker, prefix)
-	})
+	published, _, err := a.markedIssues(ctx, target, request.DiscoveryID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -50,11 +47,14 @@ func (a *Adapter) Sync(
 		changed := provider.ChangedFields(current.Stamp, operation, sourceFields...)
 		// An update keeps every label already on the issue, so a label change adds or does nothing.
 		if desired, _ := stringSlice(operation.Fields["labels"]); !slices.ContainsFunc(desired, func(label string) bool {
-			return !slices.ContainsFunc(issue.Labels, func(existing *gh.Label) bool { return existing.GetName() == label })
+			return !hasLabel(issue, label)
 		}) {
 			changed = slices.DeleteFunc(changed, func(field string) bool { return field == "labels" })
 		}
 		synced, warning := provider.SyncIssue(operation, current, changed, request.Force, sourceFields)
+		if synced.Action == provider.ActionUpdateIssue {
+			describeUpdate(&synced, issue)
+		}
 		if warning != "" {
 			warnings = append(warnings, warning)
 		}
@@ -66,6 +66,28 @@ func (a *Adapter) Sync(
 	}
 
 	return operations, append(warnings, provider.OrphanWarnings(labels, request.Operations)...), nil
+}
+
+// describeUpdate records the before and after of each issue field an update rewrites.
+func describeUpdate(operation *provider.Operation, issue *gh.Issue) {
+	changed, _ := operation.Fields["changed"].([]string)
+	operation.Diff = make(map[string]provider.FieldChange, len(changed))
+	for _, field := range changed {
+		switch field {
+		case "title":
+			title, _ := operation.Fields["title"].(string)
+			operation.Diff[field] = provider.FieldChange{Before: issue.GetTitle(), After: title}
+		case "labels":
+			var existing []string
+			for _, label := range issue.Labels {
+				existing = append(existing, label.GetName())
+			}
+			desired, _ := stringSlice(operation.Fields["labels"])
+			operation.Diff[field] = provider.LabelChange(existing, desired)
+		default:
+			operation.Diff[field] = provider.Rewritten
+		}
+	}
 }
 
 func publishedIssue(issue *gh.Issue) provider.PublishedIssue {

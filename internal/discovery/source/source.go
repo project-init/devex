@@ -4,6 +4,7 @@
 package source
 
 import (
+	"context"
 	"net/url"
 	"os/exec"
 	"strings"
@@ -14,24 +15,24 @@ import (
 // offline: a bundle outside a Git checkout, a checkout without a GitHub origin, or a repository
 // whose default branch cannot be determined locally all yield an empty string, and callers omit
 // the link rather than publish a broken one.
-func DocumentURL(directory string, file string) string {
+func DocumentURL(ctx context.Context, directory string, file string) string {
 	// url.JoinPath resolves "..", so a file climbing out of the bundle would address an
 	// unrelated repository. Bundle loading rejects such a path already; refusing it here keeps
 	// that true for any other caller.
 	if file == "" || strings.Contains(file, "..") {
 		return ""
 	}
-	owner, repository := parseGitHubRemote(gitOutput(directory, "remote", "get-url", "origin"))
+	owner, repository := parseGitHubRemote(gitOutput(ctx, directory, "remote", "get-url", "origin"))
 	if owner == "" || repository == "" {
 		return ""
 	}
-	branch := defaultBranch(directory)
+	branch := defaultBranch(ctx, directory)
 	if branch == "" {
 		return ""
 	}
 	// Git reports the path relative to the repository root, already slash-separated and with
 	// symlinks resolved, so no local path arithmetic is needed to place the file.
-	prefix := gitOutput(directory, "rev-parse", "--show-prefix")
+	prefix := gitOutput(ctx, directory, "rev-parse", "--show-prefix")
 	documentURL, err := url.JoinPath("https://github.com", owner, repository, "blob", branch, prefix+file)
 	if err != nil {
 		return ""
@@ -42,12 +43,12 @@ func DocumentURL(directory string, file string) string {
 
 // defaultBranch reads the branch origin points at, falling back to the conventional names because
 // a clone only records origin/HEAD when it was cloned rather than added by hand.
-func defaultBranch(directory string) string {
-	if head := gitOutput(directory, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); head != "" {
+func defaultBranch(ctx context.Context, directory string) string {
+	if head := gitOutput(ctx, directory, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); head != "" {
 		return strings.TrimPrefix(head, "origin/")
 	}
 	for _, candidate := range []string{"main", "master"} {
-		if gitOutput(directory, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+candidate) != "" {
+		if gitOutput(ctx, directory, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+candidate) != "" {
 			return candidate
 		}
 	}
@@ -80,8 +81,8 @@ func parseGitHubRemote(remote string) (string, string) {
 	return owner, repository
 }
 
-func gitOutput(directory string, args ...string) string {
-	output, err := exec.Command("git", append([]string{"-C", directory}, args...)...).Output()
+func gitOutput(ctx context.Context, directory string, args ...string) string {
+	output, err := exec.CommandContext(ctx, "git", append([]string{"-C", directory}, args...)...).Output()
 	if err != nil {
 		return ""
 	}

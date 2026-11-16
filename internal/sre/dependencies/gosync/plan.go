@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"github.com/project-init/devex/internal/sre/dependencies/edit"
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
+	"github.com/project-init/devex/internal/sre/dependencies/lookup"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
 )
@@ -63,22 +65,7 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 	}
 	plan.Current = current
 
-	releases, err := p.Resolver.Releases(ctx)
-	if err != nil {
-		return Plan{}, err
-	}
-	switch {
-	case p.Override != nil:
-		if !goversion.Released(releases, *p.Override) {
-			return Plan{}, fmt.Errorf("--go-version %s is not a published Go release", p.Override)
-		}
-		plan.Target = *p.Override
-	case p.Settings.Target == TargetLatest:
-		plan.Target, err = goversion.Latest(releases, current)
-	default:
-		plan.Target, err = goversion.LatestPatch(releases, current)
-	}
-	if err != nil {
+	if plan.Target, err = p.target(ctx, current); err != nil {
 		return Plan{}, err
 	}
 
@@ -101,7 +88,7 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 	}
 
 	var tagProblems []Problem
-	verified := map[string]verification{}
+	verified := p.resolveDigests(ctx, found.Pins, planned.Pins)
 	for i, pin := range found.Pins {
 		to := planned.Pins[i].Version
 		changed := to != pin.Version
@@ -109,11 +96,10 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 			plan.Changes = append(plan.Changes, Change{File: pin.File, Line: pin.Line, Kind: pin.Kind, Span: pin.Span, From: pin.Version.String(), To: to.String()})
 		}
 		for _, img := range pin.Images {
-			// A tag whose text stays put, such as golang:1.26, can still move to a new digest.
-			if !changed && img.Digest == "" {
+			if !verifies(img, changed) {
 				continue
 			}
-			change, warning, problem := p.verifyImage(ctx, verified, pin, img, to)
+			change, warning, problem := p.verifyImage(verified, pin, img, to)
 			switch {
 			case problem != "" && changed:
 				tagProblems = append(tagProblems, Problem{Pin: pin, Reason: problem})
@@ -140,6 +126,46 @@ func (p Planner) Plan(ctx context.Context) (Plan, error) {
 	}
 
 	return plan, nil
+}
+
+// supportedResolver is a Resolver that can also list only the supported minor lines.
+type supportedResolver interface {
+	Supported(ctx context.Context) ([]goversion.Version, error)
+}
+
+// target picks the version the plan moves Go to. When the resolver offers the supported lines
+// alone, a feed a hundredth the size of the full one, it picks from those first, and reads the
+// full feed only when they hold no answer, as for an older line, or cannot be read.
+func (p Planner) target(ctx context.Context, current goversion.Version) (goversion.Version, error) {
+	if s, ok := p.Resolver.(supportedResolver); ok {
+		// A failed read of the small feed falls through to the full one, which answers everything.
+		if supported, err := s.Supported(ctx); err == nil {
+			if target, err := p.pick(supported, current); err == nil {
+				return target, nil
+			}
+		}
+	}
+	releases, err := p.Resolver.Releases(ctx)
+	if err != nil {
+		return goversion.Version{}, err
+	}
+	return p.pick(releases, current)
+}
+
+// pick chooses the target from releases: the override, the newest release, or the newest patch
+// on current's line.
+func (p Planner) pick(releases []goversion.Version, current goversion.Version) (goversion.Version, error) {
+	switch {
+	case p.Override != nil:
+		if !goversion.Released(releases, *p.Override) {
+			return goversion.Version{}, fmt.Errorf("--go-version %s is not a published Go release", p.Override)
+		}
+		return *p.Override, nil
+	case p.Settings.Target == TargetLatest:
+		return goversion.Latest(releases, current)
+	default:
+		return goversion.LatestPatch(releases, current)
+	}
 }
 
 // lockWarnings warns about each mise lock file in files: a lock pins exact tool versions,
@@ -169,15 +195,39 @@ func (p Planner) rewrite(pin pins.Pin, target goversion.Version) goversion.Versi
 	}
 }
 
-type verification struct {
-	digest string
-	err    error
+// verifies reports whether the plan checks img: a rewritten tag, or a digest pin, since a tag
+// whose text stays put, such as golang:1.26, can still move to a new digest.
+func verifies(img pins.Image, changed bool) bool {
+	return changed || img.Digest != ""
+}
+
+type imageRef struct {
+	repository string
+	tag        string
+}
+
+// resolveDigests looks up, concurrently, every image tag the plan verifies: each rewritten tag,
+// and each digest-pinned tag, whose digest can move even when its text stays put. Many
+// Dockerfiles share one image, so each reference resolves once.
+func (p Planner) resolveDigests(ctx context.Context, from, to []pins.Pin) map[string]lookup.Result[string] {
+	refs := map[string]imageRef{}
+	for i, pin := range from {
+		changed := to[i].Version != pin.Version
+		for _, img := range pin.Images {
+			if img.Unresolved || !verifies(img, changed) {
+				continue
+			}
+			refs[img.Ref(to[i].Version)] = imageRef{repository: img.Repository, tag: img.Tag(to[i].Version)}
+		}
+	}
+	return lookup.All(ctx, slices.Sorted(maps.Keys(refs)), func(ctx context.Context, ref string) (string, error) {
+		return p.Registry.Digest(ctx, refs[ref].repository, refs[ref].tag)
+	})
 }
 
 // verifyImage confirms img's rewritten tag exists and, for a digest pin, returns the change
-// that moves the digest with it. verified caches each reference, since many Dockerfiles
-// often share one image.
-func (p Planner) verifyImage(ctx context.Context, verified map[string]verification, pin pins.Pin, img pins.Image, to goversion.Version) (change *Change, warning, problem string) {
+// that moves the digest with it, from the lookups resolveDigests made.
+func (p Planner) verifyImage(verified map[string]lookup.Result[string], pin pins.Pin, img pins.Image, to goversion.Version) (change *Change, warning, problem string) {
 	ref := img.Ref(to)
 	if img.Unresolved {
 		if img.Digest != "" {
@@ -186,12 +236,8 @@ func (p Planner) verifyImage(ctx context.Context, verified map[string]verificati
 
 		return nil, fmt.Sprintf("%s: %s takes its registry from a build arg; devex wrote it unverified", pin.Location(), ref), ""
 	}
-	v, ok := verified[ref]
-	if !ok {
-		v.digest, v.err = p.Registry.Digest(ctx, img.Repository, img.Tag(to))
-		verified[ref] = v
-	}
-	switch err := v.err; {
+	v := verified[ref]
+	switch err := v.Err; {
 	case errors.Is(err, registry.ErrNotFound):
 		return nil, "", fmt.Sprintf("%s is not published", ref)
 	case errors.Is(err, registry.ErrAuthRequired) && img.Digest != "":
@@ -201,9 +247,9 @@ func (p Planner) verifyImage(ctx context.Context, verified map[string]verificati
 	case err != nil:
 		return nil, "", fmt.Sprintf("%s: %v", ref, err)
 	}
-	if img.Digest == "" || img.Digest == v.digest {
+	if img.Digest == "" || img.Digest == v.Value {
 		return nil, "", ""
 	}
 
-	return &Change{File: pin.File, Line: img.DigestLine, Kind: pin.Kind, Span: img.DigestSpan, From: img.Digest, To: v.digest}, "", ""
+	return &Change{File: pin.File, Line: img.DigestLine, Kind: pin.Kind, Span: img.DigestSpan, From: img.Digest, To: v.Value}, "", ""
 }

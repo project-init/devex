@@ -48,7 +48,7 @@ func writeSyncPlan(t *testing.T, operations []provider.Operation) string {
 func TestApplyUpdatesPublishedIssuesAndUnlinks(t *testing.T) {
 	planPath := writeSyncPlan(t, []provider.Operation{
 		{ID: "reuse-INIT-001", Action: provider.ActionReuseIssue, ItemID: "INIT-001", IdempotencyKey: "one"},
-		{ID: "update-WI-001", Action: provider.ActionUpdateIssue, ItemID: "WI-001", IdempotencyKey: "two"},
+		{ID: "update-WI-001", Action: provider.ActionUpdateIssue, ItemID: "WI-001", IdempotencyKey: "two", DependsOn: []string{"reuse-INIT-001"}},
 		{ID: "unlink-WI-002/WI-001", Action: provider.ActionUnlinkIssues, IdempotencyKey: "three"},
 	})
 	adapter := &fakeAdapter{
@@ -60,7 +60,7 @@ func TestApplyUpdatesPublishedIssuesAndUnlinks(t *testing.T) {
 		},
 	}
 
-	receipt, err := Apply(context.Background(), planPath, adapter, nil)
+	receipt, err := Apply(context.Background(), planPath, adapter, ApplyHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestApplyFailsWhenAPlannedIssueIsGone(t *testing.T) {
 		})
 		adapter := &fakeAdapter{executions: make(map[string]int)}
 
-		_, err := Apply(context.Background(), planPath, adapter, nil)
+		_, err := Apply(context.Background(), planPath, adapter, ApplyHooks{})
 		if err == nil || !strings.Contains(err.Error(), "plan again") {
 			t.Fatalf("%s: err = %v, want a gone-issue failure", action, err)
 		}
@@ -106,7 +106,7 @@ func TestApplyFailsWhenAPlannedIssueIsGone(t *testing.T) {
 
 func TestApplyResumeSkipsSettledUpdatesAndUnlinks(t *testing.T) {
 	planPath := writeSyncPlan(t, []provider.Operation{
-		{ID: "update-WI-001", Action: provider.ActionUpdateIssue, ItemID: "WI-001", IdempotencyKey: "two"},
+		{ID: "update-WI-001", Action: provider.ActionUpdateIssue, ItemID: "WI-001", IdempotencyKey: "two", DependsOn: []string{"reuse-INIT-001"}},
 		{ID: "unlink-WI-002/WI-001", Action: provider.ActionUnlinkIssues, IdempotencyKey: "three"},
 		{ID: "create-WI-003", Action: provider.ActionCreateIssue, ItemID: "WI-003", IdempotencyKey: "four"},
 	})
@@ -115,11 +115,11 @@ func TestApplyResumeSkipsSettledUpdatesAndUnlinks(t *testing.T) {
 		failOnce:   "create-WI-003",
 		published:  map[string]provider.RemoteRef{"two": {ID: "2", Key: "DEVEX-2"}},
 	}
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err == nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err == nil {
 		t.Fatal("first Apply() succeeded, want temporary failure")
 	}
 
-	if _, err := Apply(context.Background(), planPath, adapter, nil); err != nil {
+	if _, err := Apply(context.Background(), planPath, adapter, ApplyHooks{}); err != nil {
 		t.Fatal(err)
 	}
 

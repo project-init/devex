@@ -54,19 +54,28 @@ func (e *CommandError) Unwrap() error {
 }
 
 func (r ExecRunner) Run(ctx context.Context, dir string, env []string, name string, args ...string) error {
-	return r.exec(ctx, dir, env, r.Stdout, name, args...)
+	return r.exec(ctx, dir, env, r.Stdout, r.Stderr, name, args...)
 }
 
 func (r ExecRunner) Output(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 	var stdout bytes.Buffer
-	if err := r.exec(ctx, dir, env, &stdout, name, args...); err != nil {
+	// Lookups run concurrently under a spinner, so their stderr stays off the terminal and
+	// reaches the user only in a failure's message.
+	if err := r.exec(ctx, dir, env, &stdout, nil, name, args...); err != nil {
+		var cmdErr *CommandError
+		if errors.As(err, &cmdErr) {
+			if detail := bytes.TrimSpace(cmdErr.Stderr); len(detail) > 0 {
+				// One clause, so a caller's suffix doesn't read as part of the command's output.
+				return nil, fmt.Errorf("%w (stderr: %s)", err, bytes.Join(bytes.Fields(detail), []byte(" ")))
+			}
+		}
 		return nil, err
 	}
 
 	return stdout.Bytes(), nil
 }
 
-func (r ExecRunner) exec(ctx context.Context, dir string, env []string, stdout io.Writer, name string, args ...string) error {
+func (r ExecRunner) exec(ctx context.Context, dir string, env []string, stdout, tee io.Writer, name string, args ...string) error {
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
@@ -79,8 +88,8 @@ func (r ExecRunner) exec(ctx context.Context, dir string, env []string, stdout i
 	// release's compiler.
 	cmd.Env = slices.Concat(os.Environ(), []string{"GOROOT="}, env)
 	cmd.Stdout, cmd.Stderr = stdout, &stderr
-	if r.Stderr != nil {
-		cmd.Stderr = io.MultiWriter(r.Stderr, &stderr)
+	if tee != nil {
+		cmd.Stderr = io.MultiWriter(tee, &stderr)
 	}
 	// ErrWaitDelay means the command succeeded while a child it left behind, such as an ssh
 	// ControlMaster, still held its pipes.

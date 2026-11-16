@@ -1,6 +1,7 @@
 package goversion
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,14 +9,19 @@ import (
 	"slices"
 )
 
-// releasesURL lists every Go release, including older minor lines that the default go.dev
-// feed omits once they leave support.
-const releasesURL = "https://go.dev/dl/?mode=json&include=all"
+const (
+	// releasesURL lists every Go release, including older minor lines that the default go.dev
+	// feed omits once they leave support. It runs to megabytes.
+	releasesURL = "https://go.dev/dl/?mode=json&include=all"
+	// supportedURL lists the newest release of each supported minor line, in kilobytes.
+	supportedURL = "https://go.dev/dl/?mode=json"
+)
 
 // Resolver fetches the published Go releases from go.dev.
 type Resolver struct {
-	URL    string
-	Client *http.Client
+	URL          string // overrides releasesURL
+	SupportedURL string // overrides supportedURL
+	Client       *http.Client
 }
 
 type release struct {
@@ -25,10 +31,15 @@ type release struct {
 
 // Releases returns every stable release, newest first.
 func (r Resolver) Releases(ctx context.Context) ([]Version, error) {
-	url := r.URL
-	if url == "" {
-		url = releasesURL
-	}
+	return r.fetch(ctx, cmp.Or(r.URL, releasesURL))
+}
+
+// Supported returns the newest stable release of each supported minor line, newest first.
+func (r Resolver) Supported(ctx context.Context) ([]Version, error) {
+	return r.fetch(ctx, cmp.Or(r.SupportedURL, supportedURL))
+}
+
+func (r Resolver) fetch(ctx context.Context, url string) ([]Version, error) {
 	client := r.Client
 	if client == nil {
 		client = http.DefaultClient

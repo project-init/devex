@@ -11,7 +11,9 @@ import (
 	"github.com/project-init/devex/internal/sre/dependencies/bsr"
 	"github.com/project-init/devex/internal/sre/dependencies/gosync"
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
+	"github.com/project-init/devex/internal/sre/dependencies/lookup"
 	"github.com/project-init/devex/internal/sre/dependencies/registry"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -35,8 +37,9 @@ func Command() *cobra.Command {
 func upgradeCommand() *cobra.Command {
 	var o upgradeOptions
 	cmd := &cobra.Command{
-		Use:   "upgrade",
-		Short: "Upgrade dependencies, keeping every Go version pin on one version",
+		Use:         "upgrade",
+		Annotations: map[string]string{ui.JSONAnnotation: "true"},
+		Short:       "Upgrade dependencies, keeping every Go version pin on one version",
 		Long: `Upgrade mise tools, Go modules, and Buf dependencies.
 
 --go moves every Go version pin (mise, go.mod, go.work, Dockerfile golang images, setup-go,
@@ -63,7 +66,12 @@ a go.mod requires follows that module's version instead.`,
 				return errors.New("--go-version requires --go")
 			}
 
-			return runUpgrade(cmd.Context(), cmd.OutOrStdout(), o, cfg, defaultEnvironment(cmd))
+			u := ui.New(cmd)
+			if u.JSON() && !o.dryRun {
+				return errors.New("--output json prints the upgrade plan; add --dry-run")
+			}
+
+			return runUpgrade(cmd.Context(), u, o, cfg, defaultEnvironment(cmd))
 		},
 	}
 
@@ -72,22 +80,24 @@ a go.mod requires follows that module's version instead.`,
 	cmd.Flags().BoolVar(&o.bufFlag, ecosystemBuf, false, "Upgrade buf.gen.yaml plugins and inputs within their policies, regenerate, and refresh buf.lock")
 	cmd.Flags().BoolVar(&o.all, "all", false, "Upgrade the ecosystems listed in dependencies.upgrade")
 	cmd.Flags().StringVar(&o.goVersion, "go-version", "", "Move Go to this exact release, overriding the target and any existing drift")
-	cmd.Flags().BoolVar(&o.dryRun, "show-commands", false, "Plan and verify without writing: print each pin change and command")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "Plan and verify without writing: print each pin change and command")
+	cmd.Flags().BoolVar(&o.dryRun, "show-commands", false, "Same as --dry-run")
 
 	return cmd
 }
 
 func checkCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "check",
-		Short: "Verify Go version pins and linked buf.gen tags agree, offline",
+		Use:         "check",
+		Annotations: map[string]string{ui.JSONAnnotation: "true"},
+		Short:       "Verify Go version pins and linked buf.gen tags agree, offline",
 		Long: `Fail when Go version pins disagree, when a go.mod go directive sits above the
 toolchain, when a go.work go directive sits below a module it uses, when the directive
 policy in .sre/dependencies.yaml does not hold, or when a buf.gen.yaml git input that
 follows a go.mod module sits on another tag or takes a policy. Run it in pull request CI to
 catch drift from Dependabot and hand edits.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runCheck(cmd.OutOrStdout(), dependenciesConfig(cmd), ".")
+			return runCheck(ui.New(cmd), dependenciesConfig(cmd), ".")
 		},
 	}
 	// check always covers Go and linked buf inputs, so --go is accepted but not required.
@@ -144,13 +154,20 @@ func hasMise() bool {
 }
 
 func defaultEnvironment(cmd *cobra.Command) environment {
+	// Lookups run concurrently against the same few hosts, and the default transport keeps only
+	// two idle connections per host, so every lookup past the second would redial.
 	client := &http.Client{Timeout: networkTimeout}
+	if transport, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = transport.Clone()
+		transport.MaxIdleConnsPerHost = 2 * lookup.Limit
+		client.Transport = transport
+	}
 
 	return environment{
 		Root:     ".",
 		Run:      gosync.ExecRunner{Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr()},
 		Resolver: goversion.Resolver{Client: client},
-		Registry: registry.Client{HTTP: client},
+		Registry: registry.NewClient(client),
 		Plugins:  bsr.Client{HTTP: client},
 		HasMise:  hasMise(),
 	}

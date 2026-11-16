@@ -37,7 +37,8 @@ type Adapter struct {
 	httpClient *http.Client
 	email      string
 	token      string
-	linkCache  map[string]map[string]bool
+	links      linkCache
+	projects   map[string]*project // by base URL and key, read by the online checks
 }
 
 // getClient instantiates our generic client for a specific target base URL dynamically.
@@ -48,7 +49,6 @@ func (a *Adapter) getClient(baseURL string) *jiraclient.Client {
 func New(authenticated bool) (*Adapter, error) {
 	adapter := &Adapter{
 		httpClient: &http.Client{Timeout: 15 * time.Second},
-		linkCache:  make(map[string]map[string]bool),
 	}
 	if authenticated {
 		adapter.email = os.Getenv("JIRA_EMAIL")
@@ -65,7 +65,6 @@ func NewWithClient(client *http.Client, email string, token string) *Adapter {
 		httpClient: client,
 		email:      email,
 		token:      token,
-		linkCache:  make(map[string]map[string]bool),
 	}
 }
 
@@ -167,6 +166,11 @@ func linkTypeFor(target config.Target) string {
 	return defaultLinkType
 }
 
+// issueRef refers to the Jira issue with id and key in target.
+func issueRef(target config.Target, id, key string) provider.RemoteRef {
+	return provider.RemoteRef{ID: id, Key: key, URL: browseURL(target, key), Type: "issue"}
+}
+
 func browseURL(target config.Target, issueKey string) string {
 	return strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + issueKey
 }
@@ -244,7 +248,7 @@ func (a *Adapter) Resolve(
 	}
 	// The search already read every issue's links, so link operations need not read them again.
 	for _, issue := range published {
-		a.cacheLinks(issue.ref.Key, issue.links)
+		a.links.store(issue.ref.Key, issue.links)
 	}
 
 	return refs, nil
@@ -321,7 +325,7 @@ func (a *Adapter) executeCreateIssue(
 		return provider.RemoteRef{}, err
 	}
 
-	a.cacheLinks(response.Key, nil)
+	a.links.store(response.Key, nil)
 	recordLive(ctx, client, operation, response.Key)
 
 	return provider.RemoteRef{
@@ -387,7 +391,7 @@ func (a *Adapter) executeLink(
 		if err := client.CreateIssueLink(ctx, linkType, blockingKey, blocked.Key); err != nil {
 			return provider.RemoteRef{}, a.describeLinkFailure(ctx, target, linkType, err)
 		}
-		a.rememberLink(blocked.Key, linkType, blockingKey)
+		a.links.add(blocked.Key, linkType, blockingKey)
 	}
 	return provider.RemoteRef{Key: blocked.Key, URL: blocked.URL, Type: "issue_link"}, nil
 }
@@ -411,6 +415,7 @@ func (a *Adapter) describeLinkFailure(
 	return fmt.Errorf("%w; link type %q must be one of: %s", cause, linkType, strings.Join(names, ", "))
 }
 
+// linkExists reports whether issueKey already has the link, asking Jira only on a cache miss.
 func (a *Adapter) linkExists(
 	ctx context.Context,
 	target config.Target,
@@ -418,43 +423,16 @@ func (a *Adapter) linkExists(
 	linkType string,
 	blockingKey string,
 ) (bool, error) {
-	if cached, exists := a.linkCache[issueKey]; exists {
-		return cached[linkKey(linkType, blockingKey)], nil
+	if found, cached := a.links.lookup(issueKey, linkType, blockingKey); cached {
+		return found, nil
 	}
-
-	client := a.getClient(target.Jira.BaseURL)
-	existingLinks, err := client.GetIssueLinks(ctx, issueKey)
+	existingLinks, err := a.getClient(target.Jira.BaseURL).GetIssueLinks(ctx, issueKey)
 	if err != nil {
 		return false, err
 	}
-
-	return a.cacheLinks(issueKey, existingLinks)[linkKey(linkType, blockingKey)], nil
-}
-
-// cacheLinks records and returns an issue's inward links, the ones linkExists checks.
-func (a *Adapter) cacheLinks(issueKey string, links []jiraclient.IssueLink) map[string]bool {
-	existing := make(map[string]bool, len(links))
-	for _, link := range links {
-		if link.InwardIssue != "" {
-			existing[linkKey(link.Type, link.InwardIssue)] = true
-		}
-	}
-	if a.linkCache == nil {
-		a.linkCache = make(map[string]map[string]bool)
-	}
-	a.linkCache[issueKey] = existing
-
-	return existing
-}
-
-func (a *Adapter) rememberLink(issueKey string, linkType string, blockingKey string) {
-	if a.linkCache == nil {
-		a.linkCache = make(map[string]map[string]bool)
-	}
-	if a.linkCache[issueKey] == nil {
-		a.linkCache[issueKey] = make(map[string]bool)
-	}
-	a.linkCache[issueKey][linkKey(linkType, blockingKey)] = true
+	a.links.store(issueKey, existingLinks)
+	found, _ := a.links.lookup(issueKey, linkType, blockingKey)
+	return found, nil
 }
 
 func linkKey(linkType string, blockingKey string) string {
@@ -533,3 +511,6 @@ func fieldStringSlice(operation provider.Operation, name string) ([]string, erro
 		return nil, fmt.Errorf("operation %s field %s must be a list", operation.ID, name)
 	}
 }
+
+// MaxConcurrent lets apply run four operations at once; the adapter guards its shared state.
+func (a *Adapter) MaxConcurrent() int { return 4 }

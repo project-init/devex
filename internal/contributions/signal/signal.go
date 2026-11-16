@@ -1,15 +1,24 @@
 package signal
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
+
 	"github.com/project-init/devex/internal/contributions/collection"
 	"github.com/project-init/devex/internal/contributions/config"
 	"github.com/project-init/devex/internal/contributions/types"
 )
 
-func Run(cfg *config.Config) error {
+// Run writes the user and repository signals for the pull requests collect stored, and returns
+// the files' paths.
+func Run(cfg *config.Config) ([]string, error) {
 	existingPrs, err := collection.GetExistingPRs(cfg)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("no collected pull requests in %s; run devex contributions collect first", cfg.OutputDirectories.Prs)
+	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	allPrs := make([]types.PR, 0)
@@ -24,11 +33,13 @@ func Run(cfg *config.Config) error {
 		}
 	}
 
-	err = getUserSignal(cfg, allPrs)
+	userPath, err := getUserSignal(cfg, allPrs)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	getRepoSignal(cfg, allPrs)
-	return nil
+	repoPath, err := getRepoSignal(cfg, allPrs)
+	if err != nil {
+		return nil, err
+	}
+	return []string{userPath, repoPath}, nil
 }

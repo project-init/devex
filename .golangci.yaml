@@ -1,0 +1,42 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - errcheck
+    - forbidigo
+    - gocheckcompilerdirectives
+    - govet
+    - ineffassign
+    - nilnesserr
+    - rowserrcheck
+    - staticcheck
+    - tparallel
+    - unused
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^(log\.(Fatal|Panic).*|os\.Exit|panic)$
+          msg: return an error instead; only cmd/devex/main.go exits the process
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - path: (cmd/devex/main\.go|_test\.go)$
+        linters:
+          - forbidigo
+    paths:
+      - docs
+issues:
+  fix: true
+formatters:
+  enable:
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - docs

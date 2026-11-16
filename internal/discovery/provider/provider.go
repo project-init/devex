@@ -29,9 +29,45 @@ type Adapter interface {
 	Plan(context.Context, PlanInput, config.Target) ([]Operation, []string, error)
 	// Resolve reports which of the given operations already exist remotely, keyed by
 	// idempotency key. Apply calls it once with the operations a receipt has not already
-	// accounted for, so an adapter can search for exactly the work that remains.
+	// accounted for, so an adapter can search for exactly the work that remains. Only apply
+	// calls it, so it may write, such as to label issues for a cheaper next lookup.
 	Resolve(context.Context, config.Target, *Plan, []Operation) (map[string]RemoteRef, error)
 	Execute(context.Context, config.Target, Operation, map[domain.ItemID]RemoteRef) (RemoteRef, error)
+}
+
+// AccessChecker confirms a target's credentials work and can reach its project, for doctor
+// --online.
+type AccessChecker interface {
+	CheckAccess(context.Context, config.Target) (string, error)
+}
+
+// IssueTypeChecker reports which issue types the target's configuration names that its project
+// lacks.
+type IssueTypeChecker interface {
+	MissingIssueTypes(context.Context, config.Target) ([]string, error)
+}
+
+// ConcurrencyLimiter declares how many operations an adapter can execute at once; apply runs one
+// at a time for an adapter without it.
+type ConcurrencyLimiter interface {
+	MaxConcurrent() int
+}
+
+// Preflighter checks the creates apply has left to make against the remote before it writes
+// anything.
+type Preflighter interface {
+	Preflight(context.Context, config.Target, []Operation) error
+}
+
+// Confirmer reads published issues by key, which a remote answers consistently where its search
+// can lag behind a recent write. Apply uses it to recognize issues an earlier plan published that
+// Resolve could not find. Like Resolve, it runs only during apply, so it may repair what its
+// lookups rely on, such as a label.
+type Confirmer interface {
+	// Confirm returns the candidates, keyed by idempotency key, whose issue still exists in the
+	// target and still carries that key, with each issue's current reference. It leaves out a
+	// missing issue and returns an error for a failed read.
+	Confirm(ctx context.Context, target config.Target, candidates map[string]RemoteRef) (map[string]RemoteRef, error)
 }
 
 type Plan struct {
@@ -57,6 +93,8 @@ type Operation struct {
 	IdempotencyKey string         `yaml:"idempotency_key" json:"idempotency_key"`
 	Summary        string         `yaml:"summary" json:"summary"`
 	Fields         map[string]any `yaml:"fields" json:"fields"`
+	// Diff shows, for plan output, each field an update rewrites. Apply ignores it.
+	Diff map[string]FieldChange `yaml:"diff,omitempty" json:"diff,omitempty"`
 }
 
 type Receipt struct {

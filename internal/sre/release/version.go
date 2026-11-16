@@ -1,11 +1,12 @@
 package release
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/manifoldco/promptui"
+	"github.com/project-init/devex/internal/ui"
 )
 
 type version struct {
@@ -41,8 +42,8 @@ func (b bumpType) String() string {
 
 // versionAtTip returns the semver of the latest tag on tip's first-parent history.
 // baseline is that tag name. With no such tag, the version is v0.0.0 and baseline is empty.
-func versionAtTip(tip string) (version, string, error) {
-	out, err := gitOutput("describe", "--tags", "--abbrev=0", "--first-parent", tip)
+func versionAtTip(ctx context.Context, tip string) (version, string, error) {
+	out, err := gitOutput(ctx, "describe", "--tags", "--abbrev=0", "--first-parent", tip)
 	if err != nil {
 		if describeFoundNoTag(err) {
 			return version{}, "", nil
@@ -103,39 +104,40 @@ func bump(v version, bump bumpType) version {
 	}
 }
 
-func selectBumpType(allowMajor bool) (bumpType, error) {
-
-	items := []string{
-		"patch (bug fixes)",
-		"minor (new features, backward compatible)",
+// parseBumpType parses a --bump value. major needs allowMajorVersionBump in the config.
+func parseBumpType(value string, allowMajor bool) (bumpType, error) {
+	switch value {
+	case "patch":
+		return BumpPatch, nil
+	case "minor":
+		return BumpMinor, nil
+	case "major":
+		if !allowMajor {
+			return 0, fmt.Errorf("--bump major needs release.allowMajorVersionBump: true in the sre config")
+		}
+		return BumpMajor, nil
+	default:
+		return 0, fmt.Errorf("--bump must be patch, minor, or major, got %q", value)
 	}
+}
 
-	// Only add the major option if the config explicitly allows it
+// selectBumpType prompts for a version bump, preselecting and marking suggested. The major
+// option appears only when the config allows it. The command validates --bump itself, before
+// any network work.
+func selectBumpType(ctx context.Context, u *ui.UI, allowMajor bool, suggested bumpType) (bumpType, error) {
+	options := []ui.Option{
+		{Label: "patch (bug fixes, performance optimizations, code refactors)", Value: "patch"},
+		{Label: "minor (new features, backward compatible)", Value: "minor"},
+	}
 	if allowMajor {
-		items = append(items, "major (breaking changes)")
+		options = append(options, ui.Option{Label: "major (breaking changes)", Value: "major"})
 	}
-
-	prompt := promptui.Select{
-		Label: "Select version bump type",
-		Items: items,
+	for index := range options {
+		options[index].Suggested = options[index].Value == suggested.String()
 	}
-
-	idx, _, err := prompt.Run()
+	choice, err := u.Select(ctx, "Select version bump type", options, suggested.String(), bumpFlag)
 	if err != nil {
 		return 0, err
 	}
-
-	switch idx {
-	case 0:
-		return BumpPatch, nil
-	case 1:
-		return BumpMinor, nil
-	case 2:
-		if allowMajor {
-			return BumpMajor, nil
-		}
-		return 0, fmt.Errorf("invalid selection")
-	default:
-		return 0, fmt.Errorf("invalid selection")
-	}
+	return parseBumpType(choice, allowMajor)
 }

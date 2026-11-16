@@ -2,6 +2,7 @@ package dependencies
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -20,6 +21,7 @@ import (
 	"github.com/project-init/devex/internal/sre/dependencies/goversion"
 	"github.com/project-init/devex/internal/sre/dependencies/misesync"
 	"github.com/project-init/devex/internal/sre/dependencies/pins"
+	"github.com/project-init/devex/internal/ui"
 )
 
 // bufDepUpdate refreshes buf.lock for a buf.yaml that declares deps.
@@ -52,13 +54,24 @@ type plans struct {
 // tool, modules update under the target toolchain, a check confirms the Go invariant, and buf
 // pins move last, so buf generate runs with any buf mise just bumped and git inputs that follow
 // a Go module land where the Go upgrade left it.
-func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config.DependenciesConfiguration, env environment) error {
-	p, err := plan(ctx, out, o, cfg, env)
+func runUpgrade(ctx context.Context, u *ui.UI, o upgradeOptions, cfg config.DependenciesConfiguration, env environment) error {
+	var p plans
+	err := u.Spin(ctx, "Planning the upgrade", func(ctx context.Context) error {
+		var err error
+		p, err = plan(ctx, o, cfg, env)
+		return err
+	})
+	// Warnings print once the spinner stops, including those of the ecosystems that planned
+	// before another failed.
+	printWarnings(u, p.warnings())
 	if err != nil {
 		return err
 	}
 	if o.dryRun {
-		printDryRun(out, o, p)
+		if u.JSON() {
+			return u.WriteJSON(planDocument(o, p))
+		}
+		printDryRun(u.Out(), o, p)
 
 		return nil
 	}
@@ -67,7 +80,7 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 	}
 
 	if o.goFlag {
-		_, _ = fmt.Fprintf(out, "Moving Go %s to %s...\n", currentLabel(p.goPlan), p.goPlan.Target)
+		u.Status("Moving Go %s to %s...", currentLabel(p.goPlan), p.goPlan.Target)
 		// Installing can fail, so it finishes before any file changes.
 		if p.goInstall != nil {
 			if err := run(".", p.goInstall); err != nil {
@@ -81,21 +94,18 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 		return err
 	}
 	if o.miseFlag {
-		_, _ = fmt.Fprintln(out, "Upgrading mise tools...")
+		u.Status("Upgrading mise tools...")
 		// Install the rewritten pins before mise resolves anything else: an uncapped tool can
 		// depend on a capped one, as an npm tool does on node, and mise upgrade --bump fails while
 		// that dependency's new version is uninstalled.
-		if capped := p.mise.CapCommand(); capped != nil {
-			if err := run(".", capped); err != nil {
+		for _, cmd := range p.mise.Commands() {
+			if err := run(".", cmd); err != nil {
 				return err
 			}
 		}
-		if err := run(".", p.mise.UpgradeCommand()); err != nil {
-			return err
-		}
 	}
 	if o.goFlag {
-		_, _ = fmt.Fprintln(out, "Upgrading Go modules...")
+		u.Status("Upgrading Go modules...")
 		held, err := gosync.UpdateModules(ctx, env.Root, p.goPlan.Modules, p.workspaces, p.goPlan.Target, env.Run)
 		if err != nil {
 			return err
@@ -104,7 +114,7 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 		for _, h := range held {
 			holds = append(holds, heldWarning(h, p.goPlan.Target))
 		}
-		printWarnings(out, holds)
+		printWarnings(u, holds)
 		found, err := pins.Discover(p.goSettings.Discovery)
 		if err != nil {
 			return err
@@ -125,11 +135,11 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 			for _, d := range drift(links) {
 				warnings = append(warnings, d+"; run upgrade --buf to move it")
 			}
-			printWarnings(out, warnings)
+			printWarnings(u, warnings)
 		}
 	}
 	if o.bufFlag {
-		_, _ = fmt.Fprintln(out, "Upgrading Buf dependencies...")
+		u.Status("Upgrading Buf dependencies...")
 		links := p.buf.Links
 		if o.goFlag {
 			// Read after the Go upgrade, with a fresh listing, so each linked tag lands where the
@@ -139,7 +149,7 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 				return err
 			}
 			// Planning already printed the warnings that still hold.
-			printWarnings(out, slices.DeleteFunc(warnings, func(w string) bool { return slices.Contains(p.buf.Warnings, w) }))
+			printWarnings(u, slices.DeleteFunc(warnings, func(w string) bool { return slices.Contains(p.buf.Warnings, w) }))
 			// Planning skipped a linked input, so an input the Go upgrade unlinks stays put until a rerun.
 			var unlinked []string
 			for _, planned := range p.buf.Links {
@@ -148,7 +158,7 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 					unlinked = append(unlinked, fmt.Sprintf("%s:%d: %s no longer follows a Go module after the upgrade; run upgrade --buf again to apply its policy", c.File, c.Line, planned.Key))
 				}
 			}
-			printWarnings(out, unlinked)
+			printWarnings(u, unlinked)
 		}
 		changes, templates := p.buf.With(links)
 		if err := edit.Apply(env.Root, changes); err != nil {
@@ -175,60 +185,78 @@ func runUpgrade(ctx context.Context, out io.Writer, o upgradeOptions, cfg config
 	return nil
 }
 
-// plan resolves every enabled ecosystem. It writes nothing.
-func plan(ctx context.Context, out io.Writer, o upgradeOptions, cfg config.DependenciesConfiguration, env environment) (plans, error) {
+// plan resolves every enabled ecosystem concurrently. It writes nothing. It returns the first
+// failure in a fixed order, go, mise, then buf, whichever finishes first.
+func plan(ctx context.Context, o upgradeOptions, cfg config.DependenciesConfiguration, env environment) (plans, error) {
 	// Every planner reads the same working tree, so one listing serves them all.
 	list := sharedListing(env.Root)
 
 	var p plans
-	var err error
+	var goErr, miseErr, bufErr error
+	var wg sync.WaitGroup
 	if o.goFlag {
-		if p.goSettings, err = gosync.NewSettings(env.Root, cfg.Go); err != nil {
-			return plans{}, err
-		}
-		// The check after the upgrade keeps its own listing, since the upgrade changes the tree.
-		settings := p.goSettings
-		settings.Discovery.ListFiles = list
-		planner := gosync.Planner{Settings: settings, Resolver: env.Resolver, Registry: env.Registry}
-		if o.goVersion != "" {
-			v, err := goversion.Parse(o.goVersion)
-			if err != nil {
-				return plans{}, fmt.Errorf("--go-version: %w", err)
-			}
-			planner.Override = &v
-		}
-		if p.goPlan, err = planner.Plan(ctx); err != nil {
-			return plans{}, err
-		}
-		printWarnings(out, p.goPlan.Warnings)
-		// Without mise on PATH, no mise shim runs go, so nothing needs installing.
-		if env.HasMise {
-			p.goInstall = gosync.MiseInstall(p.goPlan)
-		}
-		p.workspaces = slices.Sorted(maps.Keys(p.goPlan.Workspaces))
+		wg.Go(func() { goErr = p.planGo(ctx, o, cfg, env, list) })
 	}
 	if o.miseFlag {
-		if err := misesync.CheckVersion(ctx, env.Run, env.Root); err != nil {
-			return plans{}, err
-		}
-		planner := misesync.Planner{Root: env.Root, Policies: cfg.Mise.Policies, Run: env.Run, ListFiles: list}
-		if p.mise, err = planner.Plan(ctx); err != nil {
-			return plans{}, err
-		}
-		printWarnings(out, p.mise.Warnings)
+		wg.Go(func() {
+			if miseErr = misesync.CheckVersion(ctx, env.Run, env.Root); miseErr != nil {
+				return
+			}
+			planner := misesync.Planner{Root: env.Root, Policies: cfg.Mise.Policies, Run: env.Run, ListFiles: list}
+			p.mise, miseErr = planner.Plan(ctx)
+		})
 	}
 	if o.bufFlag {
-		planner := bufsync.Planner{Root: env.Root, Policies: cfg.Buf.Policies, Registry: env.Plugins, Run: env.Run, Timeout: networkTimeout, ListFiles: list, GoExclude: cfg.Go.Exclude}
-		if p.buf, err = planner.Plan(ctx); err != nil {
-			return plans{}, err
+		wg.Go(func() {
+			planner := bufsync.Planner{Root: env.Root, Policies: cfg.Buf.Policies, Registry: env.Plugins, Run: env.Run, Timeout: networkTimeout, ListFiles: list, GoExclude: cfg.Go.Exclude}
+			p.buf, bufErr = planner.Plan(ctx)
+		})
+	}
+	wg.Wait()
+
+	for _, err := range []error{goErr, miseErr, bufErr} {
+		if err != nil {
+			return p, err // with the warnings the other ecosystems found
 		}
-		printWarnings(out, p.buf.Warnings)
 	}
 
 	return p, nil
 }
 
-func runCheck(out io.Writer, cfg config.DependenciesConfiguration, root string) error {
+func (p *plans) planGo(ctx context.Context, o upgradeOptions, cfg config.DependenciesConfiguration, env environment, list func(string) ([]string, error)) error {
+	var err error
+	if p.goSettings, err = gosync.NewSettings(env.Root, cfg.Go); err != nil {
+		return err
+	}
+	// The check after the upgrade keeps its own listing, since the upgrade changes the tree.
+	settings := p.goSettings
+	settings.Discovery.ListFiles = list
+	planner := gosync.Planner{Settings: settings, Resolver: env.Resolver, Registry: env.Registry}
+	if o.goVersion != "" {
+		v, err := goversion.Parse(o.goVersion)
+		if err != nil {
+			return fmt.Errorf("--go-version: %w", err)
+		}
+		planner.Override = &v
+	}
+	if p.goPlan, err = planner.Plan(ctx); err != nil {
+		return err
+	}
+	// Without mise on PATH, no mise shim runs go, so nothing needs installing.
+	if env.HasMise {
+		p.goInstall = gosync.MiseInstall(p.goPlan)
+	}
+	p.workspaces = slices.Sorted(maps.Keys(p.goPlan.Workspaces))
+
+	return nil
+}
+
+// warnings are every ecosystem's planning warnings, go first, then mise, then buf.
+func (p *plans) warnings() []string {
+	return slices.Concat(p.goPlan.Warnings, p.mise.Warnings, p.buf.Warnings)
+}
+
+func runCheck(u *ui.UI, cfg config.DependenciesConfiguration, root string) error {
 	settings, err := gosync.NewSettings(root, cfg.Go)
 	if err != nil {
 		return err
@@ -239,25 +267,100 @@ func runCheck(out io.Writer, cfg config.DependenciesConfiguration, root string) 
 	if err != nil {
 		return err
 	}
-	printWarnings(out, append(found.Warnings, pins.ShadowWarnings(root, found)...))
-	current, err := gosync.Check(found, settings.Directive)
-	if err != nil {
-		return err
+	report := checkReport{Warnings: append(found.Warnings, pins.ShadowWarnings(root, found)...)}
+
+	// Every check runs, so one pass reports every problem.
+	var errs []error
+	current, goErr := gosync.Check(found, settings.Directive)
+	if goErr != nil {
+		errs = append(errs, goErr)
+		report.Problems = append(report.Problems, goProblems(goErr)...)
+	} else {
+		report.Go = &checkGo{Version: current.String(), Pins: len(found.Pins), Directive: settings.Directive}
 	}
-	_, _ = fmt.Fprintf(out, "Go %s: %d pins in step (directive: %s)\n", current, len(found.Pins), settings.Directive)
 	links, warnings, err := linkedInputs(root, cfg, settings.Discovery.ListFiles)
 	if err != nil {
-		return err
+		// The Go checks still stand, so the failure joins them as one more problem.
+		errs = append(errs, err)
+		report.Problems = append(report.Problems, checkProblem{Check: "read buf.gen inputs", Reason: err.Error()})
 	}
-	printWarnings(out, warnings)
-	if err := bufsync.LinkedPolicy(links, cfg.Buf.Policies); err != nil {
-		return err
+	report.Warnings = append(report.Warnings, warnings...)
+	var driftLines []string
+	for _, link := range links {
+		c := link.Change
+		if err := link.PolicyError(cfg.Buf.Policies); err != nil {
+			errs = append(errs, err)
+			report.Problems = append(report.Problems, checkProblem{Check: "linked buf.gen input takes a policy", File: c.File, Line: c.Line, Reason: err.Error()})
+		}
+		if reason := link.Drift(); reason != "" {
+			driftLines = append(driftLines, driftLine(link))
+			report.Problems = append(report.Problems, checkProblem{Check: "buf.gen git input out of step with go.mod", File: c.File, Line: c.Line, Version: c.From, Reason: reason})
+		}
 	}
-	if lines := drift(links); len(lines) > 0 {
-		return fmt.Errorf("buf.gen git inputs are out of step with go.mod:\n  %s", strings.Join(lines, "\n  "))
+	if len(driftLines) > 0 {
+		errs = append(errs, fmt.Errorf("buf.gen git inputs are out of step with go.mod:\n  %s", strings.Join(driftLines, "\n  ")))
 	}
 
-	return nil
+	printWarnings(u, report.Warnings)
+	if u.JSON() {
+		report.Problems = orEmpty(report.Problems)
+		report.Warnings = orEmpty(report.Warnings)
+		if err := u.WriteJSON(report); err != nil {
+			return err
+		}
+		if len(report.Problems) > 0 {
+			return fmt.Errorf("found %d dependency problems", len(report.Problems))
+		}
+		return nil
+	}
+	if report.Go != nil {
+		u.Printf("Go %s: %d pins in step (directive: %s)\n", report.Go.Version, report.Go.Pins, report.Go.Directive)
+	}
+
+	return errors.Join(errs...)
+}
+
+// checkReport is check's --output json document.
+type checkReport struct {
+	Go       *checkGo       `json:"go,omitempty"` // absent when the toolchain pins disagree
+	Problems []checkProblem `json:"problems"`
+	Warnings []string       `json:"warnings"`
+}
+
+type checkGo struct {
+	Version   string `json:"version"`
+	Pins      int    `json:"pins"`
+	Directive string `json:"directive"`
+}
+
+// checkProblem is one pin or input that fails a check.
+type checkProblem struct {
+	Check   string `json:"check"`
+	File    string `json:"file,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	Version string `json:"version,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// goProblems flattens gosync.Check's error into one problem per pin.
+func goProblems(err error) []checkProblem {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var problems []checkProblem
+		for _, e := range joined.Unwrap() {
+			problems = append(problems, goProblems(e)...)
+		}
+		return problems
+	}
+	var pe *gosync.ProblemsError
+	if !errors.As(err, &pe) {
+		return []checkProblem{{Check: err.Error()}}
+	}
+	problems := make([]checkProblem, len(pe.Problems))
+	for i, p := range pe.Problems {
+		problems[i] = checkProblem{Check: pe.Title, File: p.Pin.File, Line: p.Pin.Line, Kind: string(p.Pin.Kind), Version: p.Pin.Version.String(), Reason: p.Reason}
+	}
+	return problems
 }
 
 // linkedInputs returns the buf.gen git inputs that follow a Go module and the link warnings. A
@@ -270,12 +373,16 @@ func linkedInputs(root string, cfg config.DependenciesConfiguration, list func(s
 func drift(links []bufsync.Link) []string {
 	var lines []string
 	for _, link := range links {
-		if c := link.Change; link.Moves() {
-			lines = append(lines, fmt.Sprintf("%s:%d: tag %s, but go.mod builds against %s %s", c.File, c.Line, c.From, link.Module, link.Required))
+		if link.Drift() != "" {
+			lines = append(lines, driftLine(link))
 		}
 	}
 
 	return lines
+}
+
+func driftLine(link bufsync.Link) string {
+	return fmt.Sprintf("%s:%d: %s", link.Change.File, link.Change.Line, link.Drift())
 }
 
 // sharedListing lists root's files once, however many readers ask.
@@ -299,10 +406,9 @@ func printDryRun(out io.Writer, o upgradeOptions, p plans) {
 	}
 	if o.miseFlag {
 		printEdits(out, p.mise.Changes)
-		if capped := p.mise.CapCommand(); capped != nil {
-			_, _ = fmt.Fprintln(out, strings.Join(capped, " "))
+		for _, cmd := range p.mise.Commands() {
+			_, _ = fmt.Fprintln(out, strings.Join(cmd, " "))
 		}
-		_, _ = fmt.Fprintln(out, strings.Join(p.mise.UpgradeCommand(), " "))
 	}
 	if o.goFlag {
 		moduleEnv := strings.Join(gosync.ModuleEnv(p.goPlan.Target), " ")
@@ -317,14 +423,7 @@ func printDryRun(out io.Writer, o upgradeOptions, p plans) {
 		}
 	}
 	if o.bufFlag {
-		// Without --go, go.mod stays put, so the links resolve now; with it, they wait for the Go
-		// upgrade.
-		var links, following []bufsync.Link
-		if o.goFlag {
-			following = p.buf.Links
-		} else {
-			links = p.buf.Links
-		}
+		links, following := o.splitLinks(p)
 		changes, templates := p.buf.With(links)
 		printEdits(out, changes)
 		for _, link := range following {
@@ -345,6 +444,108 @@ func printDryRun(out io.Writer, o upgradeOptions, p plans) {
 			_, _ = fmt.Fprintln(out, "  then buf generate beside every other template if a buf.lock changes")
 		}
 	}
+}
+
+// splitLinks divides the buf inputs that follow a Go module into those that resolve now and those
+// that wait for the Go upgrade. Without --go, go.mod stays put, so every link resolves now.
+func (o upgradeOptions) splitLinks(p plans) (now, following []bufsync.Link) {
+	if o.goFlag {
+		return nil, p.buf.Links
+	}
+
+	return p.buf.Links, nil
+}
+
+// planDocument is the upgrade plan as --output json prints it, in the order runUpgrade
+// executes it.
+func planDocument(o upgradeOptions, p plans) planJSON {
+	doc := planJSON{Warnings: orEmpty(p.warnings())}
+	if o.goFlag {
+		doc.Go = &goPlanJSON{
+			Target:     p.goPlan.Target.String(),
+			Changes:    changesJSON(p.goPlan.Changes),
+			Install:    p.goInstall,
+			Modules:    orEmpty(p.goPlan.Modules),
+			Workspaces: orEmpty(p.workspaces),
+		}
+		if p.goPlan.Current.Precision != 0 {
+			doc.Go.Current = p.goPlan.Current.String()
+		}
+	}
+	if o.miseFlag {
+		doc.Mise = &misePlanJSON{Changes: changesJSON(p.mise.Changes), Commands: p.mise.Commands()}
+	}
+	if o.bufFlag {
+		links, waiting := o.splitLinks(p)
+		following := []followJSON{}
+		for _, link := range waiting {
+			following = append(following, followJSON{File: link.Change.File, Line: link.Change.Line, From: link.Change.From, Module: link.Module, Required: link.Required})
+		}
+		changes, templates := p.buf.With(links)
+		doc.Buf = &bufPlanJSON{Changes: changesJSON(changes), Following: following,
+			DepModules: orEmpty(p.buf.DepModules), Templates: orEmpty(templates)}
+	}
+	return doc
+}
+
+type planJSON struct {
+	Go       *goPlanJSON   `json:"go,omitempty"`
+	Mise     *misePlanJSON `json:"mise,omitempty"`
+	Buf      *bufPlanJSON  `json:"buf,omitempty"`
+	Warnings []string      `json:"warnings"`
+}
+
+type goPlanJSON struct {
+	Current    string       `json:"current,omitempty"` // absent when the pins disagree
+	Target     string       `json:"target"`
+	Changes    []changeJSON `json:"changes"`
+	Install    []string     `json:"install,omitempty"`
+	Modules    []string     `json:"modules"`
+	Workspaces []string     `json:"workspaces"`
+}
+
+type misePlanJSON struct {
+	Changes  []changeJSON `json:"changes"`
+	Commands [][]string   `json:"commands"`
+}
+
+type bufPlanJSON struct {
+	Changes    []changeJSON `json:"changes"`
+	Following  []followJSON `json:"following"` // linked inputs that move with the Go upgrade
+	DepModules []string     `json:"depModules"`
+	Templates  []string     `json:"templates"` // regenerated beside each template
+}
+
+type changeJSON struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Kind string `json:"kind,omitempty"`
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type followJSON struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	From     string `json:"from"`
+	Module   string `json:"module"`
+	Required string `json:"required"`
+}
+
+// orEmpty keeps JSON printing [] rather than null for an empty list.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
+func changesJSON(changes []edit.Change) []changeJSON {
+	out := make([]changeJSON, len(changes))
+	for i, c := range changes {
+		out[i] = changeJSON{File: c.File, Line: c.Line, Kind: string(c.Kind), From: c.From, To: c.To}
+	}
+	return out
 }
 
 // readLocks returns the buf.lock beside each module directory, keyed by directory; a missing
@@ -372,9 +573,9 @@ func printEdits(out io.Writer, changes []edit.Change) {
 	_ = w.Flush()
 }
 
-func printWarnings(out io.Writer, warnings []string) {
+func printWarnings(u *ui.UI, warnings []string) {
 	for _, w := range warnings {
-		_, _ = fmt.Fprintln(out, "warning: "+w)
+		u.Warn("%s", w)
 	}
 }
 

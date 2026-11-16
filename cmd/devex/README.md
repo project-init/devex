@@ -27,7 +27,22 @@ The `devex` CLI provides a unified interface for all developer experience tools:
 devex <subcommand> [options]
 ```
 
-Run `devex --help` to see all available subcommands, or `devex <subcommand> --help` for detailed help on a specific command.
+Run `devex --help` to see all available subcommands, or `devex <subcommand> --help` for detailed help on a specific command. Run `devex version` or `devex --version` to print the installed version.
+
+Press Ctrl-C to cancel a running command; press it again to terminate devex immediately.
+
+### Global flags
+
+Every command accepts these flags, so scripts and CI can run devex without a terminal:
+
+| Flag                      | Effect                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `-o, --output text\|json` | Write JSON to stdout instead of text. A command that has no JSON form rejects `json`.                                                     |
+| `-q, --quiet`             | Print only data, warnings, and errors.                                                                                                    |
+| `--no-color`              | Turn off color and borders. devex also turns them off when `NO_COLOR` is set, when `TERM=dumb`, and for any stream that isn't a terminal. |
+| `-y, --yes`               | Answer yes to every confirmation except replacing edited skill files, which needs `discovery install-skill --force`.                      |
+
+devex writes data to stdout and status, warnings, prompts, spinners, and progress to stderr, so `devex ... > file` captures only data. It prompts only when stdin and stderr are terminals. Without one, a command that needs an answer fails and names the flag that supplies it, such as `pass --env`.
 
 ---
 
@@ -46,6 +61,30 @@ devex localize mobile
 devex localize translate
 ```
 
+The `audit` command checks that every `en-US` message has a translation and that each locale's
+`messages.gotext.json` holds every message gotext extracted into `out.gotext.json`. It prints
+findings to stdout and exits non-zero when it finds any.
+
+The `translate` command fills each locale's missing or empty messages with Gemini. It compares
+every locale's `messages.gotext.json` with `en-US`, sends the gaps in batches through Google's
+Gemini API with the rubric at `localize.rubricPath` as instructions, and writes the translations
+back without touching existing entries. It rejects and reports any translation whose
+placeholders, such as `{Name}`, differ from the source. Empty `en-US` translations take their
+source text, so `localize audit` passes afterward. It skips plural and select messages.
+
+```shell
+export GEMINI_API_KEY=...   # https://aistudio.google.com/apikey
+
+# Fill every locale.
+devex localize translate
+
+# Preview Spanish and French without writing.
+devex localize translate --locale es-US,fr-FR --dry-run
+
+# Machine-readable results.
+devex localize translate --output json
+```
+
 The `mobile` command generates localization bundles for the platforms present in its
 configuration. The currently supported iOS generator distills registered strings from each
 `out.gotext.json` catalog into an `l10n-<locale>.json` bundle. It also validates registry
@@ -56,15 +95,22 @@ single combined HTML report to `localize.html.outputPath`, with one column per l
 row per message id, so English source strings and their translations can be reviewed side by
 side in a browser. The report includes the full set of ids found across all catalogs, including
 new English ids that do not yet exist in another locale; their missing translations appear as
-empty cells.
+highlighted cells. A tile per locale shows its translation coverage, and a search box and a
+"Missing only" filter narrow the rows. The report is a single file with inline styles, so it
+renders offline.
 
 Configure repository paths under `.localize/*.yaml`:
 
 ```yaml
 localize:
   localesDir: internal/translations/locales
+  rubricPath: .localize/rubric.md
   html:
     outputPath: build/translations.html
+  translate:
+    model: gemini-2.5-flash # default
+    batchSize: 50 # messages per request (default)
+    concurrency: 4 # Gemini requests in flight at once (default)
   mobile:
     sourceLanguage: en-US
     registryPath: internal/translations/mobileregistry/registry.go
@@ -86,7 +132,6 @@ Site Reliability Engineering toolbox for common operational tasks.
 - [release](../../internal/sre/release/README.md) - Git tag and release management with a merged-PR list preview
 - [dependencies](../../internal/sre/dependencies/README.md) - Upgrade dependencies and keep every Go version pin in step
 - analyze - Code analysis operations, including [slos](../../internal/sre/analyze/slos/README.md): score OpenSLO SLOs against Datadog, with an error budget for each
-- echo - Print and transform arguments
 
 **Usage:**
 
@@ -96,31 +141,30 @@ devex sre <tool> [args]
 
 **Configuration:**
 
-Create a `.sre` directory in your project root to store configuration files. The tool looks for this directory by default, but you can override it with the `--configDir` flag.
+Create a `.sre` directory in your project root to store configuration files. The tool looks for this directory by default, but you can override it with the `--config-dir` flag (`--configDir` still works). devex merges every `*.yaml` file in the directory and rejects unknown keys, naming the file. It skips files with a top-level `targets` key, which hold `devex discovery` configuration.
 
 **Additional Dependencies:**
 
-Some SRE tools require AWS CLI:
-
-```toml
-[tools]
-awscli = "latest"  # Required for some postgres operations
-```
+`postgres access` runs `psql`, so install a PostgreSQL client. The `postgres` tools call AWS through the SDK and read credentials from the standard AWS configuration, so they work without the AWS CLI. To sign in through AWS SSO, run `aws sso login` from the AWS CLI first.
 
 **Examples:**
 
 ```shell
-# Generate an API key
+# Generate an API key, or capture one in a script
 devex sre keygen
+KEY=$(devex sre keygen --length 32)
 
 # Access a postgres database
-devex sre postgres access
+devex sre postgres access staging-readonly
 
 # Create a new release
 devex sre release
+
+# Release a patch from CI
+devex sre release --bump patch --yes
 ```
 
-Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists commits on `origin/main` since the latest tag (full first-parent history when nothing is tagged). Squash merges show the pull request title and author; other commits are listed too. The new tag points at `origin/main`.
+Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists commits on `origin/main` since the latest tag (full first-parent history when nothing is tagged), grouped into features, fixes, and other changes. Squash merges show the pull request title and author; other commits are listed too. The prompt preselects the bump the titles suggest. The new tag points at `origin/main`, and the command then waits for the release workflow (`--no-wait` skips that). `--dry-run` previews without tagging, and `--output json` prints the versions, changes, and workflow results.
 
 #### Dependencies
 
@@ -139,7 +183,7 @@ it. A git input whose repository a `go.mod` requires follows that module's versi
 devex sre dependencies upgrade --go
 
 # Upgrade the ecosystems listed in dependencies.upgrade, printing the plan without writing.
-devex sre dependencies upgrade --all --show-commands
+devex sre dependencies upgrade --all --dry-run
 
 # Fail when Go pins disagree; run in pull request CI.
 devex sre dependencies check
@@ -187,11 +231,11 @@ See the [slos README](../../internal/sre/analyze/slos/README.md) for every flag 
 
 Guide an idea through discovery, produce reviewable Markdown and YAML artifacts, and publish the resulting work breakdown to Jira or GitHub Issues after human review.
 
-The discovery feature is separate from the existing `workplan` command.
+Discovery replaces the deprecated `workplan` command.
 
-Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you do not run discovery from a checkout of the devex source repository.
+Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you don't need a checkout of the devex source repository.
 
-Run the top-level command from an interactive terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
+Run the top-level command from a terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
 
 ```shell
 devex discovery
@@ -226,9 +270,11 @@ devex discovery doctor
 devex discovery doctor --harness codex
 ```
 
-`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Results are grouped as passed, flagged, and failed, with failures rendered last and highlighted in interactive terminals.
+`doctor` is read-only. It validates the project directory, Git metadata, installed skill contents, `.sre/discovery.yaml`, and customized target values. It also reports whether provider credential environment variables are available without printing their values. Results are grouped as passed, flagged, and failed, with failures rendered last and highlighted on a terminal.
 
 At least one selected harness must have the skill installed. Once one is installed, missing additional harness integrations are flagged for awareness rather than treated as failures. Modified installed skills and missing, invalid, or placeholder configuration remain failures. Missing credentials are warnings because they are only required by `publish apply` and `publish plan --sync`. The command exits nonzero only when failures are present.
+
+`doctor --online` also signs in to each configured target. It confirms the credentials work and can see the target's project or repository, and, for Jira, that every issue type `kind_mapping` names exists in the project. An invalid token or a missing issue type is a failure that names the problem. `--output json` prints the checks as JSON; the exit status still reflects failures.
 
 **Create and validate a bundle:**
 
@@ -291,7 +337,11 @@ devex discovery publish plan docs/discoveries/audit-logs --target jira-project
 devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
 ```
 
-`plan` performs no remote mutations; with `--sync` it reads the target but still writes nothing. It writes a frozen plan and displays every proposed operation and mapping warning. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation.
+`plan` performs no remote mutations; with `--sync` it reads the target but still writes nothing. It writes a frozen plan and lists its operations grouped by action, with counts, and each update's fields with their before and after values. Warnings go to stderr. `apply` executes that plan and atomically updates `.publish/<target>/receipt.yaml` after each operation. It reports each operation with an `[n/N]` counter, including failed ones and those an earlier run already finished, and ends with a count of created, updated, reused, and failed operations. On Jira, `apply` first checks that the project has every issue type the plan creates, so a bad `kind_mapping` fails before anything is created. `apply` runs operations whose dependencies have finished side by side: up to four at a time on Jira, and one at a time on GitHub, which asks clients to create content serially. After a failure, it lets running operations finish and starts no more; a rerun resumes from the receipt without duplicates.
+
+On GitHub, every issue devex creates carries a `discovery:<id>` label, so `apply` and `plan --sync` list only the discovery's issues instead of the whole repository. The label's description records that it covers every issue. Until it does, as for a new discovery or one published before devex added the label, `apply` scans the repository once, labels the issues it finds, and then records the description; an interrupted run scans again. `plan --sync` writes nothing, so it scans until an `apply` has done that. GitHub keeps labels on new issues only for users with write access, so `apply` stops before creating issues when GitHub reports the token lacks it. Leave the label on the discovery's issues: a re-plan misses an unlabeled issue and creates it again.
+
+When `apply` finds that its plan's receipt records another plan, as after re-planning an edited bundle, it moves the receipt into an `archive/` directory beside the plan and starts a fresh one. It still reuses everything the old receipt recorded. `apply` also reads issues directly when its search misses them. Jira's search can lag a minute behind a write, and GitHub's lookup lists only issues that carry the discovery label, so for each item the search misses, `apply` reads the issue that the newest receipt for the target recorded, from the main plan or a sync plan. An issue found that way gets back the labels the search relies on, when the token may set them. `plan`, `apply`, `validate`, and `doctor` accept `--output json`.
 
 Planning without `--sync` is reproducible: an unchanged bundle and target produce the same operations and the same `plan_digest` on any machine. Only `generated_at` records the run, and it is excluded from the digest. `apply` never re-plans; it executes the frozen artifact and refuses to run against a bundle that changed after the plan was written.
 
@@ -323,6 +373,8 @@ Published issues footer the discovery document as a URL on the repository's defa
 ---
 
 ### Workplan
+
+> **Deprecated:** use [`devex discovery init`](#discovery) and `devex discovery publish` instead. A future release removes `workplan`.
 
 Generate and publish workplan templates for investigating features or problems. Workplans help estimate the effort needed to complete a task and can be published directly to JIRA.
 
@@ -379,7 +431,7 @@ JIRA is the most common work tracking tool used by the project-init team. While 
 
 ### Contributions
 
-A lightweight, opinionated contribution signal generator for GitHub-based engineering teams. Analyzes PR and review activity over configurable time windows (10 / 30 / 90 days) and produces structured output for evaluating contribution patterns.
+A lightweight, opinionated contribution signal generator for GitHub-based engineering teams. Analyzes PR and review activity over the look-back window set by `numLookBackDays` and produces structured output for evaluating contribution patterns.
 
 **What It Provides:**
 
@@ -395,8 +447,6 @@ A lightweight, opinionated contribution signal generator for GitHub-based engine
 
 This is **NOT** a replacement for leadership judgment.  
 It **IS** a visibility tool.
-
-For design intent and cultural philosophy, see [PHILOSOPHY.md](contributions/PHILOSOPHY.md)
 
 **Usage:**
 
@@ -415,71 +465,35 @@ devex contributions collect contributions_config.yaml
 devex contributions signal contributions_config.yaml
 ```
 
+**Collection:**
+
+`collect` reads the organization's repositories four at a time, or only those `reposToCheck` lists. For each one it asks GitHub's GraphQL API for the pull requests merged inside the look-back window, with every review. A pull request opened before the window counts if it merged inside it. Once a repository's CSV reaches back past the window, a rerun fetches merges from an hour before its latest one, or from the window's start if that is later. Otherwise it fetches the whole window again, which backfills a lengthened `numLookBackDays`. `collect` rewrites a CSV only when its pull requests change. When a GraphQL reply refuses a query for a rate limit or spends the hourly limit, `collect` warns and pauses every query: until the limit resets or for as long as GitHub asks, whichever is later and at most an hour, or otherwise for a minute, doubling up to 16 minutes while the limit holds. It gives up on a query after six rate-limited attempts. A limit GitHub returns as HTTP 403 or 429 waits silently instead: a secondary limit or a bare 429 pauses every query, a spent hourly limit pauses only the query that hit it, and a secondary limit that outlasts five retries fails the run. `collect` and `signal` create missing output directories. On a terminal, `collect` shows a progress bar with an ETA; elsewhere it prints one line per repository.
+
+`signal` weighs each review by its reviewer: a person's review counts 0.20 and a bot's 0.01, whoever wrote the pull request.
+
 **Output:**
 
 User signal output:
 
 ```csv
-user,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,TotalTimeToMerge,average_days_to_merge
-user1,107.98,73.58,34.40,0.68,0.32,74,172,724538000000000,0.11
-user2,49.21,39.61,9.60,0.80,0.20,42,48,4127456000000000,1.14
+user,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,weighted_distribution_modifier,num_prs,num_reviews,average_days_to_merge
+user1,107.98172,73.58172,34.4,0.6814287,0.3185713,1,74,172,0.1133184
+user2,49.2104,39.6104,9.6,0.8049193,0.1950807,1,42,48,1.1373741
 ```
 
 Repository signal output:
 
 ```csv
-repo,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,TotalTimeToMerge,average_days_to_merge
-business-platform,72.69,45.09,27.60,0.62,0.38,48,138,5021492000000000,1.21
-admin-platform,48.03,39.63,8.40,0.83,0.17,40,42,637432000000000,0.18
+repo,weighted_total,weighted_prs,weighted_reviews,weighted_pr_share,weighted_review_share,num_prs,num_reviews,num_contributors,average_days_to_merge
+business-platform,72.6928,45.0928,27.6,0.6203197,0.3796803,48,138,6,1.2108122
+admin-platform,48.0317,39.6317,8.4,0.8251176,0.1748824,40,42,4,0.1844425
 ```
 
 These CSV outputs are easily imported into spreadsheets or analyzed with AI tools.
 
 **Configuration:**
 
-See [example_config.yaml](contributions/example_config.yaml) for a sample configuration file.
-
----
-
-### Components
-
-Generate component skeleton code from YAML configuration files. Currently focused on database components for PostgreSQL-based Go services.
-
-**Usage:**
-
-```shell
-devex components <configuration_file_path>
-```
-
-**Example:**
-
-```shell
-devex components .components
-```
-
-**Configuration Example:**
-
-```yaml
-outputDirectory: "gen"
-
-db:
-  schemaName: data_platform
-```
-
-See [example_config.yaml](components/example_config.yaml) for a complete example.
-
-**DB Components:**
-
-The DB component generator outputs:
-
-- User setup scripts
-- Schema definitions
-- IAM permissions setup
-- Default migrations
-- Post-release scripts
-- sqlc configuration for Go service integration
-
-All setup is optimized for PostgreSQL clusters.
+See [example_config.yaml](contributions/example_config.yaml) for a sample configuration file. Loading fails on an unknown key, a second YAML document, or an empty file, so a mistake is caught rather than ignored.
 
 ---
 

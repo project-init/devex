@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/project-init/devex/internal/discovery/domain"
-	"gopkg.in/yaml.v3"
+	"github.com/project-init/devex/internal/strictyaml"
 )
 
 //go:embed example.yaml
@@ -51,9 +52,8 @@ func Load(path string) (*File, error) {
 		return nil, fmt.Errorf("read target configuration %s: %w", path, err)
 	}
 	var file File
-	decoder := yaml.NewDecoder(bytes.NewReader(raw))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&file); err != nil {
+	// An empty file has no targets, which the check below reports.
+	if err := strictyaml.Decode(raw, &file); err != nil && !errors.Is(err, strictyaml.ErrEmpty) {
 		return nil, fmt.Errorf("decode target configuration %s: %w", path, err)
 	}
 	if len(file.Targets) == 0 {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/project-init/devex/internal/discovery/doctor"
+	"github.com/project-init/devex/internal/ui"
 )
 
 func TestPrintDoctorReportGroupsFailuresLast(t *testing.T) {
@@ -16,7 +17,7 @@ func TestPrintDoctorReportGroupsFailuresLast(t *testing.T) {
 		{Severity: doctor.SeverityWarn, Name: "credentials:jira", Detail: "not set"},
 	}}
 	var output bytes.Buffer
-	err := printDoctorReport(&output, report)
+	err := printDoctorReport(ui.NewWithStreams(nil, &output, &output, ui.Options{}), report)
 	if err == nil {
 		t.Fatal("printDoctorReport() returned nil with a failure")
 	}
@@ -38,7 +39,7 @@ func TestPrintDoctorReportAllowsAdditionalHarnessFlags(t *testing.T) {
 		{Severity: doctor.SeverityFlag, Name: "skill:claude", Detail: "not installed"},
 	}}
 	var output bytes.Buffer
-	if err := printDoctorReport(&output, report); err != nil {
+	if err := printDoctorReport(ui.NewWithStreams(nil, &output, &output, ui.Options{}), report); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "Discovery is ready (1 flag(s), 0 warning(s)).") {

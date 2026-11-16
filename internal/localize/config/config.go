@@ -2,11 +2,8 @@ package config
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"sort"
 
-	"gopkg.in/yaml.v3"
+	"github.com/project-init/devex/internal/configdir"
 )
 
 type Configuration struct {
@@ -26,6 +23,21 @@ type LocalizeConfiguration struct {
 
 	// HTML configures generation of a combined English -> locale translation report.
 	HTML HTMLConfiguration `yaml:"html"`
+
+	// Translate configures `localize translate`.
+	Translate TranslateConfiguration `yaml:"translate"`
+}
+
+// TranslateConfiguration tunes Gemini translation. Zero values take the defaults.
+type TranslateConfiguration struct {
+	// Model is the Gemini model, such as gemini-2.5-flash.
+	Model string `yaml:"model"`
+
+	// BatchSize is the most messages sent in one request.
+	BatchSize int `yaml:"batchSize"`
+
+	// Concurrency is the most Gemini requests in flight at once, across all locales.
+	Concurrency int `yaml:"concurrency"`
 }
 
 type HTMLConfiguration struct {
@@ -64,18 +76,9 @@ func GetConfig(ctx context.Context) (*Configuration, bool) {
 }
 
 func LoadConfig(configDirPath string) (*Configuration, error) {
-	files, _ := filepath.Glob(filepath.Join(configDirPath, "*.yaml"))
-	sort.Strings(files)
-
 	var config Configuration
-	for _, f := range files {
-		bytes, err := os.ReadFile(f)
-		if err != nil {
-			return nil, err
-		}
-		if err = yaml.Unmarshal(bytes, &config); err != nil {
-			return nil, err
-		}
+	if err := configdir.Load(configDirPath, &config); err != nil {
+		return nil, err
 	}
 	return &config, nil
 }
