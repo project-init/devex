@@ -1,7 +1,6 @@
 package contributions
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -39,8 +38,7 @@ func collectCmd() *cobra.Command {
 			}
 
 			fmt.Printf("starting Contributions (collect) At - %s\n", time.Now().String())
-			ctx := context.Background()
-			err = collection.Run(ctx, cfg)
+			err = collection.Run(cmd.Context(), cfg)
 			if err != nil {
 				return err
 			}

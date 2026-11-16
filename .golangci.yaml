@@ -4,14 +4,20 @@ linters:
   enable:
     - copyloopvar
     - errcheck
+    - forbidigo
     - gocheckcompilerdirectives
     - govet
     - ineffassign
-    - nilneserr
+    - nilnesserr
     - rowserrcheck
     - staticcheck
     - tparallel
     - unused
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^(log\.(Fatal|Panic).*|os\.Exit|panic)$
+          msg: return an error instead; only cmd/devex/main.go exits the process
   exclusions:
     generated: lax
     presets:
@@ -19,6 +25,10 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      - path: (cmd/devex/main\.go|_test\.go)$
+        linters:
+          - forbidigo
     paths:
       - docs
 issues:

@@ -19,7 +19,7 @@ This file provides architectural context and conventions for AI agents working o
 ### SRE Toolbox
 
 - `internal/sre/cli.go` builds the `devex sre <tool>` command tree.
-- SRE configuration is loaded in `PersistentPreRunE` from `.sre/*.yaml`, or from the directory passed with `--configDir`.
+- SRE configuration is loaded in `PersistentPreRunE` from `.sre/*.yaml`, or from the directory passed with `--config-dir` (`--configDir` is an alias). Loading is strict: an unknown key fails. The loader skips files with a top-level `targets` key, which hold `devex discovery` configuration.
 - SRE subcommands live under `internal/sre/<tool>/`.
 - Additional SRE-specific guidance is in `internal/sre/AGENTS.md`.
 
@@ -36,7 +36,7 @@ This file provides architectural context and conventions for AI agents working o
 - Tooling is managed by `mise`; use `mise test`, `mise lint`, and `mise format` from the repo root. `mise run <task>` is also acceptable.
 - Treat `mise.toml` and `go.mod` as the Go version sources of truth. Update them together intentionally when changing the Go toolchain or module language version.
 - Formatting uses `go fmt ./...` for Go and Prettier for Markdown/YAML/TOML. Prettier config is synced by `scripts/sync-prettier-config.sh`.
-- Linting uses `golangci-lint` configured by `golangci.yaml`.
+- Linting uses `golangci-lint` configured by `.golangci.yaml`.
 - Tests run with `go test ./... -v`.
 
 ## Shared Dependencies
@@ -48,6 +48,7 @@ This file provides architectural context and conventions for AI agents working o
 ## Agent Working Notes
 
 - If changing user-facing CLI behavior, update `cmd/devex/README.md` and relevant examples under `cmd/devex/**`.
-- Keep command errors returned to Cobra; top-level execution prints errors in `internal/root`.
+- Keep command errors returned to Cobra; top-level execution prints errors in `internal/root`. Never call `log.Fatal`, `os.Exit`, or `panic` outside `cmd/devex/main.go`.
+- Use `cmd.Context()` for network and long-running work; `internal/root` cancels it on Ctrl-C or SIGTERM.
 - Do not add tests for simple Cobra command wiring, argument-count checks, or usage output behavior unless explicitly requested. Prefer direct CLI smoke checks for those cases.
 - Prefer source-of-truth files over generated artifacts when making behavioral changes.

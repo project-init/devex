@@ -31,7 +31,7 @@ func Command() *cobra.Command {
 				return fmt.Errorf("environment %s not found in cfg %+v", environment, cfg.Postgres)
 			}
 
-			psqlCfg, err := loadPGAccessEnvironment(environmentConfig)
+			psqlCfg, err := loadPGAccessEnvironment(cmd.Context(), environmentConfig)
 			if err != nil {
 				return err
 			}

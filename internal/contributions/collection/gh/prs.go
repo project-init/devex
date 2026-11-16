@@ -3,7 +3,6 @@ package gh
 import (
 	"context"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 	"time"
@@ -19,14 +18,13 @@ var invalidLogins = []string{
 
 func (g *GH) GetRepoPRs(ctx context.Context, cutoff time.Time, repo string, cfg *config.Config) ([]types.PR, error) {
 	prs, err := g.getAllPrs(ctx, repo, cutoff)
-	if err != nil {
+	if err != nil && ctx.Err() == nil {
 		prs, err = g.getAllPrs(ctx, repo, cutoff)
-		if err != nil {
-			log.Fatalf("failed to get all prs: %s", err.Error())
-		}
 	}
-
-	return prs, err
+	if err != nil {
+		return nil, fmt.Errorf("get pull requests for %s: %w", repo, err)
+	}
+	return prs, nil
 }
 
 func (g *GH) getAllPrs(ctx context.Context, repoName string, cutoff time.Time) ([]types.PR, error) {

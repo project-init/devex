@@ -2,8 +2,8 @@ package workplan
 
 import (
 	"embed"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path"
 	"text/template"
@@ -52,12 +52,5 @@ func generateWorkplanTemplate(outputPath string) error {
 		return err
 	}
 
-	defer func(f *os.File) {
-		err = f.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(templatizedFile)
-
-	return templ.Execute(templatizedFile, nil)
+	return errors.Join(templ.Execute(templatizedFile, nil), templatizedFile.Close())
 }

@@ -2,11 +2,8 @@ package config
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"sort"
 
-	"gopkg.in/yaml.v3"
+	"github.com/project-init/devex/internal/configdir"
 )
 
 type Configuration struct {
@@ -32,19 +29,14 @@ func GetConfig(ctx context.Context) (*Configuration, bool) {
 	return cfg, ok
 }
 
-func LoadConfig(configDirPath string) (*Configuration, error) {
-	files, _ := filepath.Glob(filepath.Join(configDirPath, "*.yaml"))
-	sort.Strings(files)
+// discoveryKey is the top-level key every devex discovery configuration declares. Discovery
+// keeps its file in .sre by default and loads it itself.
+const discoveryKey = "targets"
 
+func LoadConfig(configDirPath string) (*Configuration, error) {
 	var config Configuration
-	for _, f := range files {
-		bytes, err := os.ReadFile(f)
-		if err != nil {
-			return nil, err
-		}
-		if err = yaml.Unmarshal(bytes, &config); err != nil {
-			return nil, err
-		}
+	if err := configdir.Load(configDirPath, &config, discoveryKey); err != nil {
+		return nil, err
 	}
 	return &config, nil
 }

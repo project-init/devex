@@ -1,9 +1,7 @@
 package localize
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/project-init/devex/internal/configdir"
 	"github.com/project-init/devex/internal/localize/audit"
 	"github.com/project-init/devex/internal/localize/config"
 	"github.com/project-init/devex/internal/localize/html"
@@ -12,20 +10,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const configFlag = "configDir"
 const defaultConfigDir = ".localize"
 
 func Command() *cobra.Command {
 	var localizeConfigFile string
-	cmd := &cobra.Command{
+	var cmd *cobra.Command
+	cmd = &cobra.Command{
 		Use:           "localize <tool> [args]",
 		Short:         "localize is a toolbox CLI for localization management",
 		Long:          "Manage translations for projects using the 'gotext' workflow: audit catalogs for missing translations, render a review report, and build mobile bundles.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          requireToolArg,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			path, err := resolveConfigPath(localizeConfigFile)
+		// NoArgs rejects an unknown tool name instead of printing help and exiting 0.
+		Args: cobra.NoArgs,
+		PersistentPreRunE: func(current *cobra.Command, args []string) error {
+			if current == cmd {
+				return nil
+			}
+			path, err := configdir.Resolve(localizeConfigFile, defaultConfigDir)
 			if err != nil {
 				return err
 			}
@@ -35,14 +37,14 @@ func Command() *cobra.Command {
 				return err
 			}
 
-			cmd.SetContext(config.WithConfig(cmd.Context(), cfg))
+			current.SetContext(config.WithConfig(current.Context(), cfg))
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
-	cmd.PersistentFlags().StringVar(&localizeConfigFile, configFlag, "", fmt.Sprintf("config directory (default is %s)", defaultConfigDir))
+	configdir.AddFlag(cmd, &localizeConfigFile, defaultConfigDir)
 
 	cmd.AddCommand(audit.Command())
 	cmd.AddCommand(html.Command())
@@ -50,26 +52,4 @@ func Command() *cobra.Command {
 	cmd.AddCommand(translate.Command())
 
 	return cmd
-}
-
-func requireToolArg(cmd *cobra.Command, args []string) error {
-	if err := cobra.MinimumNArgs(1)(cmd, args); err != nil {
-		_ = cmd.Usage()
-		return err
-	}
-	return nil
-}
-
-func resolveConfigPath(explicit string) (string, error) {
-	if explicit != "" {
-		if _, err := os.Stat(explicit); err != nil {
-			return "", fmt.Errorf("config dir %q not found: %w", explicit, err)
-		}
-		return explicit, nil
-	}
-
-	if _, err := os.Stat(defaultConfigDir); err != nil {
-		return "", fmt.Errorf("no config found: pass --%s or create %s", configFlag, defaultConfigDir)
-	}
-	return defaultConfigDir, nil
 }
