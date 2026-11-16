@@ -13,23 +13,24 @@ import (
 // registration needs ecs:TagResource, which a role that only registers may lack.
 func registerInputFrom(td *ecstypes.TaskDefinition) *ecs.RegisterTaskDefinitionInput {
 	return &ecs.RegisterTaskDefinitionInput{
-		ContainerDefinitions:    td.ContainerDefinitions,
-		Family:                  td.Family,
-		Cpu:                     td.Cpu,
-		EnableFaultInjection:    td.EnableFaultInjection,
-		EphemeralStorage:        td.EphemeralStorage,
-		ExecutionRoleArn:        td.ExecutionRoleArn,
-		InferenceAccelerators:   td.InferenceAccelerators, //nolint:staticcheck // deprecated, but a definition that still has accelerators keeps them
-		IpcMode:                 td.IpcMode,
-		Memory:                  td.Memory,
-		NetworkMode:             td.NetworkMode,
-		PidMode:                 td.PidMode,
-		PlacementConstraints:    td.PlacementConstraints,
-		ProxyConfiguration:      td.ProxyConfiguration,
-		RequiresCompatibilities: td.RequiresCompatibilities,
-		RuntimePlatform:         td.RuntimePlatform,
-		TaskRoleArn:             td.TaskRoleArn,
-		Volumes:                 td.Volumes,
+		ContainerDefinitions:          td.ContainerDefinitions,
+		Family:                        td.Family,
+		Cpu:                           td.Cpu,
+		EnableFaultInjection:          td.EnableFaultInjection,
+		EphemeralStorage:              td.EphemeralStorage,
+		ExecutionRoleArn:              td.ExecutionRoleArn,
+		InferenceAccelerators:         td.InferenceAccelerators, //nolint:staticcheck // deprecated, but a definition that still has accelerators keeps them
+		IpcMode:                       td.IpcMode,
+		Memory:                        td.Memory,
+		NetworkMode:                   td.NetworkMode,
+		PidMode:                       td.PidMode,
+		PlacementConstraints:          td.PlacementConstraints,
+		ProxyConfiguration:            td.ProxyConfiguration,
+		RequiresCompatibilities:       td.RequiresCompatibilities,
+		RuntimePlatform:               td.RuntimePlatform,
+		TaskRoleArn:                   td.TaskRoleArn,
+		TrustedExecutionConfiguration: td.TrustedExecutionConfiguration,
+		Volumes:                       td.Volumes,
 	}
 }
 
