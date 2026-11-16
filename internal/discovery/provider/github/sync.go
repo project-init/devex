@@ -47,7 +47,7 @@ func (a *Adapter) Sync(
 		changed := provider.ChangedFields(current.Stamp, operation, sourceFields...)
 		// An update keeps every label already on the issue, so a label change adds or does nothing.
 		if desired, _ := stringSlice(operation.Fields["labels"]); !slices.ContainsFunc(desired, func(label string) bool {
-			return !slices.ContainsFunc(issue.Labels, func(existing *gh.Label) bool { return existing.GetName() == label })
+			return !hasLabel(issue, label)
 		}) {
 			changed = slices.DeleteFunc(changed, func(field string) bool { return field == "labels" })
 		}

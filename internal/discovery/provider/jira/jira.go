@@ -166,6 +166,11 @@ func linkTypeFor(target config.Target) string {
 	return defaultLinkType
 }
 
+// issueRef refers to the Jira issue with id and key in target.
+func issueRef(target config.Target, id, key string) provider.RemoteRef {
+	return provider.RemoteRef{ID: id, Key: key, URL: browseURL(target, key), Type: "issue"}
+}
+
 func browseURL(target config.Target, issueKey string) string {
 	return strings.TrimSuffix(target.Jira.BaseURL, "/") + "/browse/" + issueKey
 }

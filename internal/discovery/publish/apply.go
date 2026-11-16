@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -92,7 +93,9 @@ func Apply(
 	var published map[string]provider.RemoteRef
 	resolveErr := hooks.remote(ctx, "Checking for work already published", func(ctx context.Context) error {
 		var err error
-		published, err = resolvePending(ctx, plan, adapter, receipt)
+		published, err = resolvePending(ctx, plan, adapter, receipt, func() map[domain.ItemID]provider.RemoteRef {
+			return recordedItems(plan, receiptPath)
+		})
 		return err
 	})
 	if resolveErr != nil {
@@ -205,15 +208,18 @@ func Apply(
 	return receipt, nil
 }
 
-// resolvePending asks the adapter which of the still-outstanding item operations already exist
-// remotely. Operations a receipt has settled are skipped, and relationship operations are never
-// offered because no remote carries their idempotency key. An empty set skips the call entirely,
-// so a resume that only has links left costs nothing.
+// resolvePending finds which still-outstanding item operations already exist remotely. Operations
+// a receipt has settled are skipped, and relationship operations are never offered because no
+// remote carries their idempotency key; an empty set skips the call, so a resume that only has
+// links left costs nothing. A search can lag behind a recent write, so resolvePending then asks a
+// Confirmer to read directly each issue a receipt recorded that the search missed. It reads the
+// receipts, through recorded, only when the search missed something.
 func resolvePending(
 	ctx context.Context,
 	plan *provider.Plan,
 	adapter provider.Adapter,
 	receipt *provider.Receipt,
+	recorded func() map[domain.ItemID]provider.RemoteRef,
 ) (map[string]provider.RemoteRef, error) {
 	pending := make([]provider.Operation, 0, len(plan.Operations))
 	for _, operation := range plan.Operations {
@@ -224,7 +230,88 @@ func resolvePending(
 	if len(pending) == 0 {
 		return nil, nil
 	}
-	return adapter.Resolve(ctx, plan.Target, plan, pending)
+	published, err := adapter.Resolve(ctx, plan.Target, plan, pending)
+	if err != nil {
+		return nil, err
+	}
+	confirmer, ok := adapter.(provider.Confirmer)
+	if !ok || len(published) == len(pending) {
+		return published, nil
+	}
+	candidates := recordedCandidates(pending, published, recorded())
+	if len(candidates) == 0 {
+		return published, nil
+	}
+	confirmed, err := confirmer.Confirm(ctx, plan.Target, candidates)
+	if err != nil {
+		return nil, err
+	}
+	if published == nil { // Resolve may report nothing found as nil
+		published = make(map[string]provider.RemoteRef, len(confirmed))
+	}
+	maps.Copy(published, confirmed)
+	return published, nil
+}
+
+// recordedCandidates returns, keyed by idempotency key, the recorded issue of each pending
+// operation Resolve did not find.
+func recordedCandidates(pending []provider.Operation, published map[string]provider.RemoteRef, recorded map[domain.ItemID]provider.RemoteRef) map[string]provider.RemoteRef {
+	candidates := make(map[string]provider.RemoteRef)
+	for _, operation := range pending {
+		if _, found := published[operation.IdempotencyKey]; found {
+			continue
+		}
+		if remote, ok := recorded[operation.ItemID]; ok {
+			candidates[operation.IdempotencyKey] = remote
+		}
+	}
+	return candidates
+}
+
+// recordedItems collects the remote issue each item had in the receipts for plan's provider and
+// target: every receipt under the bundle's .publish/<target>/, current or archived and from the
+// main plan or a sync plan, and the receipt and archive beside receiptPath, the newest receipt
+// winning. A receipt that cannot be read only loses its hint, since the search still runs.
+func recordedItems(plan *provider.Plan, receiptPath string) map[domain.ItemID]provider.RemoteRef {
+	var paths []string
+	_ = filepath.WalkDir(filepath.Join(plan.BundlePath, ".publish", plan.TargetName), func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && isReceiptFile(path) {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	// A plan written elsewhere keeps its receipt beside it; its directory may hold far more, such
+	// as another bundle's, so only the receipt and its archive count.
+	ownDirectory := filepath.Dir(receiptPath)
+	archived, _ := filepath.Glob(filepath.Join(ownDirectory, archiveDirectory, archivePrefix+"*.yaml"))
+	paths = append(append(paths, filepath.Join(ownDirectory, receiptFile)), archived...)
+
+	var receipts []*provider.Receipt
+	seen := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		absolute, err := filepath.Abs(path)
+		if err != nil || seen[absolute] {
+			continue
+		}
+		seen[absolute] = true
+		if receipt, err := LoadReceipt(absolute); err == nil && receipt.Provider == plan.Provider && receipt.TargetName == plan.TargetName {
+			receipts = append(receipts, receipt)
+		}
+	}
+	slices.SortStableFunc(receipts, func(a, b *provider.Receipt) int { return a.UpdatedAt.Compare(b.UpdatedAt) })
+	recorded := make(map[domain.ItemID]provider.RemoteRef)
+	for _, receipt := range receipts {
+		maps.Copy(recorded, resolvedItems(receipt))
+	}
+	return recorded
+}
+
+// isReceiptFile reports whether path names a receipt: a plan's receipt, or one existingReceipt
+// archived.
+func isReceiptFile(path string) bool {
+	name := filepath.Base(path)
+	archived := filepath.Base(filepath.Dir(path)) == archiveDirectory && strings.HasPrefix(name, archivePrefix) && strings.HasSuffix(name, ".yaml")
+	return name == receiptFile || archived
 }
 
 // applyOperation runs one operation. resolved is the caller's copy: the scheduler records each
@@ -310,8 +397,8 @@ func existingReceipt(path string, plan *provider.Plan) (receipt *provider.Receip
 			}
 			return -1
 		}, strings.TrimPrefix(receipt.PlanDigest, "sha256:"))
-		name := fmt.Sprintf("receipt-%s-%.12s.yaml", receipt.UpdatedAt.UTC().Format("20060102T150405Z"), digest)
-		archived = filepath.Join(filepath.Dir(path), "archive", name)
+		name := fmt.Sprintf("%s%s-%.12s.yaml", archivePrefix, receipt.UpdatedAt.UTC().Format("20060102T150405Z"), digest)
+		archived = filepath.Join(filepath.Dir(path), archiveDirectory, name)
 		if err := os.MkdirAll(filepath.Dir(archived), 0o755); err != nil {
 			return nil, "", err
 		}

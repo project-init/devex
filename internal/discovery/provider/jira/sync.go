@@ -174,7 +174,7 @@ func (a *Adapter) publishedIssues(
 			if state.links, err = issue.Links(); err != nil {
 				return nil, err
 			}
-			state.ref = provider.RemoteRef{ID: issue.ID, Key: issue.Key, URL: browseURL(target, issue.Key), Type: "issue"}
+			state.ref = issueRef(target, issue.ID, issue.Key)
 			state.stamp = stamp
 			// A lost create response and its retry can mark two issues; the original is the oldest.
 			if existing, exists := published[stamp.ID]; !exists || olderID(issue.ID, existing.ref.ID) {

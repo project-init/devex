@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	gh "github.com/google/go-github/v74/github"
 	"github.com/project-init/devex/internal/discovery/config"
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/discovery/provider"
 	"github.com/project-init/gommon/pkg/githubclient"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -142,13 +145,90 @@ func (a *Adapter) Resolve(
 	return published, nil
 }
 
+// Confirm reads each candidate issue by number, a few at once, which sees an issue the moment
+// GitHub creates it and finds one whose discovery label was removed. An issue counts only while it
+// is an issue, not a pull request, in the target repository, and its body still carries the
+// candidate's marker. A confirmed issue missing the discovery label gets it back, so the next
+// label-scoped lookup finds it; after the first refusal, such as from a token that cannot label,
+// Confirm stops trying.
+func (a *Adapter) Confirm(ctx context.Context, target config.Target, candidates map[string]provider.RemoteRef) (map[string]provider.RemoteRef, error) {
+	owner, repository := target.GitHub.Owner, target.GitHub.Repository
+	// GitHub's own URL for the repository, so a renamed repository or an API alias still matches
+	// the URL each issue reports.
+	repo, _, err := a.client.Repositories.Get(ctx, owner, repository)
+	if err != nil {
+		return nil, fmt.Errorf("read GitHub repository %s/%s: %w", owner, repository, err)
+	}
+	repositoryURL := strings.TrimSuffix(repo.GetURL(), "/")
+	issues := make(map[string]*gh.Issue, len(candidates))
+	var mu sync.Mutex
+	group, readCtx := errgroup.WithContext(ctx)
+	group.SetLimit(confirmReads)
+	for marker, ref := range candidates {
+		number, err := strconv.Atoi(ref.Key)
+		if err != nil {
+			continue
+		}
+		group.Go(func() error {
+			issue, response, err := a.client.Issues.Get(readCtx, owner, repository, number)
+			// GitHub answers 404 for an issue this token cannot see as well as for one deleted. Any
+			// other failure, a 403 included, says nothing about the issue, so it stops apply rather
+			// than risk a second copy.
+			if response != nil && (response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusGone) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("read GitHub issue #%d: %w", number, err)
+			}
+			inRepository := strings.EqualFold(strings.TrimSuffix(issue.GetRepositoryURL(), "/"), repositoryURL)
+			if issue.IsPullRequest() || !inRepository || !strings.Contains(issue.GetBody(), marker) {
+				return nil
+			}
+			mu.Lock()
+			issues[marker] = issue
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	confirmed := make(map[string]provider.RemoteRef, len(issues))
+	labeling := true
+	for _, marker := range slices.Sorted(maps.Keys(issues)) {
+		if labeling && a.restoreDiscoveryLabel(ctx, target, issues[marker], marker) != nil {
+			labeling = false
+		}
+		confirmed[marker] = issueRef(issues[marker])
+	}
+	return confirmed, nil
+}
+
+// confirmReads bounds the issue reads Confirm makes at once.
+const confirmReads = 4
+
+// restoreDiscoveryLabel adds the discovery label marker names to issue when it lacks it.
+func (a *Adapter) restoreDiscoveryLabel(ctx context.Context, target config.Target, issue *gh.Issue, marker string) error {
+	discoveryID, ok := discoveryOf(marker)
+	if !ok || hasLabel(issue, discoveryLabel(discoveryID)) {
+		return nil
+	}
+	_, _, err := a.client.Issues.AddLabelsToIssue(ctx, target.GitHub.Owner, target.GitHub.Repository, issue.GetNumber(), []string{discoveryLabel(discoveryID)})
+	return err
+}
+
+// hasLabel reports whether issue carries the label name.
+func hasLabel(issue *gh.Issue, name string) bool {
+	return slices.ContainsFunc(issue.Labels, func(label *gh.Label) bool { return label.GetName() == name })
+}
+
 // backfill labels each of the discovery's issues, then records in the label's description that
 // it labels them all.
 func (a *Adapter) backfill(ctx context.Context, target config.Target, discoveryID string, issues map[string]*gh.Issue) error {
 	owner, repository := target.GitHub.Owner, target.GitHub.Repository
 	name, description := discoveryLabel(discoveryID), labelDescription(discoveryID)
 	for _, issue := range issues {
-		if slices.ContainsFunc(issue.Labels, func(label *gh.Label) bool { return label.GetName() == name }) {
+		if hasLabel(issue, name) {
 			continue // an earlier, interrupted backfill reached it
 		}
 		if _, _, err := a.client.Issues.AddLabelsToIssue(ctx, owner, repository, issue.GetNumber(), []string{name}); err != nil {
@@ -276,12 +356,7 @@ func (a *Adapter) Execute(
 	}
 	// Preflight cannot judge every token, so restore a discovery label GitHub dropped. The issue
 	// exists either way, so a failed label must not fail the create.
-	if discoveryID, ok := discoveryOf(operation.IdempotencyKey); ok {
-		name := discoveryLabel(discoveryID)
-		if !slices.ContainsFunc(issue.Labels, func(label *gh.Label) bool { return label.GetName() == name }) {
-			_, _, _ = a.client.Issues.AddLabelsToIssue(ctx, target.GitHub.Owner, target.GitHub.Repository, issue.GetNumber(), []string{name})
-		}
-	}
+	_ = a.restoreDiscoveryLabel(ctx, target, issue, operation.IdempotencyKey)
 	return issueRef(issue), nil
 }
 
