@@ -150,11 +150,12 @@ Create a `.sre` directory in your project root to store configuration files. The
 **Examples:**
 
 ```shell
-# Generate an API key
+# Generate an API key, or capture one in a script
 devex sre keygen
+KEY=$(devex sre keygen --length 32)
 
 # Access a postgres database
-devex sre postgres access --env staging-readonly
+devex sre postgres access staging-readonly
 
 # Create a new release
 devex sre release

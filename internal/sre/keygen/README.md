@@ -12,10 +12,13 @@ keygen:
 ## Usage
 
 ```shell
-sre keygen
+devex sre keygen
+devex sre keygen --length 48
+KEY=$(devex sre keygen)
 ```
 
 #### Description
 
-The keygen cmd gets the length from the configuration file, or defaults to 32 characters. It then uses the crypto
-package to generate the secure string before eventually printing it to console to be collected and used as you see fit.
+The keygen cmd draws `--length` random bytes from `crypto/rand` (default: `keygen.length` from the configuration, else 32) and prints them base64url-encoded without padding, so 32 bytes make a 43-character key. The length counts bytes,
+not characters, and must be at least 16. On a terminal it labels the key; when stdout is a pipe or file it prints only
+the key, so command substitution captures it. `--output json` prints `{"key": ..., "bytes": ...}`.

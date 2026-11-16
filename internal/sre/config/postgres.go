@@ -12,6 +12,8 @@ type PostgresEnvironmentConfig struct {
 	UserName string  `yaml:"username"`
 	Password *string `yaml:"password"`
 	Iam      *bool   `yaml:"iam"`
+	// Region signs IAM auth tokens. It defaults to us-east-1.
+	Region string `yaml:"region"`
 }
 
 type PsqlConfig struct {

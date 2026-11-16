@@ -23,6 +23,7 @@ postgres:
       sslMode: require
       username: "readonly"
       iam: true
+      region: us-east-1 # signs the IAM token (default us-east-1)
 ```
 
 ## Commands
@@ -32,15 +33,19 @@ postgres:
 #### Usage
 
 ```shell
-sre postgres access
+devex sre postgres access staging-readonly
+devex sre postgres access --env staging-readonly
+devex sre postgres access   # choose from a list on a terminal
 ```
 
 #### Description
 
 The access command uses an SRE yaml file (defaults to `.sre`) to determine what the login configuration is for your
 given postgres clusters. Assumes you have done any SSO login or similar you might need to have access through your
-vendor as well. Pass `--env <name>` to pick the environment, or omit it to choose from a list on a terminal. The tool then runs psql
-as that user in that environment, as defined in the `.sre` file.
+vendor as well. Name the environment as an argument or with `--env`, or omit it to choose from a list on a terminal. The tool then runs
+psql as that user in that environment, as defined in the `.sre` file. It passes the connection settings and the
+password through libpq's `PG*` environment variables, so `ps` never shows the password. With `iam: true` it signs an
+RDS IAM token for the environment's `port` (default 5432) and `region` (default us-east-1). A psql failure reports its exit status and the environment.
 
 **NOTE**: You will also need `psql` installed, which comes with any installation of `postgres`. At time of writing this
 doc, postgres doesn't seem to install via mise on Mac. Instead, the suggested install path for `postgresql` is via brew.
