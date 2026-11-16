@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 )
 
@@ -44,6 +45,14 @@ func (m Message) Text() (string, bool) {
 func (m Message) Untranslated() bool {
 	text, isText := m.Text()
 	return m.Translation == nil || isText && text == ""
+}
+
+// placeholderPattern matches a gotext placeholder such as {Name}.
+var placeholderPattern = regexp.MustCompile(`\{[A-Za-z0-9_]+\}`)
+
+// Placeholders returns the placeholders in text, such as {Name}, in order of appearance.
+func Placeholders(text string) []string {
+	return placeholderPattern.FindAllString(text, -1)
 }
 
 // ID is a message id. gotext writes it as a string or as a [key, fallback] array; ID keeps the

@@ -58,11 +58,32 @@ Manage gotext translations and generate platform localization bundles.
 devex localize audit
 devex localize html
 devex localize mobile
+devex localize translate
 ```
 
 The `audit` command checks that every `en-US` message has a translation and that each locale's
 `messages.gotext.json` holds every message gotext extracted into `out.gotext.json`. It prints
 findings to stdout and exits non-zero when it finds any.
+
+The `translate` command fills each locale's missing or empty messages with Gemini. It compares
+every locale's `messages.gotext.json` with `en-US`, sends the gaps in batches through Google's
+Gemini API with the rubric at `localize.rubricPath` as instructions, and writes the translations
+back without touching existing entries. It rejects and reports any translation whose
+placeholders, such as `{Name}`, differ from the source. Empty `en-US` translations take their
+source text, so `localize audit` passes afterward. It skips plural and select messages.
+
+```shell
+export GEMINI_API_KEY=...   # https://aistudio.google.com/apikey
+
+# Fill every locale.
+devex localize translate
+
+# Preview Spanish and French without writing.
+devex localize translate --locale es-US,fr-FR --dry-run
+
+# Machine-readable results.
+devex localize translate --output json
+```
 
 The `mobile` command generates localization bundles for the platforms present in its
 configuration. The currently supported iOS generator distills registered strings from each
@@ -83,8 +104,13 @@ Configure repository paths under `.localize/*.yaml`:
 ```yaml
 localize:
   localesDir: internal/translations/locales
+  rubricPath: .localize/rubric.md
   html:
     outputPath: build/translations.html
+  translate:
+    model: gemini-2.5-flash # default
+    batchSize: 50 # messages per request (default)
+    concurrency: 4 # Gemini requests in flight at once (default)
   mobile:
     sourceLanguage: en-US
     registryPath: internal/translations/mobileregistry/registry.go

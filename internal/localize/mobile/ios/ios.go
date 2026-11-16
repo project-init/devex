@@ -23,7 +23,6 @@ const (
 var (
 	registryCallPattern = regexp.MustCompile(`^\s*p\.Sprintf\("([^"]+)"\)$`)
 	registryIDPattern   = regexp.MustCompile(`// id: (.+)$`)
-	placeholderPattern  = regexp.MustCompile(`\{[A-Za-z0-9_]+\}`)
 	translationPattern  = regexp.MustCompile(`translate\("([^"\r\n]+)"`)
 	stringPattern       = regexp.MustCompile(`"([^"\r\n]*)"`)
 )
@@ -221,8 +220,8 @@ func validateCatalog(path string, cat *catalog.Catalog, ids map[string]struct{},
 			continue
 		}
 
-		allowed := toSet(placeholderPattern.FindAllString(string(msg.ID), -1))
-		unexpected := difference(toSet(placeholderPattern.FindAllString(translation, -1)), allowed)
+		allowed := toSet(catalog.Placeholders(string(msg.ID)))
+		unexpected := difference(toSet(catalog.Placeholders(translation)), allowed)
 		if len(unexpected) > 0 {
 			badTokens = append(badTokens, fmt.Sprintf("%s -> %v", string(msg.ID), unexpected))
 		}

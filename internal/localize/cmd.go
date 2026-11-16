@@ -18,7 +18,7 @@ func Command() *cobra.Command {
 	cmd = &cobra.Command{
 		Use:           "localize <tool> [args]",
 		Short:         "localize is a toolbox CLI for localization management",
-		Long:          "Manage translations for projects using the 'gotext' workflow: audit catalogs for missing translations, render a review report, and build mobile bundles.",
+		Long:          "Manage translations for projects using the 'gotext' workflow: audit catalogs for missing translations, fill them with Gemini, render a review report, and build mobile bundles.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// NoArgs rejects an unknown tool name instead of printing help and exiting 0.
