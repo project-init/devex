@@ -20,7 +20,7 @@ func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "localize <tool> [args]",
 		Short:         "localize is a toolbox CLI for localization management",
-		Long:          "Manage translations for projects using the 'gotext' workflow. Detect missing keys and translate them using the Gemini LLM.",
+		Long:          "Manage translations for projects using the 'gotext' workflow: audit catalogs for missing translations, render a review report, and build mobile bundles.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          requireToolArg,

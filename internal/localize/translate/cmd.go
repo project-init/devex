@@ -9,9 +9,10 @@ import (
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "translate",
-		Short: "Ensure that all locales have translations for their given strings.",
-		Args:  cobra.NoArgs,
+		Use:    "translate",
+		Hidden: true,
+		Short:  "Ensure that all locales have translations for their given strings.",
+		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, ok := config.GetConfig(cmd.Context())
 			if !ok || cfg == nil {
