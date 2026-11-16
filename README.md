@@ -72,11 +72,6 @@ devex <subcommand> [options]
   devex contributions signal <config_file>
   ```
 
-- **[components](cmd/devex/README.md#components)** - Generate component skeleton code from configuration
-  ```bash
-  devex components <configuration_file_path>
-  ```
-
 For detailed documentation on each subcommand, see **[cmd/devex/README.md](cmd/devex/README.md)**.
 
 Run `devex --help` or `devex <subcommand> --help` for more information.

@@ -497,48 +497,6 @@ See [example_config.yaml](contributions/example_config.yaml) for a sample config
 
 ---
 
-### Components
-
-Generate component skeleton code from YAML configuration files. Currently focused on database components for PostgreSQL-based Go services.
-
-**Usage:**
-
-```shell
-devex components <configuration_file_path>
-```
-
-**Example:**
-
-```shell
-devex components cmd/devex/components/example_config.yaml
-```
-
-**Configuration Example:**
-
-```yaml
-outputDirectory: "gen"
-
-db:
-  schemaName: data_platform
-```
-
-See [example_config.yaml](components/example_config.yaml) for a complete example.
-
-**DB Components:**
-
-The DB component generator outputs:
-
-- User setup scripts
-- Schema definitions
-- IAM permissions setup
-- Default migrations
-- Post-release scripts
-- sqlc configuration for Go service integration
-
-All setup is optimized for PostgreSQL clusters.
-
----
-
 ## Additional Resources
 
 - [Code of Conduct](../../CODE_OF_CONDUCT.md)
