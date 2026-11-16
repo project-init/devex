@@ -18,6 +18,9 @@ func Command() *cobra.Command {
 			if !ok || cfg == nil {
 				return fmt.Errorf("config not loaded")
 			}
+			if cfg.Localize.LocalesDir == "" {
+				return fmt.Errorf("missing configuration: localize.localesDir")
+			}
 			return audit(cfg.Localize.LocalesDir, ui.New(cmd))
 		},
 	}

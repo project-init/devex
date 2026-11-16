@@ -23,6 +23,10 @@ import (
 // concurrency is how many repositories collect reads at once.
 const concurrency = 4
 
+// resumeOverlap is how far before a repository's latest collected merge a rerun starts, so a pull
+// request merged in the same second, or that GitHub listed late, still arrives.
+const resumeOverlap = time.Hour
+
 // fetcher reads repositories and their pull requests from GitHub.
 type fetcher interface {
 	GetRepos(ctx context.Context, cfg *config.Config) ([]string, error)
@@ -39,9 +43,9 @@ func Run(ctx context.Context, u *ui.UI, cfg *config.Config) error {
 	return collect(ctx, u, cfg, github)
 }
 
-// collect writes each repository's pull requests merged since its last collection, reading
-// several repositories at once. It rewrites a repository's file as soon as that repository
-// finishes.
+// collect adds each repository's newly merged pull requests to its file, reading several
+// repositories at once. It writes a repository's file as soon as that repository finishes, when
+// the file is missing or its pull requests changed.
 func collect(ctx context.Context, u *ui.UI, cfg *config.Config, github fetcher) error {
 	if err := os.MkdirAll(cfg.OutputDirectories.Prs, 0o755); err != nil {
 		return err
@@ -70,26 +74,17 @@ func collect(ctx context.Context, u *ui.UI, cfg *config.Config, github fetcher) 
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err
 			}
-			since := cutoffDate
-			for _, pr := range prs {
-				if pr.MergedAt.After(since) {
-					since = pr.MergedAt
-				}
-			}
-			newPrs, err := github.GetRepoPRs(ctx, since, repo)
+			fetched, err := github.GetRepoPRs(ctx, resumeFrom(prs, cutoffDate), repo)
 			if err != nil {
 				return err
 			}
-			if len(newPrs) > 0 || !collected {
-				allPrs := append(prs, newPrs...)
-				sort.Slice(allPrs, func(i, j int) bool {
-					return allPrs[i].MergedAt.After(allPrs[j].MergedAt)
-				})
+			allPrs, added, changed := mergePrs(prs, fetched)
+			if changed || !collected {
 				if err := writePrs(path, allPrs); err != nil {
 					return err
 				}
 			}
-			label := fmt.Sprintf("%s: %d new pull requests", repo, len(newPrs))
+			label := fmt.Sprintf("%s: %d new pull requests", repo, added)
 			if !u.Live() {
 				u.Status("%s", label)
 			}
@@ -98,6 +93,54 @@ func collect(ctx context.Context, u *ui.UI, cfg *config.Config, github fetcher) 
 		})
 	}
 	return group.Wait()
+}
+
+// resumeFrom returns where to fetch a repository's merges from. Collected merges that reach back
+// past cutoff cover the window, so fetching resumes shortly before the latest one; otherwise it
+// starts at cutoff, which backfills a window that grew since the last collection.
+func resumeFrom(prs []types.PR, cutoff time.Time) time.Time {
+	covered, latest := false, cutoff
+	for _, pr := range prs {
+		covered = covered || !pr.MergedAt.After(cutoff)
+		if pr.MergedAt.After(latest) {
+			latest = pr.MergedAt
+		}
+	}
+	if since := latest.Add(-resumeOverlap); covered && since.After(cutoff) {
+		return since
+	}
+	return cutoff
+}
+
+// mergePrs adds fetched pull requests to the collected ones, newest merge first, replacing any it
+// collected before. It reports how many it added, and whether anything changed.
+func mergePrs(collected, fetched []types.PR) ([]types.PR, int, bool) {
+	index := make(map[int]int, len(collected))
+	for i, pr := range collected {
+		index[pr.Number] = i
+	}
+	added, changed := 0, false
+	for _, pr := range fetched {
+		if i, ok := index[pr.Number]; ok {
+			changed = changed || !samePR(collected[i], pr)
+			collected[i] = pr
+			continue
+		}
+		index[pr.Number] = len(collected)
+		collected = append(collected, pr)
+		added++
+	}
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].MergedAt.After(collected[j].MergedAt)
+	})
+	return collected, added, changed || added > 0
+}
+
+// samePR reports whether a and b hold the same values, comparing merge times as instants rather
+// than by time zone.
+func samePR(a, b types.PR) bool {
+	a.MergedAt, b.MergedAt = a.MergedAt.UTC(), b.MergedAt.UTC()
+	return a == b
 }
 
 func GetExistingPRs(cfg *config.Config) (map[string][]types.PR, error) {
