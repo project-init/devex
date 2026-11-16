@@ -72,7 +72,7 @@ var (
 )
 
 // graphQL runs query against GitHub's GraphQL API through the REST client, so requests share its
-// authentication and its retries of failed responses, and decodes the response's data into out.
+// authentication, retries, and hold on secondary rate limits, and decodes the response's data into out.
 // GitHub reports GraphQL rate limits inside a 200 response, which those retries never see, so
 // graphQL waits them out itself, and pauses every worker's queries until the limit lifts, since
 // GitHub counts concurrent requests toward its secondary limits. It also retries what the
