@@ -5,15 +5,15 @@ go 1.27.0
 require (
 	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.18
-	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.89.2
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.103.1
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.92.2
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.105.1
 	github.com/google/go-github/v74 v74.0.0
 	github.com/jszwec/csvutil v1.10.1
 	github.com/manifoldco/promptui v0.9.0
-	github.com/moby/buildkit v0.33.0
-	github.com/project-init/gommon v0.13.0
+	github.com/moby/buildkit v0.35.0
+	github.com/project-init/gommon v0.13.1
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -47,8 +47,8 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/yuin/goldmark v1.8.7 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
