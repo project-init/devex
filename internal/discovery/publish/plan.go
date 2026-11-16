@@ -126,8 +126,16 @@ func DefaultSyncPlanPath(bundleDirectory string, targetName string, generatedAt 
 	return filepath.Join(bundleDirectory, ".publish", targetName, "sync-"+generatedAt.UTC().Format("20060102T150405.000Z"), "plan.yaml")
 }
 
+// receiptFile names a plan's receipt beside it, and archiveDirectory the directory beside it that
+// holds receipts a re-plan replaced, each named archivePrefix, then its time and digest, then .yaml.
+const (
+	receiptFile      = "receipt.yaml"
+	archiveDirectory = "archive"
+	archivePrefix    = "receipt-"
+)
+
 func DefaultReceiptPath(planPath string) string {
-	return filepath.Join(filepath.Dir(planPath), "receipt.yaml")
+	return filepath.Join(filepath.Dir(planPath), receiptFile)
 }
 
 func ValidatePlan(plan *provider.Plan, bundle *artifact.Bundle) error {

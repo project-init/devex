@@ -59,6 +59,17 @@ type Preflighter interface {
 	Preflight(context.Context, config.Target, []Operation) error
 }
 
+// Confirmer reads published issues by key, which a remote answers consistently where its search
+// can lag behind a recent write. Apply uses it to recognize issues an earlier plan published that
+// Resolve could not find. Like Resolve, it runs only during apply, so it may repair what its
+// lookups rely on, such as a label.
+type Confirmer interface {
+	// Confirm returns the candidates, keyed by idempotency key, whose issue still exists in the
+	// target and still carries that key, with each issue's current reference. It leaves out a
+	// missing issue and returns an error for a failed read.
+	Confirm(ctx context.Context, target config.Target, candidates map[string]RemoteRef) (map[string]RemoteRef, error)
+}
+
 type Plan struct {
 	SchemaVersion string        `yaml:"schema_version" json:"schema_version"`
 	ID            string        `yaml:"id" json:"id"`
