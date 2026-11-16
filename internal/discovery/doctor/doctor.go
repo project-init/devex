@@ -23,10 +23,10 @@ const (
 )
 
 type Check struct {
-	Severity Severity
-	Name     string
-	Detail   string
-	Remedy   string
+	Severity Severity `json:"severity"`
+	Name     string   `json:"name"`
+	Detail   string   `json:"detail"`
+	Remedy   string   `json:"remedy,omitempty"`
 }
 
 type Report struct {

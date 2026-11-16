@@ -55,6 +55,9 @@ func (a *Adapter) Sync(
 			changed = slices.DeleteFunc(changed, func(field string) bool { return field == "labels" })
 		}
 		synced, warning := provider.SyncIssue(operation, current, changed, request.Force, sourceFields)
+		if synced.Action == provider.ActionUpdateIssue {
+			describeUpdate(&synced, issue)
+		}
 		if warning != "" {
 			warnings = append(warnings, warning)
 		}
@@ -66,6 +69,28 @@ func (a *Adapter) Sync(
 	}
 
 	return operations, append(warnings, provider.OrphanWarnings(labels, request.Operations)...), nil
+}
+
+// describeUpdate records the before and after of each issue field an update rewrites.
+func describeUpdate(operation *provider.Operation, issue *gh.Issue) {
+	changed, _ := operation.Fields["changed"].([]string)
+	operation.Diff = make(map[string]provider.FieldChange, len(changed))
+	for _, field := range changed {
+		switch field {
+		case "title":
+			title, _ := operation.Fields["title"].(string)
+			operation.Diff[field] = provider.FieldChange{Before: issue.GetTitle(), After: title}
+		case "labels":
+			var existing []string
+			for _, label := range issue.Labels {
+				existing = append(existing, label.GetName())
+			}
+			desired, _ := stringSlice(operation.Fields["labels"])
+			operation.Diff[field] = provider.LabelChange(existing, desired)
+		default:
+			operation.Diff[field] = provider.Rewritten
+		}
+	}
 }
 
 func publishedIssue(issue *gh.Issue) provider.PublishedIssue {

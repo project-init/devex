@@ -295,3 +295,20 @@ func stringSlice(value any) ([]string, error) {
 		return nil, fmt.Errorf("labels must be a list of strings")
 	}
 }
+
+// CheckAccess confirms the credentials can read the target repository and that it takes issues.
+func (a *Adapter) CheckAccess(ctx context.Context, target config.Target) (string, error) {
+	owner, name := target.GitHub.Owner, target.GitHub.Repository
+	repository, _, err := a.client.Repositories.Get(ctx, owner, name)
+	if err != nil {
+		return "", fmt.Errorf("read GitHub repository %s/%s: %w", owner, name, err)
+	}
+	if repository.GetArchived() {
+		return "", fmt.Errorf("GitHub repository %s/%s is archived, so it takes no new issues", owner, name)
+	}
+	if !repository.GetHasIssues() {
+		return "", fmt.Errorf("GitHub repository %s/%s has issues turned off", owner, name)
+	}
+
+	return fmt.Sprintf("repository %s/%s is reachable and takes issues", owner, name), nil
+}

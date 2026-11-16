@@ -34,6 +34,24 @@ type Adapter interface {
 	Execute(context.Context, config.Target, Operation, map[domain.ItemID]RemoteRef) (RemoteRef, error)
 }
 
+// AccessChecker confirms a target's credentials work and can reach its project, for doctor
+// --online.
+type AccessChecker interface {
+	CheckAccess(context.Context, config.Target) (string, error)
+}
+
+// IssueTypeChecker reports which issue types the target's configuration names that its project
+// lacks.
+type IssueTypeChecker interface {
+	MissingIssueTypes(context.Context, config.Target) ([]string, error)
+}
+
+// Preflighter checks the creates apply has left to make against the remote before it writes
+// anything.
+type Preflighter interface {
+	Preflight(context.Context, config.Target, []Operation) error
+}
+
 type Plan struct {
 	SchemaVersion string        `yaml:"schema_version" json:"schema_version"`
 	ID            string        `yaml:"id" json:"id"`
@@ -57,6 +75,8 @@ type Operation struct {
 	IdempotencyKey string         `yaml:"idempotency_key" json:"idempotency_key"`
 	Summary        string         `yaml:"summary" json:"summary"`
 	Fields         map[string]any `yaml:"fields" json:"fields"`
+	// Diff shows, for plan output, each field an update rewrites. Apply ignores it.
+	Diff map[string]FieldChange `yaml:"diff,omitempty" json:"diff,omitempty"`
 }
 
 type Receipt struct {

@@ -38,6 +38,7 @@ type Adapter struct {
 	email      string
 	token      string
 	linkCache  map[string]map[string]bool
+	projects   map[string]*project // by base URL and key, read by the online checks
 }
 
 // getClient instantiates our generic client for a specific target base URL dynamically.
