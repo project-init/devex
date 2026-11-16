@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -248,9 +249,11 @@ func TestGraphQLLeavesHTTPErrorsToTheTransport(t *testing.T) {
 // shortenWaits sets graphQL's waits for one test, so a test can tell which wait applied.
 func shortenWaits(t *testing.T, retry, buffer, secondary time.Duration) {
 	t.Helper()
-	saved := []time.Duration{retryPause, resetBuffer, secondaryPause}
+	saved := []time.Duration{retryPause, resetBuffer, secondaryPause, maxSecondaryPause}
 	retryPause, resetBuffer, secondaryPause = retry, buffer, secondary
-	t.Cleanup(func() { retryPause, resetBuffer, secondaryPause = saved[0], saved[1], saved[2] })
+	t.Cleanup(func() {
+		retryPause, resetBuffer, secondaryPause, maxSecondaryPause = saved[0], saved[1], saved[2], saved[3]
+	})
 }
 
 // boundedContext ends after ten seconds, so a test that waits for the wrong thing fails on its
@@ -288,7 +291,7 @@ func headerServer(t *testing.T, headers []map[string]string, responses ...string
 func TestGraphQLHonorsASecondaryLimitsRetryAfter(t *testing.T) {
 	shortenWaits(t, time.Hour, 0, time.Hour)
 	g, calls := headerServer(t, []map[string]string{{"X-RateLimit-Remaining": "4000", "Retry-After": "1"}},
-		`{"errors":[{"type":"RATE_LIMITED","message":"You have exceeded a secondary rate limit."}]}`)
+		secondaryLimited)
 	start := time.Now()
 	if _, err := g.GetRepoPRs(boundedContext(t), cutoff, "devex"); err != nil || *calls != 2 {
 		t.Fatalf("GetRepoPRs() = %v after %d calls; want a retry", err, *calls)
@@ -301,7 +304,7 @@ func TestGraphQLHonorsASecondaryLimitsRetryAfter(t *testing.T) {
 func TestGraphQLWaitsAMinuteForASecondaryLimitWithoutRetryAfter(t *testing.T) {
 	shortenWaits(t, time.Hour, 0, 50*time.Millisecond)
 	g, calls := headerServer(t, []map[string]string{{"X-RateLimit-Remaining": "4000"}},
-		`{"errors":[{"type":"RATE_LIMITED","message":"You have exceeded a secondary rate limit."}]}`)
+		secondaryLimited)
 	if _, err := g.GetRepoPRs(boundedContext(t), cutoff, "devex"); err != nil || *calls != 2 {
 		t.Errorf("GetRepoPRs() = %v after %d calls; want a retry after secondaryPause", err, *calls)
 	}
@@ -391,20 +394,41 @@ func TestGraphQLLeavesSecondaryLimitsToTheTransport(t *testing.T) {
 	}
 }
 
-func TestWarnIfSpentWarnsOncePerReset(t *testing.T) {
+func TestASuccessThatSpendsTheLimitHoldsEveryWorkerUntilItsReset(t *testing.T) {
+	shortenWaits(t, time.Hour, time.Second, time.Hour)
 	var warnings []string
 	g := &GH{warn: func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }}
-	spent := github.Rate{Limit: 5000, Remaining: 0, Reset: github.Timestamp{Time: time.Now().Add(time.Hour)}}
-	g.warnIfSpent(github.Rate{Limit: 5000, Remaining: 12, Reset: spent.Reset})
-	g.warnIfSpent(spent)
-	g.warnIfSpent(spent) // another worker's response
-	g.warnIfSpent(github.Rate{Limit: 5000, Remaining: 0, Reset: github.Timestamp{Time: time.Now().Add(-time.Minute)}})
-	if len(warnings) != 1 {
-		t.Errorf("warnings = %q, want one for the spent limit", warnings)
+	reset := time.Now().Add(time.Hour - time.Minute)
+	spent := github.Rate{Limit: 5000, Remaining: 0, Reset: github.Timestamp{Time: reset}}
+	g.lifted(time.Now(), github.Rate{Limit: 5000, Remaining: 12, Reset: spent.Reset})
+	g.lifted(time.Now(), github.Rate{Limit: 5000, Remaining: 0, Reset: github.Timestamp{Time: time.Now().Add(-time.Minute)}})
+	if !g.resumeAt.IsZero() {
+		t.Fatalf("resumeAt = %s, want no hold while the limit has requests left or has reset", g.resumeAt)
 	}
-	g.warnIfSpent(github.Rate{Limit: 5000, Remaining: 0, Reset: github.Timestamp{Time: time.Now().Add(2 * time.Hour)}})
+	g.lifted(time.Now(), spent)
+	g.lifted(time.Now(), spent) // another worker's reply
+	if drift := g.resumeAt.Sub(reset.Add(time.Second)).Abs(); drift > 100*time.Millisecond || len(warnings) != 1 {
+		t.Errorf("resumeAt = %s with warnings %q, want the reset plus resetBuffer and one warning", g.resumeAt, warnings)
+	}
+}
+
+func TestPauseAnnouncesAPauseALaterReplyExtends(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, time.Minute)
+	var warnings []string
+	g := &GH{warn: func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }}
+	sent := time.Now()
+	g.pause(sent, reply{limited: true})
+	g.pause(sent, reply{limited: true, retryAfter: 10 * time.Minute}) // an in-flight query's refusal
 	if len(warnings) != 2 {
-		t.Errorf("warnings = %q, want another for the next spent limit", warnings)
+		t.Errorf("warnings = %q, want the extended resume time announced", warnings)
+	}
+	g.pause(sent, reply{limited: true, retryAfter: 10*time.Minute + 30*time.Second})
+	if len(warnings) != 2 {
+		t.Errorf("warnings = %q, want an extension under a minute left quiet", warnings)
+	}
+	g.pause(sent, reply{limited: true}) // a shorter wait leaves the pause as long as it was
+	if wait := time.Until(g.resumeAt); wait < 9*time.Minute {
+		t.Errorf("pause = %s, want Retry-After's ten minutes kept", wait)
 	}
 }
 
@@ -424,17 +448,174 @@ func TestGetRepoPRsWarnsWhenASuccessSpendsTheLimit(t *testing.T) {
 		warnings = append(warnings, fmt.Sprintf(format, args...))
 	}}
 	if _, err := g.GetRepoPRs(context.Background(), cutoff, "devex"); err != nil || len(warnings) != 1 {
-		t.Errorf("GetRepoPRs() = %v with warnings %q; want one warning before go-github's silent wait", err, warnings)
+		t.Errorf("GetRepoPRs() = %v with warnings %q; want one warning about the wait", err, warnings)
 	}
 }
 
 func TestGraphQLReportsCancellationDuringARateLimitHold(t *testing.T) {
-	// The first page spends the limit, so go-github holds the second until the reset.
+	// The first page spends the limit, so every query waits for the reset.
 	g, _ := headerServer(t, []map[string]string{{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": fmt.Sprint(time.Now().Add(time.Hour).Unix())}},
 		pullRequestPage(true, pullRequestNodeJSON(40, user("octocat"), "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z", "2026-09-02T00:00:00Z", false)))
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	if _, err := g.GetRepoPRs(ctx, cutoff, "devex"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("GetRepoPRs() error = %v, want the context's", err)
+	}
+}
+
+const secondaryLimited = `{"errors":[{"type":"RATE_LIMITED","message":"You have exceeded a secondary rate limit."}]}`
+
+func TestGraphQLDoublesItsWaitWhileASecondaryLimitPersists(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, 20*time.Millisecond)
+	var sent []time.Time
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = append(sent, time.Now())
+		w.Header().Set("Content-Type", "application/json")
+		if len(sent) <= 3 {
+			_, _ = io.WriteString(w, secondaryLimited)
+			return
+		}
+		_, _ = io.WriteString(w, pullRequestPage(false))
+	}))
+	t.Cleanup(server.Close)
+	client := github.NewClient(nil)
+	client.BaseURL, _ = url.Parse(server.URL + "/")
+	var warnings []string
+	g := &GH{ghClient: client, organization: "project-init", warn: func(format string, args ...any) {
+		warnings = append(warnings, fmt.Sprintf(format, args...))
+	}}
+	// Three limited replies outlast graphQLAttempts, which bounds only failures.
+	if _, err := g.GetRepoPRs(boundedContext(t), cutoff, "devex"); err != nil || len(sent) != 4 {
+		t.Fatalf("GetRepoPRs() = %v after %d requests; want success on the fourth", err, len(sent))
+	}
+	for index, want := range []time.Duration{20 * time.Millisecond, 40 * time.Millisecond, 80 * time.Millisecond} {
+		if gap := sent[index+1].Sub(sent[index]); gap < want {
+			t.Errorf("wait %d = %s, want at least %s", index+1, gap, want)
+		}
+	}
+	if len(warnings) != 3 {
+		t.Errorf("warnings = %q, want one per pause", warnings)
+	}
+}
+
+func TestGraphQLGivesUpOnALimitThatNeverLifts(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, time.Millisecond)
+	g, calls := headerServer(t, make([]map[string]string, limitedReplies+1), slices.Repeat([]string{secondaryLimited}, limitedReplies+1)...)
+	_, err := g.GetRepoPRs(boundedContext(t), cutoff, "devex")
+	if err == nil || !strings.Contains(err.Error(), "secondary rate limit") || *calls != limitedReplies {
+		t.Errorf("GetRepoPRs() = %v after %d calls; want the limit reported after %d", err, *calls, limitedReplies)
+	}
+}
+
+func TestGraphQLHoldsEveryWorkerWhileALimitPauses(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, 100*time.Millisecond)
+	g, requests := graphQLServer(t)
+	g.pause(time.Now(), reply{limited: true}) // another worker's refused query
+	start := time.Now()
+	if _, err := g.GetRepoPRs(boundedContext(t), cutoff, "devex"); err != nil || len(*requests) != 1 {
+		t.Fatalf("GetRepoPRs() = %v after %d requests", err, len(*requests))
+	}
+	if elapsed := time.Since(start); elapsed < 100*time.Millisecond {
+		t.Errorf("sent after %s, want the pause of 100ms honored", elapsed)
+	}
+}
+
+func TestPauseDoublesUpToItsCap(t *testing.T) {
+	shortenWaits(t, time.Hour, time.Second, time.Minute)
+	maxSecondaryPause = 4 * time.Minute
+	// A spent limit still refused after its reset, as when the local clock runs ahead, backs off too.
+	skewed := reply{limited: true, rate: github.Rate{Remaining: 0, Reset: github.Timestamp{Time: time.Now().Add(-time.Second)}}}
+	g := &GH{}
+	for index, want := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 4 * time.Minute} {
+		g.resumeAt = time.Time{} // the last pause lifted
+		g.pause(time.Now(), skewed)
+		if wait := time.Until(g.resumeAt); wait < want-time.Second || wait > want {
+			t.Errorf("pause %d = %s, want %s", index+1, wait, want)
+		}
+	}
+}
+
+func TestPauseCountsABurstOnce(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, time.Minute)
+	var warnings []string
+	g := &GH{warn: func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }}
+	sent := time.Now()
+	for range 4 { // four workers' queries, all sent before the first refusal
+		g.pause(sent, reply{limited: true})
+	}
+	if g.strikes != 1 {
+		t.Errorf("strikes = %d, want one for the burst", g.strikes)
+	}
+	if wait := time.Until(g.resumeAt); wait > time.Minute {
+		t.Errorf("pause = %s, want a minute", wait)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %q, want one for the pause", warnings)
+	}
+}
+
+func TestALiftedLimitStartsItsWaitsOver(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, time.Minute)
+	g := &GH{}
+	for range 3 {
+		g.resumeAt = time.Time{}
+		g.pause(time.Now(), reply{limited: true})
+	}
+	g.resumeAt = time.Time{}
+	g.lifted(time.Now(), github.Rate{}) // a query sent after the pause succeeded
+	g.pause(time.Now(), reply{limited: true})
+	if wait := time.Until(g.resumeAt); wait > time.Minute {
+		t.Errorf("pause after a success = %s, want a minute again", wait)
+	}
+}
+
+func TestGraphQLWaitsWhenGoGitHubRefusesToSendOnASpentLimit(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, time.Hour)
+	reset := time.Now().Truncate(time.Second).Add(2 * time.Second)
+	// A permanent error that spends the limit leaves go-github refusing the next query unsent.
+	g, calls := headerServer(t, []map[string]string{{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": fmt.Sprint(reset.Unix())}},
+		`{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","path":["repository"],"locations":[{"line":1,"column":42}],"message":"Could not resolve to a Repository with the name 'project-init/missing'."}]}`)
+	if _, err := g.GetRepoPRs(boundedContext(t), cutoff, "missing"); err == nil {
+		t.Fatal("GetRepoPRs(missing) succeeded, want NOT_FOUND")
+	}
+	if _, err := g.GetRepoPRs(boundedContext(t), cutoff, "devex"); err != nil || *calls != 2 {
+		t.Fatalf("GetRepoPRs(devex) = %v after %d calls; want it sent once the limit resets", err, *calls)
+	}
+	if time.Now().Before(reset) {
+		t.Errorf("sent at %s, before the reset at %s", time.Now().Format(time.TimeOnly), reset.Format(time.TimeOnly))
+	}
+}
+
+func TestPauseCountsOnlyFallbackWaitsTowardBackoff(t *testing.T) {
+	shortenWaits(t, time.Hour, 0, time.Minute)
+	g := &GH{}
+	spent := github.Rate{Remaining: 0, Reset: github.Timestamp{Time: time.Now().Add(time.Hour)}}
+	for _, signaled := range []reply{{limited: true, retryAfter: time.Second}, {limited: true, rate: spent}} {
+		g.resumeAt = time.Time{}
+		g.pause(time.Now(), signaled)
+	}
+	g.resumeAt = time.Time{}
+	g.pause(time.Now(), reply{limited: true})
+	if wait := time.Until(g.resumeAt); wait > time.Minute {
+		t.Errorf("first fallback pause = %s, want a minute: GitHub's own waits are not repeated refusals", wait)
+	}
+}
+
+func TestPauseWaitsForTheLaterOfRetryAfterAndTheReset(t *testing.T) {
+	shortenWaits(t, time.Hour, 5*time.Second, time.Hour)
+	reset := github.Timestamp{Time: time.Now().Add(30 * time.Minute)}
+	for name, tc := range map[string]struct {
+		retryAfter time.Duration
+		want       time.Duration
+	}{
+		"reset later":       {retryAfter: time.Minute, want: 30*time.Minute + 5*time.Second},
+		"Retry-After later": {retryAfter: 40 * time.Minute, want: 40 * time.Minute},
+		"inside the buffer": {retryAfter: 30*time.Minute + 2*time.Second, want: 30*time.Minute + 5*time.Second},
+	} {
+		g := &GH{}
+		g.pause(time.Now(), reply{limited: true, retryAfter: tc.retryAfter, rate: github.Rate{Remaining: 0, Reset: reset}})
+		if wait := time.Until(g.resumeAt); wait < tc.want-time.Second || wait > tc.want {
+			t.Errorf("%s: pause = %s, want %s", name, wait, tc.want)
+		}
 	}
 }

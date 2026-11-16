@@ -467,7 +467,7 @@ devex contributions signal contributions_config.yaml
 
 **Collection:**
 
-`collect` reads the organization's repositories four at a time, or only those `reposToCheck` lists. For each one it asks GitHub's GraphQL API for the pull requests merged inside the look-back window, with every review. A pull request opened before the window counts if it merged inside it. A rerun fetches only merges newer than the latest one in each repository's CSV. When GitHub's GraphQL rate limit runs out, `collect` warns and waits for the reset. `collect` and `signal` create missing output directories. On a terminal, `collect` shows a progress bar with an ETA; elsewhere it prints one line per repository.
+`collect` reads the organization's repositories four at a time, or only those `reposToCheck` lists. For each one it asks GitHub's GraphQL API for the pull requests merged inside the look-back window, with every review. A pull request opened before the window counts if it merged inside it. A rerun fetches only merges newer than the latest one in each repository's CSV. When a GraphQL reply refuses a query for a rate limit or spends the hourly limit, `collect` warns and pauses every query: until the limit resets or for as long as GitHub asks, whichever is later and at most an hour, or otherwise for a minute, doubling up to 16 minutes while the limit holds. It gives up on a query after six rate-limited attempts. `collect` and `signal` create missing output directories. On a terminal, `collect` shows a progress bar with an ETA; elsewhere it prints one line per repository.
 
 `signal` weighs each review by its reviewer: a person's review counts 0.20 and a bot's 0.01, whoever wrote the pull request.
 
