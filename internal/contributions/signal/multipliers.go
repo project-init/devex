@@ -13,6 +13,20 @@ func isBot(author string) bool {
 	return strings.Contains(author, "[bot]")
 }
 
+// reviewerOf is the login in a login:state review entry.
+func reviewerOf(review string) string {
+	login, _, _ := strings.Cut(review, ":")
+	return login
+}
+
+// reviewWeight is what one review by reviewer adds to a signal.
+func reviewWeight(reviewer string) float64 {
+	if isBot(reviewer) {
+		return 0.01
+	}
+	return 0.20
+}
+
 func authorMultiplier(authorModifiers map[string]float64, author string) float64 {
 	if isBot(author) {
 		return 0.01

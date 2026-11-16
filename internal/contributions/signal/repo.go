@@ -9,14 +9,14 @@ import (
 	"github.com/project-init/devex/internal/contributions/types"
 )
 
-func getRepoSignal(cfg *config.Config, prs []types.PR) error {
+func getRepoSignal(cfg *config.Config, prs []types.PR) (string, error) {
 	signalMapRepos := getRepoGHSignal(prs)
 	sortedRepos := sortByRepoSignal(signalMapRepos)
 	repoSignals := make([]*types.RepoSignal, len(sortedRepos))
 	for index, repo := range sortedRepos {
 		repoSignals[index] = signalMapRepos[repo]
 	}
-	return signalsToCSVRepos(repoSignals, cfg)
+	return writeSignals(cfg, "repo", repoSignals)
 }
 
 func sortByRepoSignal(signalMap map[string]*types.RepoSignal) []string {
@@ -47,13 +47,9 @@ func getRepoGHSignal(prs []types.PR) map[string]*types.RepoSignal {
 		}
 
 		reviewerPlusStates := strings.Split(pr.Reviews, "!")
-		for range reviewerPlusStates {
+		for _, reviewerPlusState := range reviewerPlusStates {
 			repoSignal.NumReviews++
-			if isBot(pr.Author) {
-				repoSignal.WeightedReviews += 0.01
-			} else {
-				repoSignal.WeightedReviews += 0.20
-			}
+			repoSignal.WeightedReviews += reviewWeight(reviewerOf(reviewerPlusState))
 		}
 	}
 

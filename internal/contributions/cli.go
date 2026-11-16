@@ -1,12 +1,12 @@
 package contributions
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/project-init/devex/internal/contributions/collection"
 	"github.com/project-init/devex/internal/contributions/config"
 	"github.com/project-init/devex/internal/contributions/signal"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -37,12 +37,12 @@ func collectCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("starting Contributions (collect) At - %s\n", time.Now().String())
-			err = collection.Run(cmd.Context(), cfg)
-			if err != nil {
+			u := ui.New(cmd)
+			start := time.Now()
+			if err := collection.Run(cmd.Context(), u, cfg); err != nil {
 				return err
 			}
-			fmt.Printf("completed Contributions (collect) At - %s\n", time.Now().String())
+			u.Success("Collected pull requests into %s in %s", cfg.OutputDirectories.Prs, time.Since(start).Round(time.Second))
 			return nil
 		},
 	}
@@ -61,12 +61,14 @@ func signalCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("starting Contributions (signal) At - %s\n", time.Now().String())
-			err = signal.Run(cfg)
+			paths, err := signal.Run(cfg)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("completed Contributions (signal) At - %s\n", time.Now().String())
+			u := ui.New(cmd)
+			for _, path := range paths {
+				u.Success("Wrote %s", path)
+			}
 			return nil
 		},
 	}
