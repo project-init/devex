@@ -22,10 +22,8 @@ var pullRequestSuffix = regexp.MustCompile(`\(#(\d+)\)\s*$`)
 const releaseBaseBranch = "main"
 
 const (
-	releasePRColWidth     = 8
-	releaseAuthorColWidth = 16
-	releaseTitleMaxRunes  = 56
-	shortSHALen           = 7
+	releaseTitleMaxRunes = 72
+	shortSHALen          = 7
 )
 
 // pullRequestSummary is a minimal PR record for release preview output.
@@ -46,9 +44,17 @@ type releaseCommit struct {
 
 // releaseLine is one preview row. Ref is "#N" for a pull request and a short SHA otherwise.
 type releaseLine struct {
-	Ref    string
-	Author string
-	Title  string
+	Ref      string     `json:"ref"`
+	Author   string     `json:"author"`
+	Title    string     `json:"title"`
+	Kind     changeKind `json:"kind"`
+	Breaking bool       `json:"breaking"`
+}
+
+// newReleaseLine classifies title once for the preview, the bump suggestion, and JSON.
+func newReleaseLine(ref, author, title string) releaseLine {
+	kind, breaking := classify(title)
+	return releaseLine{Ref: ref, Author: author, Title: title, Kind: kind, Breaking: breaking}
 }
 
 type graphQLRequest struct {
@@ -82,13 +88,18 @@ type graphQLPullRequest struct {
 // createAndPushTag creates an annotated git tag on commit and pushes it to origin.
 // A failed push deletes that local tag. Otherwise the next release describes it as the
 // current version and skips the number that never reached origin.
-func createAndPushTag(tag, commit string) error {
-	if err := runGit("tag", "-a", tag, "-m", "Release "+tag, commit); err != nil {
+func createAndPushTag(ctx context.Context, tag, commit string) error {
+	if err := runGit(ctx, "tag", "-a", tag, "-m", "Release "+tag, commit); err != nil {
 		return fmt.Errorf("failed to create tag: %w", err)
 	}
 
-	if err := runGit("push", "origin", tag); err != nil {
-		if delErr := runGit("tag", "-d", tag); delErr != nil {
+	if err := runGit(ctx, "push", "origin", tag); err != nil {
+		// Clean up even when Ctrl-C cancelled the push, unless origin got the tag before git died.
+		cleanup := context.WithoutCancel(ctx)
+		if remote, lsErr := gitOutput(cleanup, "ls-remote", "--tags", "origin", "refs/tags/"+tag); lsErr == nil && strings.TrimSpace(remote) != "" {
+			return fmt.Errorf("push of %s was interrupted, but origin has the tag: %w", tag, err)
+		}
+		if delErr := runGit(cleanup, "tag", "-d", tag); delErr != nil {
 			return fmt.Errorf("failed to push tag: %w (also failed to delete local tag: %v)", err, delErr)
 		}
 		return fmt.Errorf("failed to push tag: %w", err)
@@ -98,8 +109,8 @@ func createAndPushTag(tag, commit string) error {
 }
 
 // gitOutput runs git and returns stdout. A non-zero exit includes stderr in the error.
-func gitOutput(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+func gitOutput(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -110,8 +121,8 @@ func gitOutput(args ...string) (string, error) {
 }
 
 // runGit runs a git command, discarding stdout. Failures include git's stderr.
-func runGit(args ...string) error {
-	_, err := gitOutput(args...)
+func runGit(ctx context.Context, args ...string) error {
+	_, err := gitOutput(ctx, args...)
 	return err
 }
 
@@ -137,8 +148,8 @@ func confirmRelease(ctx context.Context, u *ui.UI, v version) error {
 }
 
 // getActionsURL returns the GitHub Actions tab URL for the origin repository.
-func getActionsURL() (string, error) {
-	owner, repo, err := getOriginGitHubRepo()
+func getActionsURL(ctx context.Context) (string, error) {
+	owner, repo, err := getOriginGitHubRepo(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -146,8 +157,8 @@ func getActionsURL() (string, error) {
 }
 
 // getOriginGitHubRepo parses owner and repo name from the git origin remote URL.
-func getOriginGitHubRepo() (owner, repo string, err error) {
-	out, err := gitOutput("remote", "get-url", "origin")
+func getOriginGitHubRepo(ctx context.Context) (owner, repo string, err error) {
+	out, err := gitOutput(ctx, "remote", "get-url", "origin")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get remote URL: %w", err)
 	}
@@ -175,8 +186,8 @@ func getOriginGitHubRepo() (owner, repo string, err error) {
 }
 
 // requireGitHubOrigin ensures origin is a github.com remote before release steps.
-func requireGitHubOrigin() error {
-	if _, _, err := getOriginGitHubRepo(); err != nil {
+func requireGitHubOrigin(ctx context.Context) error {
+	if _, _, err := getOriginGitHubRepo(ctx); err != nil {
 		return fmt.Errorf("GitHub origin required: %w", err)
 	}
 	return nil
@@ -187,11 +198,11 @@ func requireGitHubOrigin() error {
 // Tags that point at the fetched history come along with the branch. Asking for every
 // remote tag would fail the command when one local tag would be overwritten, after
 // origin/main had already moved.
-func fetchOriginMain() (string, error) {
-	if err := runGit("fetch", "origin", releaseBaseBranch); err != nil {
+func fetchOriginMain(ctx context.Context) (string, error) {
+	if err := runGit(ctx, "fetch", "origin", releaseBaseBranch); err != nil {
 		return "", fmt.Errorf("failed to fetch origin/main: %w", err)
 	}
-	out, err := gitOutput("rev-parse", "origin/"+releaseBaseBranch)
+	out, err := gitOutput(ctx, "rev-parse", "origin/"+releaseBaseBranch)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve origin/main: %w", err)
 	}
@@ -204,14 +215,14 @@ func fetchOriginMain() (string, error) {
 
 // commitsSince lists first-parent commits reachable from tip and not from baseline.
 // An empty baseline lists the full first-parent history of tip, newest first.
-func commitsSince(baseline, tip string) ([]releaseCommit, error) {
+func commitsSince(ctx context.Context, baseline, tip string) ([]releaseCommit, error) {
 	args := []string{"log", "--first-parent", "-z", "--pretty=tformat:%H%x1f%an%x1f%s"}
 	if baseline != "" {
 		args = append(args, baseline+".."+tip)
 	} else {
 		args = append(args, tip)
 	}
-	out, err := gitOutput(args...)
+	out, err := gitOutput(ctx, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list commits: %w", err)
 	}
@@ -255,31 +266,46 @@ func parsePullRequestNumber(subject string) (int, bool) {
 	return n, true
 }
 
-// displayReleaseCommits prints commits on origin/main since baseline (or all of them).
-func displayReleaseCommits(ctx context.Context, u *ui.UI, token, tip, baseline string) error {
-	var heading string
+// releaseCommitLines lists the commits on origin/main since baseline (or all of them), with
+// pull request titles and authors loaded in one GitHub request.
+func releaseCommitLines(ctx context.Context, token, tip, baseline string) ([]releaseLine, error) {
+	commits, err := commitsSince(ctx, baseline, tip)
+	if err != nil {
+		return nil, err
+	}
+	return loadReleaseLines(ctx, token, commits)
+}
+
+// printReleaseLines shows the release's commits grouped into features, fixes, and other changes.
+func printReleaseLines(u *ui.UI, baseline string, lines []releaseLine) {
+	heading := fmt.Sprintf("Commits on %s (all history)", releaseBaseBranch)
 	if baseline != "" {
 		heading = fmt.Sprintf("Commits on %s since %s", releaseBaseBranch, baseline)
-	} else {
-		heading = fmt.Sprintf("Commits on %s (all history)", releaseBaseBranch)
 	}
-
-	commits, err := commitsSince(baseline, tip)
-	if err != nil {
-		return err
-	}
-	lines, err := loadReleaseLines(ctx, token, commits)
-	if err != nil {
-		return err
-	}
-
-	u.Printf("\n%s (%d):\n", u.Heading(heading), len(lines))
+	u.Printf("%s (%d)\n", u.Heading(heading), len(lines))
 	if len(lines) == 0 {
 		u.Printf("  (none)\n")
-		return nil
+		return
 	}
-	printReleaseLines(u, lines)
-	return nil
+	groups := map[changeKind][][]string{}
+	for _, line := range lines {
+		title := truncateRunes(line.Title, releaseTitleMaxRunes)
+		if line.Breaking {
+			title = u.Bad("BREAKING") + " " + title
+		}
+		groups[line.Kind] = append(groups[line.Kind], []string{line.Ref, line.Author, title})
+	}
+	for _, group := range []struct {
+		kind  changeKind
+		title string
+	}{{kindFeature, "Features"}, {kindFix, "Fixes"}, {kindOther, "Other changes"}} {
+		rows := groups[group.kind]
+		if len(rows) == 0 {
+			continue
+		}
+		u.Printf("\n%s (%d)\n", u.Heading(group.title), len(rows))
+		u.Table([]string{"Ref", "Author", "Title"}, rows)
+	}
 }
 
 func loadReleaseLines(ctx context.Context, token string, commits []releaseCommit) ([]releaseLine, error) {
@@ -288,7 +314,7 @@ func loadReleaseLines(ctx context.Context, token string, commits []releaseCommit
 		return releaseLines(commits, nil), nil
 	}
 
-	owner, repo, err := getOriginGitHubRepo()
+	owner, repo, err := getOriginGitHubRepo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -317,27 +343,15 @@ func releaseLines(commits []releaseCommit, prs map[int]pullRequestSummary) []rel
 	lines := make([]releaseLine, 0, len(commits))
 	for _, commit := range commits {
 		if commit.Number == 0 {
-			lines = append(lines, releaseLine{
-				Ref:    shortSHA(commit.SHA),
-				Author: commit.Author,
-				Title:  commit.Subject,
-			})
+			lines = append(lines, newReleaseLine(shortSHA(commit.SHA), commit.Author, commit.Subject))
 			continue
 		}
 		pr, ok := prs[commit.Number]
 		if !ok {
-			lines = append(lines, releaseLine{
-				Ref:    fmt.Sprintf("#%d", commit.Number),
-				Author: commit.Author,
-				Title:  commit.Subject,
-			})
+			lines = append(lines, newReleaseLine(fmt.Sprintf("#%d", commit.Number), commit.Author, commit.Subject))
 			continue
 		}
-		lines = append(lines, releaseLine{
-			Ref:    fmt.Sprintf("#%d", pr.Number),
-			Author: pr.Author,
-			Title:  pr.Title,
-		})
+		lines = append(lines, newReleaseLine(fmt.Sprintf("#%d", pr.Number), pr.Author, pr.Title))
 	}
 	return lines
 }
@@ -347,17 +361,6 @@ func shortSHA(sha string) string {
 		return sha
 	}
 	return sha[:shortSHALen]
-}
-
-func printReleaseLines(u *ui.UI, lines []releaseLine) {
-	u.Printf("  %-*s  %-*s  %s\n", releasePRColWidth, "#", releaseAuthorColWidth, "Author", "Title")
-	for _, line := range lines {
-		u.Printf("  %-*s  %-*s  %s\n",
-			releasePRColWidth, line.Ref,
-			releaseAuthorColWidth, truncateRunes(line.Author, releaseAuthorColWidth),
-			truncateRunes(line.Title, releaseTitleMaxRunes),
-		)
-	}
 }
 
 func truncateRunes(s string, maxRunes int) string {
