@@ -21,11 +21,20 @@ func (e *MissingFlagError) Error() string {
 	return fmt.Sprintf("pass --%s: devex prompts only when stdin and stderr are terminals", e.Flag)
 }
 
-// Option is one choice in a Select prompt.
+// Option is one choice in a Select prompt. Select points out a Suggested option with a marker.
 type Option struct {
-	Label string
-	Value string
+	Label     string
+	Value     string
+	Suggested bool
 }
+
+// suggestedMarker follows a suggested option's label, in color where stderr takes it. A
+// no-break space keeps the pointer and the word on one line when the row wraps. Line-based
+// prompts, which screen readers read aloud, print accessibleMarker instead.
+const (
+	suggestedMarker  = "◀\u00a0suggested"
+	accessibleMarker = "(suggested)"
+)
 
 // Select asks the user to pick one option and returns its value. The option whose value is
 // preselect starts highlighted. Without a terminal it fails with a MissingFlagError naming
@@ -36,13 +45,23 @@ func (u *UI) Select(ctx context.Context, title string, options []Option, presele
 	}
 	choices := make([]huh.Option[string], len(options))
 	for index, option := range options {
-		choices[index] = huh.NewOption(option.Label, option.Value)
+		choices[index] = huh.NewOption(u.optionLabel(option), option.Value)
 	}
 	value := preselect
 	if err := u.runForm(ctx, huh.NewSelect[string]().Title(title).Options(choices...).Value(&value)); err != nil {
 		return "", err
 	}
 	return value, nil
+}
+
+func (u *UI) optionLabel(option Option) string {
+	switch {
+	case !option.Suggested:
+		return option.Label
+	case u.accessible:
+		return option.Label + " " + accessibleMarker
+	}
+	return option.Label + "  " + u.errStyle(suggestStyle, suggestedMarker)
 }
 
 // Choose returns flagValue when it is set and names one of options, and otherwise prompts like

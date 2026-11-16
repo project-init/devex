@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"charm.land/bubbles/v2/spinner"
 	"github.com/spf13/cobra"
 )
@@ -237,5 +239,35 @@ func TestSpinStatusRedrawsTheNewTitle(t *testing.T) {
 	})
 	if err != nil || !strings.Contains(errOut.String(), "Waiting · RUNNING") {
 		t.Errorf("SpinStatus() = %v, stderr %q; want the new title drawn", err, errOut.String())
+	}
+}
+
+func TestSelectPointsOutTheSuggestedOption(t *testing.T) {
+	plain := newUI(&fakeTerminal{}, &fakeTerminal{}, &fakeTerminal{}, Options{NoColor: true}, env(nil), terminalsOnly)
+	styled := newUI(&fakeTerminal{}, &fakeTerminal{}, &fakeTerminal{}, Options{}, env(nil), terminalsOnly)
+	suggested := Option{Label: "minor", Value: "minor", Suggested: true}
+	if got := plain.optionLabel(suggested); got != "minor  "+suggestedMarker {
+		t.Errorf("plain label = %q, want the marker without color", got)
+	}
+	if got := styled.optionLabel(suggested); !strings.HasPrefix(got, "minor  \x1b[") || !strings.Contains(got, suggestedMarker) {
+		t.Errorf("styled label = %q, want the marker in color", got)
+	}
+	if got := styled.optionLabel(Option{Label: "patch", Value: "patch"}); got != "patch" {
+		t.Errorf("label = %q, want an unsuggested option unmarked", got)
+	}
+	dumb := newUI(&fakeTerminal{}, &fakeTerminal{}, &fakeTerminal{}, Options{}, env(map[string]string{"TERM": "dumb"}), terminalsOnly)
+	if got := dumb.optionLabel(suggested); got != "minor (suggested)" {
+		t.Errorf("line-based label = %q, want the marker in words", got)
+	}
+}
+
+// huh wraps a row too wide for the terminal; the marker must stay on one line.
+func TestSuggestedMarkerWrapsAsOneWord(t *testing.T) {
+	u := newUI(&fakeTerminal{}, &fakeTerminal{}, &fakeTerminal{}, Options{NoColor: true}, env(nil), terminalsOnly)
+	label := u.optionLabel(Option{Label: "patch (bug fixes, performance optimizations, code refactors)", Value: "patch", Suggested: true})
+	for _, width := range []int{40, 66, 70} {
+		if wrapped := ansi.Wrap(label, width, ""); !strings.Contains(wrapped, suggestedMarker) {
+			t.Errorf("wrapped at %d = %q, want the marker unbroken", width, wrapped)
+		}
 	}
 }

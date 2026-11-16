@@ -121,21 +121,19 @@ func parseBumpType(value string, allowMajor bool) (bumpType, error) {
 	}
 }
 
-// selectBumpType prompts for a version bump, preselecting and labelling suggested. The major
+// selectBumpType prompts for a version bump, preselecting and marking suggested. The major
 // option appears only when the config allows it. The command validates --bump itself, before
 // any network work.
 func selectBumpType(ctx context.Context, u *ui.UI, allowMajor bool, suggested bumpType) (bumpType, error) {
 	options := []ui.Option{
-		{Label: "patch (bug fixes)", Value: "patch"},
+		{Label: "patch (bug fixes, performance optimizations, code refactors)", Value: "patch"},
 		{Label: "minor (new features, backward compatible)", Value: "minor"},
 	}
 	if allowMajor {
 		options = append(options, ui.Option{Label: "major (breaking changes)", Value: "major"})
 	}
 	for index := range options {
-		if options[index].Value == suggested.String() {
-			options[index].Label += " — suggested"
-		}
+		options[index].Suggested = options[index].Value == suggested.String()
 	}
 	choice, err := u.Select(ctx, "Select version bump type", options, suggested.String(), bumpFlag)
 	if err != nil {

@@ -17,6 +17,7 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	badStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))
 	dimStyle     = lipgloss.NewStyle().Faint(true)
+	suggestStyle = accentStyle.Bold(true)
 	cellStyle    = lipgloss.NewStyle().Padding(0, 1)
 )
 
