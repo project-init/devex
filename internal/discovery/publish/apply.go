@@ -18,10 +18,10 @@ import (
 	"github.com/project-init/devex/internal/discovery/provider"
 )
 
-// Progress reports one operation's outcome during apply: its position among the plan's
-// operations, and whether a previous run's receipt had already settled it.
+// Progress reports one operation's outcome during apply: how many outcomes apply has reported, and
+// whether a previous run's receipt had already settled this one.
 type Progress struct {
-	Index     int // from 1
+	Index     int // outcomes reported so far, this one included
 	Total     int
 	Operation provider.Operation
 	Result    provider.OperationResult
@@ -32,7 +32,9 @@ type Progress struct {
 type ApplyHooks struct {
 	// Remote wraps each remote read that precedes writing, such as with a spinner.
 	Remote func(ctx context.Context, title string, read func(context.Context) error) error
-	// Progress receives each operation's outcome, in plan order.
+	// Progress receives an outcome for each operation a previous run's receipt settled, then for
+	// each one apply runs, as it succeeds or fails. Dependencies and parallel runs can both reorder
+	// them against the plan, and operations a failure kept from starting get none.
 	Progress func(Progress)
 	// Archived receives where a receipt for another plan went.
 	Archived func(path string)

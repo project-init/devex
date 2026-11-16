@@ -9,17 +9,17 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.18
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
-	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.89.2
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.103.1
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.92.2
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.105.1
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/google/go-github/v74 v74.0.0
 	github.com/jszwec/csvutil v1.10.1
-	github.com/moby/buildkit v0.33.0
+	github.com/moby/buildkit v0.35.0
 	github.com/project-init/gommon v0.13.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	golang.org/x/mod v0.42.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/mod v0.43.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/term v0.48.0
 	google.golang.org/genai v1.77.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -81,10 +81,10 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.8.7 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c // indirect
 	google.golang.org/grpc v1.85.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
