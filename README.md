@@ -46,7 +46,7 @@ devex <subcommand> [options]
   devex localize mobile
   ```
 
-- **[workplan](cmd/devex/README.md#workplan)** - Generate and publish workplan investigations to JIRA
+- **[workplan](cmd/devex/README.md#workplan)** - Deprecated; use `discovery` instead. Generate and publish workplan investigations to JIRA
 
   ```bash
   devex workplan generate <directory> <title>

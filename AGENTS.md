@@ -4,7 +4,7 @@ This file provides architectural context and conventions for AI agents working o
 
 ## Project Overview
 
-`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, discovery planning, workplan generation, contribution analysis, and component scaffolding.
+`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, discovery planning, workplan generation (deprecated in favor of discovery), contribution analysis, and component scaffolding.
 
 ## Architecture
 
@@ -26,7 +26,7 @@ This file provides architectural context and conventions for AI agents working o
 ### Code Generation and Templates
 
 - The project uses `embed.FS` and `text/template` for generated files.
-- Workplan templates live in `internal/workplan`.
+- Workplan templates live in `internal/workplan`. `workplan` is deprecated; build new planning features in `internal/discovery`.
 - DB component templates live in `internal/components/db/templates`.
 - Generated DB output lives under `gen/db`; prefer changing the generator or templates over editing generated output directly.
 - When adding DB templates that should not overwrite user-managed files, keep `nonOverwriteFiles` in `internal/components/db/templates.go` aligned.
