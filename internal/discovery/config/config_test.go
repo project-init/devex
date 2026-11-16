@@ -194,3 +194,13 @@ func TestEmbeddedExampleMatchesContributorExample(t *testing.T) {
 		t.Fatalf("embedded example differs from %s", repositoryPath)
 	}
 }
+
+func TestLoadAsksForATargetWhenTheFileIsEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "discovery.yaml")
+	if err := os.WriteFile(path, []byte("# targets go here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "at least one target") {
+		t.Errorf("Load(empty) error = %v, want the missing-target message", err)
+	}
+}

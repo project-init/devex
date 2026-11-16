@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jszwec/csvutil"
+	"github.com/project-init/devex/internal/atomicfile"
 	"github.com/project-init/devex/internal/contributions/config"
 )
 
@@ -22,5 +23,5 @@ func writeSignals(cfg *config.Config, kind string, signals any) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return path, os.WriteFile(path, bytes, 0o644)
+	return path, atomicfile.Write(path, bytes)
 }

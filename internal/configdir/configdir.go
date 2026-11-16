@@ -3,16 +3,14 @@
 package configdir
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/project-init/devex/internal/strictyaml"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"gopkg.in/yaml.v3"
 )
 
 // FlagName is the persistent flag that overrides the configuration directory.
@@ -51,8 +49,9 @@ func Resolve(explicit, defaultDir string) (string, error) {
 }
 
 // Load decodes every *.yaml file in dir into out, in name order, so a later file overrides an
-// earlier one. A key out does not declare fails with the file's path. Load skips any file
-// with one of foreignKeys at its top level, because another tool owns that file.
+// earlier one. A key out does not declare, or a second YAML document in one file, fails with the
+// file's path. Load skips an empty file and any file with one of foreignKeys at its top level,
+// because another tool owns that file.
 func Load(dir string, out any, foreignKeys ...string) error {
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil {
@@ -63,30 +62,12 @@ func Load(dir string, out any, foreignKeys ...string) error {
 		if err != nil {
 			return err
 		}
-		if hasTopLevelKey(raw, foreignKeys) {
+		if len(foreignKeys) > 0 && strictyaml.HasTopLevelKey(raw, foreignKeys...) {
 			continue
 		}
-		decoder := yaml.NewDecoder(bytes.NewReader(raw))
-		decoder.KnownFields(true)
-		if err := decoder.Decode(out); err != nil && !errors.Is(err, io.EOF) {
+		if err := strictyaml.Decode(raw, out); err != nil && !errors.Is(err, strictyaml.ErrEmpty) {
 			return fmt.Errorf("%s: %w", file, err)
 		}
 	}
 	return nil
-}
-
-func hasTopLevelKey(raw []byte, keys []string) bool {
-	if len(keys) == 0 {
-		return false
-	}
-	var top map[string]yaml.Node
-	if yaml.Unmarshal(raw, &top) != nil {
-		return false
-	}
-	for _, key := range keys {
-		if _, ok := top[key]; ok {
-			return true
-		}
-	}
-	return false
 }

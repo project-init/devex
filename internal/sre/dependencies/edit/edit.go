@@ -51,7 +51,7 @@ func Apply(root string, changes []Change) error {
 		writes = append(writes, write{abs, data})
 	}
 	for _, w := range writes {
-		// WriteFile keeps an existing file's permissions.
+		// In place: these are the user's files, so they keep their permissions, owner, and links.
 		if err := os.WriteFile(w.path, w.data, 0o644); err != nil {
 			return err
 		}

@@ -1,7 +1,6 @@
 package publish
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/project-init/devex/internal/atomicfile"
 	"github.com/project-init/devex/internal/discovery/provider"
+	"github.com/project-init/devex/internal/strictyaml"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,27 +23,7 @@ func WriteYAMLAtomic(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".discovery-*.tmp")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
-	if _, err := temporary.Write(content); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(temporaryPath, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(temporaryPath, path)
+	return atomicfile.Write(path, content)
 }
 
 func LoadPlan(path string) (*provider.Plan, error) {
@@ -120,9 +101,7 @@ func loadStrict(path string, target any) error {
 	if err != nil {
 		return err
 	}
-	decoder := yaml.NewDecoder(bytes.NewReader(raw))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(target); err != nil {
+	if err := strictyaml.Decode(raw, target); err != nil {
 		return fmt.Errorf("decode %s: %w", path, err)
 	}
 	return nil

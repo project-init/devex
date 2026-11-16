@@ -493,7 +493,7 @@ These CSV outputs are easily imported into spreadsheets or analyzed with AI tool
 
 **Configuration:**
 
-See [example_config.yaml](contributions/example_config.yaml) for a sample configuration file.
+See [example_config.yaml](contributions/example_config.yaml) for a sample configuration file. Loading fails on an unknown key, a second YAML document, or an empty file, so a mistake is caught rather than ignored.
 
 ---
 

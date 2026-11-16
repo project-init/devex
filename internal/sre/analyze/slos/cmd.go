@@ -152,6 +152,7 @@ func writeOutput(d deps, out, format string, rs []result, info reportInfo) error
 	if err := writeReport(&buf, format, rs, info); err != nil {
 		return err
 	}
+	// In place, so --out can name a symlink, a device such as /dev/stdout, or a shared file.
 	if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {
 		return err
 	}

@@ -1,17 +1,15 @@
 package artifact
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/project-init/devex/internal/discovery/domain"
-	"gopkg.in/yaml.v3"
+	"github.com/project-init/devex/internal/strictyaml"
 )
 
 const WorkBreakdownFile = "work-breakdown.yaml"
@@ -35,16 +33,7 @@ func Load(directory string) (*Bundle, error) {
 	}
 
 	var workBreakdown domain.WorkBreakdown
-	decoder := yaml.NewDecoder(bytes.NewReader(raw))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&workBreakdown); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", workBreakdownPath, err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("decode %s: multiple YAML documents are not supported", workBreakdownPath)
-		}
+	if err := strictyaml.Decode(raw, &workBreakdown); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", workBreakdownPath, err)
 	}
 	if err := workBreakdown.Validate(); err != nil {
