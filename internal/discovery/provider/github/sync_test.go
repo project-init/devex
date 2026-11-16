@@ -125,8 +125,8 @@ func TestExecuteUpdateEditsTheIssueAndKeepsHumanLabels(t *testing.T) {
 	if !strings.HasPrefix(edit.GetBody(), "Store events durably.") || readStamp(edit.GetBody()).Source["body"] != provider.Digest(desired.Fields["body"]) {
 		t.Fatalf("body = %q", edit.GetBody())
 	}
-	if labels := strings.Join(*edit.Labels, ","); labels != "audit,in-progress" {
-		t.Fatalf("labels = %s, want the planned label plus the human one", labels)
+	if labels := strings.Join(*edit.Labels, ","); labels != "audit,discovery:audit,in-progress" {
+		t.Fatalf("labels = %s, want the planned label, the discovery label, and the human one", labels)
 	}
 	if remote.Key != "2" {
 		t.Fatalf("remote = %#v", remote)

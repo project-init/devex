@@ -539,7 +539,7 @@ func (a *Adapter) executeUnlink(
 			return provider.RemoteRef{}, fmt.Errorf("remove link %s from %s: %w", linkID, blockedKey, err)
 		}
 	}
-	delete(a.linkCache, blockedKey)
+	a.links.forget(blockedKey)
 
 	return provider.RemoteRef{Key: blockedKey, URL: browseURL(target, blockedKey), Type: "issue_link"}, nil
 }

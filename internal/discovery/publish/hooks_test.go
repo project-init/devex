@@ -45,7 +45,7 @@ func newBundle(t *testing.T) string {
 func TestApplyReportsEachOperationAndWhatAResumeSkipped(t *testing.T) {
 	planPath := writePlan(t, newBundle(t),
 		provider.Operation{ID: "create-INIT-001", ItemID: "INIT-001", IdempotencyKey: "one"},
-		provider.Operation{ID: "create-WI-001", ItemID: "WI-001", IdempotencyKey: "two"},
+		provider.Operation{ID: "create-WI-001", ItemID: "WI-001", IdempotencyKey: "two", DependsOn: []string{"create-INIT-001"}},
 	)
 	adapter := &fakeAdapter{executions: map[string]int{}, failOnce: "create-WI-001"}
 	var seen []Progress
