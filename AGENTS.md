@@ -4,14 +4,14 @@ This file provides architectural context and conventions for AI agents working o
 
 ## Project Overview
 
-`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, discovery planning, workplan generation (deprecated in favor of discovery), contribution analysis, and component scaffolding.
+`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, discovery planning, workplan generation (deprecated in favor of discovery), and contribution analysis.
 
 ## Architecture
 
 ### CLI Layout
 
 - `cmd/devex/main.go` is the executable entry point. Keep it minimal.
-- `internal/root` owns the top-level Cobra command and registers the primary subcommands: `sre`, `localize`, `discovery`, `workplan`, `contributions`, and `components`.
+- `internal/root` owns the top-level Cobra command and registers the primary subcommands: `sre`, `localize`, `discovery`, `workplan`, and `contributions`.
 - Each tool exposes a `Command() *cobra.Command` function from its `internal/<tool>` package.
 - Core behavior belongs in `internal/`; `cmd/` should only handle executable wiring.
 - Prefer adding new functionality as `devex <subcommand>` rather than introducing standalone `cmd/<tool>` binaries, unless there is an explicit distribution reason.
@@ -27,9 +27,6 @@ This file provides architectural context and conventions for AI agents working o
 
 - The project uses `embed.FS` and `text/template` for generated files.
 - Workplan templates live in `internal/workplan`. `workplan` is deprecated; build new planning features in `internal/discovery`.
-- DB component templates live in `internal/components/db/templates`.
-- Generated DB output lives under `gen/db`; prefer changing the generator or templates over editing generated output directly.
-- When adding DB templates that should not overwrite user-managed files, keep `nonOverwriteFiles` in `internal/components/db/templates.go` aligned.
 
 ## Development Workflow
 
