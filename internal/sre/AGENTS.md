@@ -20,7 +20,8 @@ This file applies to work under `internal/sre`.
 
 ## External Commands and Interactivity
 
-- `postgres` commands can depend on AWS credentials, IAM auth, `promptui`, and `psql`.
+- `postgres` commands can depend on AWS credentials, IAM auth, and `psql`.
+- Prompt through `internal/ui` (`Select`, `Confirm`) and give every prompt a flag; without a terminal the prompt fails and names that flag.
 - `release` commands interact with git tags and remotes. Preserve confirmations for mutating operations.
 - Keep external command execution isolated in small functions so pure logic remains testable.
 - Prefer returning errors from command logic. Avoid adding new `os.Exit` calls in subcommands.

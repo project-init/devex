@@ -2,12 +2,12 @@ package discovery
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
 	"github.com/project-init/devex/internal/discovery/doctor"
 	"github.com/project-init/devex/internal/discovery/skill"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ func doctorCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printDoctorReport(cmd.OutOrStdout(), report)
+			return printDoctorReport(ui.New(cmd), report)
 		},
 	}
 	command.Flags().StringVar(&configurationPath, "config", defaultConfigPath, "target configuration file")
@@ -39,22 +39,21 @@ func doctorCommand() *cobra.Command {
 	return command
 }
 
-func printDoctorReport(output io.Writer, report doctor.Report) error {
-	color := doctorColorEnabled(output)
-	printDoctorGroup(output, "Passed", checksWithSeverity(report.Checks, doctor.SeverityPass), color)
+func printDoctorReport(u *ui.UI, report doctor.Report) error {
+	printDoctorGroup(u, u.Heading("Passed"), checksWithSeverity(report.Checks, doctor.SeverityPass))
 	flagged := append(
 		checksWithSeverity(report.Checks, doctor.SeverityFlag),
 		checksWithSeverity(report.Checks, doctor.SeverityWarn)...,
 	)
-	printDoctorGroup(output, "Flagged", flagged, color)
-	printDoctorGroup(output, doctorHeading("Failures", doctor.SeverityFail, color), checksWithSeverity(report.Checks, doctor.SeverityFail), color)
+	printDoctorGroup(u, u.Heading("Flagged"), flagged)
+	printDoctorGroup(u, u.Bad("Failures"), checksWithSeverity(report.Checks, doctor.SeverityFail))
 	failures := report.FailureCount()
 	flags := report.FlagCount()
 	warnings := report.WarningCount()
 	if failures > 0 {
 		return fmt.Errorf("discovery doctor found %d problem(s), %d flag(s), and %d warning(s)", failures, flags, warnings)
 	}
-	_, _ = fmt.Fprintf(output, "Discovery is ready (%d flag(s), %d warning(s)).\n", flags, warnings)
+	u.Printf("Discovery is ready (%d flag(s), %d warning(s)).\n", flags, warnings)
 	return nil
 }
 
@@ -68,56 +67,34 @@ func checksWithSeverity(checks []doctor.Check, severity doctor.Severity) []docto
 	return result
 }
 
-func printDoctorGroup(output io.Writer, heading string, checks []doctor.Check, color bool) {
+func printDoctorGroup(u *ui.UI, heading string, checks []doctor.Check) {
 	if len(checks) == 0 {
 		return
 	}
-	_, _ = fmt.Fprintln(output, heading)
+	u.Printf("%s\n", heading)
 	for _, check := range checks {
 		lines := strings.Split(check.Detail, "\n")
-		_, _ = fmt.Fprintf(output, "  %s %s: %s\n", doctorLabel(check.Severity, color), check.Name, lines[0])
+		u.Printf("  %s %s: %s\n", doctorLabel(u, check.Severity), check.Name, lines[0])
 		for _, line := range lines[1:] {
-			_, _ = fmt.Fprintf(output, "         %s\n", line)
+			u.Printf("         %s\n", line)
 		}
 		if check.Remedy != "" {
-			_, _ = fmt.Fprintf(output, "         fix: %s\n", check.Remedy)
+			u.Printf("         fix: %s\n", check.Remedy)
 		}
 	}
-	_, _ = fmt.Fprintln(output)
+	u.Printf("\n")
 }
 
-func doctorColorEnabled(output io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
-		return false
-	}
-	file, ok := output.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
-func doctorLabel(severity doctor.Severity, color bool) string {
+func doctorLabel(u *ui.UI, severity doctor.Severity) string {
 	label := "[" + string(severity) + "]"
-	if !color {
-		return label
-	}
 	switch severity {
 	case doctor.SeverityPass:
-		return "\x1b[32m" + label + "\x1b[0m"
+		return u.Good(label)
 	case doctor.SeverityFlag, doctor.SeverityWarn:
-		return "\x1b[33m" + label + "\x1b[0m"
+		return u.Warning(label)
 	case doctor.SeverityFail:
-		return "\x1b[1;31m" + label + "\x1b[0m"
+		return u.Bad(label)
 	default:
 		return label
 	}
-}
-
-func doctorHeading(heading string, severity doctor.Severity, color bool) string {
-	if color && severity == doctor.SeverityFail {
-		return "\x1b[1;31m" + heading + "\x1b[0m"
-	}
-	return heading
 }

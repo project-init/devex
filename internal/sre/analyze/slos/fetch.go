@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"time"
 
+	"github.com/project-init/devex/internal/ui"
 	gerror "github.com/project-init/gommon/pkg/errors"
 )
 
@@ -32,65 +32,45 @@ type series struct {
 	Good, Total []point
 }
 
-// progress writes a running count. On a terminal it redraws one line; elsewhere it writes the final count only.
-type progress struct {
-	w    io.Writer
-	live bool
-}
-
-func (p progress) printf(format string, args ...any) {
-	_, _ = fmt.Fprintf(p.w, format, args...)
-}
-
 // fetchAndScore scores every SLO over its own window, ending at. A request carries SLOs of one window only, since it
 // asks for one range, and at most batch of them.
-func fetchAndScore(ctx context.Context, src metricSource, slos []slo, at time.Time, batch int, minEvents float64, p progress) ([]result, error) {
+func fetchAndScore(ctx context.Context, src metricSource, slos []slo, at time.Time, batch int, minEvents float64, u *ui.UI) ([]result, error) {
 	var windows []time.Duration
 	for _, s := range slos {
 		if !slices.Contains(windows, s.Window) {
 			windows = append(windows, s.Window)
 		}
 	}
-	if p.live {
-		p.printf("Fetching SLOs... 0/%d", len(slos))
-	}
+	progress := u.Progress("Fetching SLOs", len(slos))
+	defer progress.Done()
 	var results []result
 	for _, w := range windows {
 		group := slices.DeleteFunc(slices.Clone(slos), func(s slo) bool { return s.Window != w })
 		for start := 0; start < len(group); start += batch {
 			chunk := group[start:min(start+batch, len(group))]
-			got, err := queryBatch(ctx, src, chunk, at.Add(-w), at, minEvents, p)
+			got, err := queryBatch(ctx, src, chunk, at.Add(-w), at, minEvents, u)
 			if err != nil {
-				if p.live && len(results) > 0 {
-					p.printf("\n")
-				}
 				return nil, err
 			}
 			results = append(results, got...)
-			if p.live {
-				p.printf("\rFetching SLOs... %d/%d", len(results), len(slos))
-			}
+			progress.Add(len(got), "")
 		}
 	}
-	if !p.live {
-		p.printf("Fetching SLOs... %d/%d", len(slos), len(slos))
-	}
-	p.printf("\n\n")
 	return results, nil
 }
 
 // queryBatch reads chunk in one call and scores each SLO. A long window over many SLOs can take the backend longer
 // than the client waits, so a batch that times out is split in half and asked again, down to one SLO.
-func queryBatch(ctx context.Context, src metricSource, chunk []slo, from, to time.Time, minEvents float64, p progress) ([]result, error) {
+func queryBatch(ctx context.Context, src metricSource, chunk []slo, from, to time.Time, minEvents float64, u *ui.UI) ([]result, error) {
 	got, err := src.fetch(ctx, chunk, from, to)
 	if errors.Is(err, errTimeout) && len(chunk) > 1 {
 		half := len(chunk) / 2
-		p.printf("\n%s..%s: %v; asking again %d SLOs at a time\n", chunk[0].Name(), chunk[len(chunk)-1].Name(), err, len(chunk)-half)
-		first, err := queryBatch(ctx, src, chunk[:half], from, to, minEvents, p)
+		u.Status("%s..%s: %v; asking again %d SLOs at a time", chunk[0].Name(), chunk[len(chunk)-1].Name(), err, len(chunk)-half)
+		first, err := queryBatch(ctx, src, chunk[:half], from, to, minEvents, u)
 		if err != nil {
 			return nil, err
 		}
-		rest, err := queryBatch(ctx, src, chunk[half:], from, to, minEvents, p)
+		rest, err := queryBatch(ctx, src, chunk[half:], from, to, minEvents, u)
 		return append(first, rest...), err
 	}
 	if err != nil {

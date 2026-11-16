@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v74/github"
-	"github.com/manifoldco/promptui"
+	"github.com/project-init/devex/internal/ui"
 	"github.com/project-init/gommon/pkg/githubclient"
 )
 
@@ -124,27 +124,16 @@ func gitCommandError(args []string, err error, stderr []byte) error {
 	return fmt.Errorf("git %s: %w: %s", command, err, msg)
 }
 
-// confirmRelease prompts the user to confirm creating and pushing the release tag.
-func confirmRelease(v version) error {
-	prompt := promptui.Prompt{
-		Label:     fmt.Sprintf("Create and push tag %s", v),
-		IsConfirm: true,
-	}
+// errReleaseCancelled is returned when the user declines or leaves the confirmation.
+var errReleaseCancelled = errors.New("tag creation cancelled")
 
-	_, err := prompt.Run()
+// confirmRelease asks the user to confirm creating and pushing the release tag; --yes answers.
+func confirmRelease(ctx context.Context, u *ui.UI, v version) error {
+	confirmed, err := u.Confirm(ctx, fmt.Sprintf("Create and push tag %s?", v))
+	if errors.Is(err, ui.ErrAborted) || (err == nil && !confirmed) {
+		return errReleaseCancelled
+	}
 	return err
-}
-
-// cancelledRelease is the error returned when the user declines the tag.
-// promptui.ErrAbort's text is empty, so wrapping it would print "tag creation cancelled:".
-func cancelledRelease(err error) error {
-	if errors.Is(err, promptui.ErrAbort) || errors.Is(err, promptui.ErrInterrupt) {
-		return errors.New("tag creation cancelled")
-	}
-	if err == nil || err.Error() == "" {
-		return errors.New("tag creation cancelled")
-	}
-	return fmt.Errorf("tag creation cancelled: %w", err)
 }
 
 // getActionsURL returns the GitHub Actions tab URL for the origin repository.
@@ -267,7 +256,7 @@ func parsePullRequestNumber(subject string) (int, bool) {
 }
 
 // displayReleaseCommits prints commits on origin/main since baseline (or all of them).
-func displayReleaseCommits(ctx context.Context, token, tip, baseline string) error {
+func displayReleaseCommits(ctx context.Context, u *ui.UI, token, tip, baseline string) error {
 	var heading string
 	if baseline != "" {
 		heading = fmt.Sprintf("Commits on %s since %s", releaseBaseBranch, baseline)
@@ -284,12 +273,12 @@ func displayReleaseCommits(ctx context.Context, token, tip, baseline string) err
 		return err
 	}
 
-	fmt.Printf("\n%s (%d):\n", heading, len(lines))
+	u.Printf("\n%s (%d):\n", u.Heading(heading), len(lines))
 	if len(lines) == 0 {
-		fmt.Println("  (none)")
+		u.Printf("  (none)\n")
 		return nil
 	}
-	printReleaseLines(lines)
+	printReleaseLines(u, lines)
 	return nil
 }
 
@@ -360,10 +349,10 @@ func shortSHA(sha string) string {
 	return sha[:shortSHALen]
 }
 
-func printReleaseLines(lines []releaseLine) {
-	fmt.Printf("  %-*s  %-*s  %s\n", releasePRColWidth, "#", releaseAuthorColWidth, "Author", "Title")
+func printReleaseLines(u *ui.UI, lines []releaseLine) {
+	u.Printf("  %-*s  %-*s  %s\n", releasePRColWidth, "#", releaseAuthorColWidth, "Author", "Title")
 	for _, line := range lines {
-		fmt.Printf("  %-*s  %-*s  %s\n",
+		u.Printf("  %-*s  %-*s  %s\n",
 			releasePRColWidth, line.Ref,
 			releaseAuthorColWidth, truncateRunes(line.Author, releaseAuthorColWidth),
 			truncateRunes(line.Title, releaseTitleMaxRunes),

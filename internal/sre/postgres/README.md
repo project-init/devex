@@ -39,8 +39,8 @@ sre postgres access
 
 The access command uses an SRE yaml file (defaults to `.sre`) to determine what the login configuration is for your
 given postgres clusters. Assumes you have done any SSO login or similar you might need to have access through your
-vendor as well. The `access` tool will open a selection window which after selection will set up the psql command to run
-as that user in the given environment assuming the proper definition has been established in the `.sre` file.
+vendor as well. Pass `--env <name>` to pick the environment, or omit it to choose from a list on a terminal. The tool then runs psql
+as that user in that environment, as defined in the `.sre` file.
 
 **NOTE**: You will also need `psql` installed, which comes with any installation of `postgres`. At time of writing this
 doc, postgres doesn't seem to install via mise on Mac. Instead, the suggested install path for `postgresql` is via brew.
