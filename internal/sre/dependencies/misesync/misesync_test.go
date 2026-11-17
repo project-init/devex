@@ -187,6 +187,58 @@ func TestPlanRejectsBadPolicies(t *testing.T) {
 	}
 }
 
+func TestPlanSuggestsTheKeyAConfigWrites(t *testing.T) {
+	files := map[string]string{
+		"mise.toml": `[tools]
+"github:golangci/golangci-lint" = "2.15.0"
+"go:github.com/golang-migrate/migrate/v4" = "v4.18.0"
+"ubi:BurntSushi/ripgrep[exe=rg]" = "14.1.0"
+"aqua:acme/lint" = "1.0.0"
+"github:other/lint" = "2.0.0"
+"npm:prettier" = "3.9.6"
+`,
+		// mise does not load this here, so the loaded github: key is the one meant.
+		"mise.ci.toml": "[tools]\n\"aqua:golangci/golangci-lint\" = \"2.15.0\"\n\"aqua:acme/ci-only\" = \"1.0.0\"\n",
+		// mise loads this here, but git ignores it.
+		"mise.local.toml": "[tools]\n\"aqua:oven-sh/bun\" = \"1.3.0\"\n",
+	}
+	tracked := func(root string) ([]string, error) {
+		files, err := pins.WalkFiles(root)
+		return slices.DeleteFunc(files, func(name string) bool { return name == "mise.local.toml" }), err
+	}
+	cases := map[string]struct {
+		policies map[string]string
+		want     string // "" when no suggestion fits
+	}{
+		"short name":       {map[string]string{"golangci-lint": "minor"}, "write golangci-lint as github:golangci/golangci-lint, the key a mise config uses"},
+		"Go major version": {map[string]string{"migrate": "minor"}, "write migrate as go:github.com/golang-migrate/migrate/v4"},
+		"other backend":    {map[string]string{"aqua:golang-migrate/migrate": "minor"}, "write aqua:golang-migrate/migrate as go:github.com/golang-migrate/migrate/v4"},
+		"options":          {map[string]string{"ripgrep": "minor"}, "write ripgrep as ubi:BurntSushi/ripgrep[exe=rg]"},
+		"no path":          {map[string]string{"prettier": "minor"}, "write prettier as npm:prettier"},
+		// mise does not load mise.ci.toml here, so its key would cap nothing.
+		"only unloaded":      {map[string]string{"ci-only": "minor"}, ""},
+		"same suggestion":    {map[string]string{"migrate": "minor", "aqua:golang-migrate/migrate": "patch"}, "write aqua:golang-migrate/migrate as go:github.com/golang-migrate/migrate/v4, the key a mise config uses; migrate and aqua:golang-migrate/migrate name the same tool, so keep one policy, keyed go:github.com/golang-migrate/migrate/v4"},
+		"already set":        {map[string]string{"golangci-lint": "minor", "github:golangci/golangci-lint": "patch"}, "golangci-lint and github:golangci/golangci-lint name the same tool, so keep one policy, keyed github:golangci/golangci-lint"},
+		"two tools share it": {map[string]string{"lint": "minor"}, ""},
+		"no such tool":       {map[string]string{"nodejs": "minor"}, ""},
+		// Only the untracked mise.local.toml lists bun, so CI would not find the key.
+		"only on this machine": {map[string]string{"bun": "minor"}, ""},
+	}
+	for name, c := range cases {
+		p, _ := planner(t, files, []string{"mise.toml", "mise.local.toml"}, c.policies, nil)
+		p.ListFiles = tracked
+		_, err := p.Plan(context.Background())
+		switch {
+		case err == nil || !strings.Contains(err.Error(), "which no mise TOML config in the repository lists"):
+			t.Errorf("%s: err = %v, want the unknown policy rejected", name, err)
+		case c.want == "" && strings.Contains(err.Error(), "; "):
+			t.Errorf("%s: err = %v, want no suggestion", name, err)
+		case c.want != "" && !strings.Contains(err.Error(), c.want):
+			t.Errorf("%s: err = %v, want %q", name, err, c.want)
+		}
+	}
+}
+
 func TestPlanWarnsOnPoliciesForToolsNotLoadedHere(t *testing.T) {
 	// bun appears only in frontend/mise.toml, which mise does not load at the root, yet another
 	// directory or MISE_ENV could load it.

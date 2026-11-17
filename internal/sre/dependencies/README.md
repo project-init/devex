@@ -153,7 +153,10 @@ A policy naming nothing in the repository fails the run, so a typo cannot leave 
 Key each tool as a mise config at the repository root writes it. devex asks `mise config ls`
 which configs mise loads there, so the set matches what `mise upgrade` acts on: set `MISE_ENV`
 and environment configs such as `mise.ci.toml` join it. Global configs and those of parent
-directories stay out, and so does `.tool-versions`, whose tools cannot take a policy.
+directories stay out, and so does `.tool-versions`, whose tools cannot take a policy. A key that
+names a tool the configs list under another key, such as `golangci-lint` for
+`github:golangci/golangci-lint`, fails. The error suggests that key when exactly one tracked config
+mise loads here names the tool, or says to keep one policy when two keys name it.
 
 ```yaml
 dependencies:

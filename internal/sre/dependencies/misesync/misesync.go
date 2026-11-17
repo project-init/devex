@@ -4,10 +4,13 @@ package misesync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -232,11 +235,65 @@ func (p Planner) checkUnknown(policies map[string]policy.Policy, seen map[string
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("mise.policies names %s, which no mise TOML config in the repository lists; tools in .tool-versions take no policy", strings.Join(missing, ", "))
+		message := fmt.Sprintf("mise.policies names %s, which no mise TOML config in the repository lists, and tools in .tool-versions take no policy", strings.Join(missing, ", "))
+		// Only a key a loaded config writes takes effect here, and only a tracked one holds in CI.
+		loaded := map[string]bool{}
+		for key := range seen {
+			if tracked[key] {
+				loaded[key] = true
+			}
+		}
+		owner := map[string]string{}
+		for key := range policies {
+			owner[key] = key
+		}
+		for _, key := range missing {
+			full := fullKey(key, loaded)
+			switch {
+			case full == "":
+			case owner[full] != "":
+				message += fmt.Sprintf("; %s and %s name the same tool, so keep one policy, keyed %s", key, owner[full], full)
+			default:
+				owner[full] = key
+				message += fmt.Sprintf("; write %s as %s, the key a mise config uses", key, full)
+			}
+		}
+		return errors.New(message)
 	}
 	plan.Warnings = append(plan.Warnings, fmt.Sprintf("mise.policies names %s, which appear only in configs mise does not load here", strings.Join(elsewhere, ", ")))
 
 	return nil
+}
+
+// fullKey returns the one key in keys that names the same tool as key, or "" when none or several
+// do.
+func fullKey(key string, keys map[string]bool) string {
+	name, match := toolName(key), ""
+	for candidate := range keys {
+		if toolName(candidate) != name {
+			continue
+		}
+		if match != "" {
+			return ""
+		}
+		match = candidate
+	}
+	return match
+}
+
+// majorSuffix matches the /vN that ends a Go module path at major version 2 or later.
+var majorSuffix = regexp.MustCompile(`/v[0-9]+$`)
+
+// toolName reduces a mise tool key to the tool it installs, dropping the backend, any [options],
+// the path, and a Go module's major version, so github:golangci/golangci-lint and
+// aqua:golangci/golangci-lint both name golangci-lint, and go:github.com/golang-migrate/migrate/v4
+// names migrate.
+func toolName(key string) string {
+	name, _, _ := strings.Cut(key, "[")
+	if _, rest, found := strings.Cut(name, ":"); found {
+		name = rest
+	}
+	return path.Base(majorSuffix.ReplaceAllString(name, ""))
 }
 
 // capQuery is the mise latest query for the newest release pol allows tool.
