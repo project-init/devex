@@ -10,7 +10,6 @@ import (
 	"github.com/project-init/devex/internal/sre"
 	"github.com/project-init/devex/internal/ui"
 	"github.com/project-init/devex/internal/version"
-	"github.com/project-init/devex/internal/workplan"
 	gommoncmd "github.com/project-init/gommon/pkg/cmd"
 	"github.com/spf13/cobra"
 )
@@ -51,7 +50,6 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(versionCmd())
 	rootCmd.AddCommand(sre.Command())
 	rootCmd.AddCommand(localize.Command())
-	rootCmd.AddCommand(workplan.Command())
 	rootCmd.AddCommand(contributions.Command())
 	rootCmd.AddCommand(discovery.Command())
 

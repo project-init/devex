@@ -4,14 +4,14 @@ This file provides architectural context and conventions for AI agents working o
 
 ## Project Overview
 
-`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, discovery planning, workplan generation (deprecated in favor of discovery), and contribution analysis.
+`devex` is a Go CLI for developer experience tooling. It is distributed as a unified `devex` binary with subcommands for SRE operations, localization management, discovery planning, and contribution analysis.
 
 ## Architecture
 
 ### CLI Layout
 
 - `cmd/devex/main.go` is the executable entry point. Keep it minimal.
-- `internal/root` owns the top-level Cobra command and registers the primary subcommands: `sre`, `localize`, `discovery`, `workplan`, and `contributions`.
+- `internal/root` owns the top-level Cobra command and registers the primary subcommands: `sre`, `localize`, `discovery`, and `contributions`.
 - Each tool exposes a `Command() *cobra.Command` function from its `internal/<tool>` package.
 - Core behavior belongs in `internal/`; `cmd/` should only handle executable wiring.
 - Prefer adding new functionality as `devex <subcommand>` rather than introducing standalone `cmd/<tool>` binaries, unless there is an explicit distribution reason.
@@ -26,7 +26,8 @@ This file provides architectural context and conventions for AI agents working o
 ### Code Generation and Templates
 
 - The project uses `embed.FS` and `text/template` for generated files.
-- Workplan templates live in `internal/workplan`. `workplan` is deprecated; build new planning features in `internal/discovery`.
+- Templates sit beside the package that renders them, such as `internal/discovery/templates`.
+- Build planning features in `internal/discovery`.
 
 ## Development Workflow
 
