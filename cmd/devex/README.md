@@ -231,8 +231,6 @@ See the [slos README](../../internal/sre/analyze/slos/README.md) for every flag 
 
 Guide an idea through discovery, produce reviewable Markdown and YAML artifacts, and publish the resulting work breakdown to Jira or GitHub Issues after human review.
 
-Discovery replaces the deprecated `workplan` command.
-
 Install `devex` in the repository where discovery work will happen using the [installation instructions](#installation). The CLI and all generated configuration and artifacts are owned by that consuming project; you don't need a checkout of the devex source repository.
 
 Run the top-level command from a terminal for guided setup. It detects existing AI harness directories, offers to install the companion skill, creates `.sre/discovery.yaml` when requested, and finishes with a readiness report:
@@ -369,63 +367,6 @@ Write the discovery document's title as a Markdown link to the issue that prompt
 Item descriptions and acceptance criteria are GitHub Flavored Markdown. GitHub renders them directly; Jira converts them to Atlassian Document Format, so headings, lists, tables, task lists, code, emphasis, strikethrough, and links survive rather than flattening into prose. Raw HTML has no ADF equivalent and is dropped, and an image becomes a link to its source because ADF images reference uploaded attachments.
 
 Published issues footer the discovery document as a URL on the repository's default branch, resolved from the `origin` remote. The link works once the branch carrying the bundle merges. A bundle outside a GitHub checkout has no such URL, and the footer is omitted rather than naming a path no reader can open.
-
----
-
-### Workplan
-
-> **Deprecated:** use [`devex discovery init`](#discovery) and `devex discovery publish` instead. A future release removes `workplan`.
-
-Generate and publish workplan templates for investigating features or problems. Workplans help estimate the effort needed to complete a task and can be published directly to JIRA.
-
-**Usage:**
-
-```shell
-devex workplan generate <directory> <title>
-devex workplan publish <workplan_path>
-```
-
-**Generate Example:**
-
-```shell
-devex workplan generate docs/investigations/infrastructure/moveToProjectInitStack example_title
-```
-
-This will generate a workplan template in the specified directory:
-
-```
-<directory>
-└── <yyyy>_<m>_<d>_example_title
-    ├── workplan.yaml
-    └── problem.md
-```
-
-**Publishing to JIRA:**
-
-Set the following environment variables (consider adding them to your shell profile):
-
-```shell
-export JIRA_URL=https://yourdomain.atlassian.net
-export JIRA_EMAIL=your_jira_email
-export JIRA_API_KEY=your_api_key
-```
-
-Then publish:
-
-```shell
-devex workplan publish docs/investigations/infrastructure/moveToProjectInitStack/2026_5_3_example_title/workplan.yaml
-```
-
-**Getting Your JIRA API Key:**
-
-1. Navigate to https://id.atlassian.com/manage-profile/security/api-tokens
-2. Click "Create API token"
-3. Give it a name and click "Create"
-4. Copy the token and set it in your environment variables
-
-**Why JIRA?**
-
-JIRA is the most common work tracking tool used by the project-init team. While we don't claim it's the best tool, it's what we have expertise with and have built integration for.
 
 ---
 
