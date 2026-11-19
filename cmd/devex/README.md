@@ -164,7 +164,7 @@ devex sre release
 devex sre release --bump patch --yes
 ```
 
-Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists commits on `origin/main` since the latest tag (full first-parent history when nothing is tagged), grouped into features, fixes, and other changes. Squash merges show the pull request title and author; other commits are listed too. The prompt preselects the bump the titles suggest. The new tag points at `origin/main`, and the command then waits for the release workflow (`--no-wait` skips that). `--dry-run` previews without tagging, and `--output json` prints the versions, changes, and workflow results.
+Requires GitHub auth (`gh auth login` or `GITHUB_TOKEN` set in terminal session `export GITHUB_TOKEN=xyz`) and a github.com `origin`. Before you confirm the tag, lists commits on `origin/main` since the latest tag (full first-parent history when nothing is tagged), grouped into features, fixes, and other changes. Squash merges show the pull request title and author; other commits are listed too. The prompt preselects the bump the titles suggest. The new tag points at `origin/main`, and the command then waits for the release workflow, printing each workflow page once its run appears (`--no-wait` skips the wait and prints the Actions tab). `--dry-run` previews without tagging, and `--output json` prints the versions, changes, and workflow results.
 
 #### Dependencies
 

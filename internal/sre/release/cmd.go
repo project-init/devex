@@ -124,10 +124,12 @@ func run(ctx context.Context, u *ui.UI, f flags) error {
 	}
 	out.Tagged = true
 	u.Success("Pushed tag %s", next)
-	if actionsURL, err := getActionsURL(ctx); err == nil {
-		u.Status("Release workflow: %s", actionsURL)
-	}
 	if f.noWait {
+		// No run exists yet, so the workflow file is unknown. Point at the Actions tab
+		// without calling it the release workflow.
+		if actionsURL, err := getActionsURL(ctx); err == nil {
+			u.Status("Actions: %s", actionsURL)
+		}
 		return finish(u, out, "")
 	}
 	out.Workflows, err = waitForRelease(ctx, u, token, next.String(), rel.tip, pushedAt)
@@ -203,7 +205,9 @@ func waitForRelease(ctx context.Context, u *ui.UI, token, tag, sha string, pushe
 	}
 	var results []workflowResult
 	err = u.Spin(ctx, "Waiting for the release workflow", func(ctx context.Context) error {
-		results, err = waitForWorkflow(ctx, client, owner, repo, tag, sha, pushedAt, defaultWaitTiming)
+		results, err = waitForWorkflow(ctx, client, owner, repo, tag, sha, pushedAt, defaultWaitTiming, func(pageURL string) {
+			u.Status("Release workflow: %s", pageURL)
+		})
 		return err
 	})
 	switch {
