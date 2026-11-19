@@ -147,7 +147,8 @@ func confirmRelease(ctx context.Context, u *ui.UI, v version) error {
 	return err
 }
 
-// getActionsURL returns the GitHub Actions tab URL for the origin repository.
+// getActionsURL returns the origin repository's GitHub Actions tab. That tab is not a workflow
+// page; the workflow page needs the run's file name, which is known only after a run is listed.
 func getActionsURL(ctx context.Context) (string, error) {
 	owner, repo, err := getOriginGitHubRepo(ctx)
 	if err != nil {

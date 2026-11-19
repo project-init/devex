@@ -22,7 +22,7 @@ devex sre release --bump patch --yes
 
 The preview groups commits into features, fixes, and other changes by their conventional-commit type. A `feat` title suggests a minor bump, a `!` after the type or `BREAKING CHANGE` in the title suggests major (minor when majors are off), and anything else suggests patch. Only titles count: a `BREAKING CHANGE:` footer in a pull request body does not. Merge commits list as themselves under other changes.
 
-After pushing the tag, the tool prints the Actions URL, waits for the runs the tag started, and prints each result. `--no-wait` returns right after the push. The command exits non-zero when a run fails or is cancelled; if it cannot watch the runs, it warns and exits 0, since the tag is already pushed. `--output json` needs `--bump` and `--yes` (except with `--dry-run`), because it prints no preview to choose or confirm from.
+After pushing the tag, the tool waits for the runs the tag started. When a run appears it prints that workflow's page, once per workflow file, and when the runs finish it prints each result. `--no-wait` returns right after the push and prints the repository Actions tab, since no run is available yet to name the workflow. The command exits non-zero when a run fails or is cancelled; if it cannot watch the runs, it warns and exits 0, since the tag is already pushed. `--output json` needs `--bump` and `--yes` (except with `--dry-run`), because it prints no preview to choose or confirm from.
 
 ```shell
 # Preview the next version and changes without tagging; --bump is optional here.

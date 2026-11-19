@@ -116,6 +116,22 @@ func respondInOrder(t *testing.T, calls *atomic.Int32, bodies ...string) *github
 	return client
 }
 
+func TestWorkflowPageURL(t *testing.T) {
+	got := workflowPageURL("project-init", "gommon", ".github/workflows/release.yaml")
+	want := "https://github.com/project-init/gommon/actions/workflows/release.yaml"
+	if got != want {
+		t.Errorf("workflowPageURL() = %q, want %q", got, want)
+	}
+	if workflowPageURL("o", "r", "") != "" || workflowPageURL("o", "r", ".") != "" {
+		t.Error("workflowPageURL() produced a page for an empty path")
+	}
+	got = workflowPageURL("o", "r", ".github/workflows/my workflow.yaml")
+	want = "https://github.com/o/r/actions/workflows/my%20workflow.yaml"
+	if got != want {
+		t.Errorf("workflowPageURL() = %q, want %q", got, want)
+	}
+}
+
 func TestWaitForWorkflowPollsUntilComplete(t *testing.T) {
 	completed := workflowRunsFixture(t)
 	inProgress := strings.Replace(strings.Replace(completed, `"status": "completed"`, `"status": "in_progress"`, 1), `"conclusion": "success"`, `"conclusion": null`, 1)
@@ -137,14 +153,19 @@ func TestWaitForWorkflowPollsUntilComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var pages []string
 	results, err := waitForWorkflow(context.Background(), client, "project-init", "devex", "v0.23.0",
-		"055df727ab6d6348493b800ce4a30a5cc75b4c60", time.Time{}, waitTiming{poll: time.Millisecond, appear: time.Second, timeout: time.Second})
+		"055df727ab6d6348493b800ce4a30a5cc75b4c60", time.Time{}, waitTiming{poll: time.Millisecond, appear: time.Second, timeout: time.Second},
+		func(pageURL string) { pages = append(pages, pageURL) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if calls.Load() != 3 || len(results) != 1 || results[0].Conclusion != "success" ||
 		results[0].URL != "https://github.com/project-init/devex/actions/runs/43507989316" {
 		t.Errorf("results = %+v after %d calls, want the finished Release run, confirmed on the third", results, calls.Load())
+	}
+	if len(pages) != 1 || pages[0] != "https://github.com/project-init/devex/actions/workflows/release.yaml" {
+		t.Errorf("workflow pages = %v, want the release workflow once", pages)
 	}
 }
 
@@ -153,7 +174,7 @@ func TestWaitForWorkflowIgnoresRunsFromAnEarlierPush(t *testing.T) {
 	client := respondInOrder(t, &calls, workflowRunsFixture(t))
 	pushedAt := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC) // after the fixture run was created
 	_, err := waitForWorkflow(context.Background(), client, "project-init", "devex", "v0.23.0", "sha", pushedAt,
-		waitTiming{poll: time.Millisecond, appear: 5 * time.Millisecond, timeout: time.Second})
+		waitTiming{poll: time.Millisecond, appear: 5 * time.Millisecond, timeout: time.Second}, nil)
 	if !errors.Is(err, errNoWorkflowRun) {
 		t.Errorf("waitForWorkflow() error = %v, want the old run ignored", err)
 	}
@@ -163,7 +184,7 @@ func TestWaitForWorkflowGivesUpWhenNoRunStarts(t *testing.T) {
 	var calls atomic.Int32
 	client := respondInOrder(t, &calls, `{"total_count":0,"workflow_runs":[]}`)
 	_, err := waitForWorkflow(context.Background(), client, "o", "r", "v1.0.0", "abc", time.Time{},
-		waitTiming{poll: time.Millisecond, appear: 5 * time.Millisecond, timeout: time.Second})
+		waitTiming{poll: time.Millisecond, appear: 5 * time.Millisecond, timeout: time.Second}, nil)
 	if !errors.Is(err, errNoWorkflowRun) {
 		t.Errorf("waitForWorkflow() error = %v, want errNoWorkflowRun", err)
 	}
@@ -204,12 +225,33 @@ func TestWaitForWorkflowWaitsForEveryTagRun(t *testing.T) {
 	var calls atomic.Int32
 	client := respondInOrder(t, &calls, first, second)
 	results, err := waitForWorkflow(context.Background(), client, "project-init", "devex", "v0.23.0", "sha", time.Time{},
-		waitTiming{poll: time.Millisecond, appear: time.Second, timeout: 200 * time.Millisecond})
+		waitTiming{poll: time.Millisecond, appear: time.Second, timeout: 200 * time.Millisecond}, nil)
 	if err != nil {
 		t.Fatalf("waitForWorkflow() error = %v", err)
 	}
 	if len(results) != 2 || results[1].Name != "Publish" || results[1].Conclusion != "failure" {
 		t.Errorf("results = %+v, want both tag runs, ignoring the main-branch run", results)
+	}
+}
+
+func TestWaitForWorkflowNotifiesEachWorkflowPage(t *testing.T) {
+	body := runsResponse(t,
+		map[string]any{"id": 1, "name": "Release", "path": ".github/workflows/release.yaml"},
+		map[string]any{"id": 2, "name": "Publish", "path": ".github/workflows/publish.yaml"},
+	)
+	var calls atomic.Int32
+	client := respondInOrder(t, &calls, body)
+	var pages []string
+	_, err := waitForWorkflow(context.Background(), client, "project-init", "gommon", "v0.23.0", "sha", time.Time{},
+		waitTiming{poll: time.Millisecond, appear: time.Second, timeout: time.Second},
+		func(pageURL string) { pages = append(pages, pageURL) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://github.com/project-init/gommon/actions/workflows/release.yaml\n" +
+		"https://github.com/project-init/gommon/actions/workflows/publish.yaml"
+	if strings.Join(pages, "\n") != want {
+		t.Errorf("workflow pages = %v, want each workflow once", pages)
 	}
 }
 
