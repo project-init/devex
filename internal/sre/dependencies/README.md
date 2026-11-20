@@ -1,14 +1,12 @@
 # Dependencies
 
-Upgrade mise tools, Go modules, and Buf dependencies, and keep every Go version pin in the
-repository on one version.
+Upgrade mise tools, Go modules, and Buf dependencies, and keep every Go version pin in the repository on one version.
 
-A Go project states its Go version in several places: `mise.toml`, the `go.mod` directives,
-Dockerfile golang images, CI `setup-go` steps. Tools that bump one leave the rest behind.
-`mise upgrade --bump` moves `mise.toml`; Dependabot raises the `go.mod` floor; neither
-touches the Docker tag. The golang images set `GOTOOLCHAIN=local`, so a `go.mod` floor above
-the image tag fails the build. `upgrade --go` moves every pin together, and `check` catches
-drift from every other source.
+A Go project states its Go version in several places: `mise.toml`, the `go.mod` directives, Dockerfile golang images, CI
+`setup-go` steps. Tools that bump one leave the rest behind. `mise upgrade --bump` moves `mise.toml`; Dependabot raises
+the `go.mod` floor; neither touches the Docker tag. The golang images set `GOTOOLCHAIN=local`, so a `go.mod` floor above
+the image tag fails the build. `upgrade --go` moves every pin together, and `check` catches drift from every other
+source.
 
 ## Usage
 
@@ -35,13 +33,11 @@ devex sre dependencies check
 devex sre dependencies check --output json
 ```
 
-Planning resolves the go, mise, and buf ecosystems at once, and runs each one's lookups, such
-as image digests, `mise latest`, Buf plugins, and `git ls-remote`, up to eight of each kind at
-a time. The plan and its warnings still print in a fixed order. Warnings and progress go to
-stderr, so stdout carries only the plan or the JSON document.
+Planning resolves the go, mise, and buf ecosystems at once, and runs each one's lookups, such as image digests,
+`mise latest`, Buf plugins, and `git ls-remote`, up to eight of each kind at a time. The plan and its warnings still
+print in a fixed order. Warnings and progress go to stderr, so stdout carries only the plan or the JSON document.
 
-A `.sre` directory is optional for these commands. Without one, they run on the defaults
-below.
+A `.sre` directory is optional for these commands. Without one, they run on the defaults below.
 
 ### Flags
 
@@ -77,51 +73,45 @@ dependencies:
 
 ### `target`
 
-- **`patch`** (default): the latest patch of the current minor, so 1.26.6 becomes 1.26.8.
-  Patches carry bug and security fixes and are safe to automate.
+- **`patch`** (default): the latest patch of the current minor, so 1.26.6 becomes 1.26.8. Patches carry bug and security
+  fixes and are safe to automate.
 - **`latest`**: the latest release, crossing minors.
 
 devex resolves releases from go.dev, so mise is optional. It never moves Go backwards.
 
 ### `directive`
 
-`go.mod`'s `go` directive is a floor: the oldest Go that may build the module. A library's
-floor binds every consumer, so devex leaves it alone unless told otherwise.
+`go.mod`'s `go` directive is a floor: the oldest Go that may build the module. A library's floor binds every consumer,
+so devex leaves it alone unless told otherwise.
 
-- **`none`** (default): never change it; require only that it stays at or below the
-  toolchain.
+- **`none`** (default): never change it; require only that it stays at or below the toolchain.
 - **`minor`**: hold it on the toolchain's minor line, at `X.Y.0` when the minor changes.
-- **`exact`**: set it to the toolchain version. Suits applications that build in the golang
-  image.
+- **`exact`**: set it to the toolchain version. Suits applications that build in the golang image.
 
-devex moves an existing `toolchain` directive with the toolchain and never adds one. It never
-lowers a floor: a `go` directive above the target fails the run. Under every policy, a
-`go.work` `go` directive rises to the highest floor among the modules it uses, the lowest
-version the go command accepts; `go work use` raises it again whenever `go mod tidy` lifts a
-module's floor.
+devex moves an existing `toolchain` directive with the toolchain and never adds one. It never lowers a floor: a `go`
+directive above the target fails the run. Under every policy, a `go.work` `go` directive rises to the highest floor
+among the modules it uses, the lowest version the go command accepts; `go work use` raises it again whenever
+`go mod tidy` lifts a module's floor.
 
 ### `images`
 
-A Dockerfile pin counts when its image's last path segment matches an entry, so `golang`
-matches `golang`, `docker.io/library/golang`, and `public.ecr.aws/docker/library/golang`. An
-entry containing `/` must match the whole repository, such as `cgr.dev/chainguard/go`.
+A Dockerfile pin counts when its image's last path segment matches an entry, so `golang` matches `golang`,
+`docker.io/library/golang`, and `public.ecr.aws/docker/library/golang`. An entry containing `/` must match the whole
+repository, such as `cgr.dev/chainguard/go`.
 
 ### `exclude`
 
-Discovery reads tracked files and untracked files `.gitignore` allows, and skips
-`testdata/` and `vendor/` at any depth. Patterns follow `.gitignore`: one without `/` matches a
-name at any depth, one with `/` matches from the repository root, and `**` as a whole
-segment spans directories. A pattern that matches a directory excludes everything under it, and a trailing
-`/` matches directories only, so `examples` and `examples/` both skip the whole tree.
-Character classes (`[ab]`, `[!ab]`, `[^ab]`) and backslash escapes work, and like other
-wildcards a class never matches `/`. POSIX classes such as `[[:digit:]]` and a pattern
-starting with `!` are errors.
+Discovery reads tracked files and untracked files `.gitignore` allows, and skips `testdata/` and `vendor/` at any depth.
+Patterns follow `.gitignore`: one without `/` matches a name at any depth, one with `/` matches from the repository
+root, and `**` as a whole segment spans directories. A pattern that matches a directory excludes everything under it,
+and a trailing `/` matches directories only, so `examples` and `examples/` both skip the whole tree. Character classes
+(`[ab]`, `[!ab]`, `[^ab]`) and backslash escapes work, and like other wildcards a class never matches `/`. POSIX classes
+such as `[[:digit:]]` and a pattern starting with `!` are errors.
 
 ### `pins`
 
-Declare any location the built-in finders miss. `files` takes the same globs as `exclude`;
-`pattern` is a regular expression whose `version` group captures the version. devex replaces
-only that group.
+Declare any location the built-in finders miss. `files` takes the same globs as `exclude`; `pattern` is a regular
+expression whose `version` group captures the version. devex replaces only that group.
 
 ```yaml
 dependencies:
@@ -144,19 +134,18 @@ A policy bounds how far one version may move. Every entry without a policy takes
 | `patch`  | the newest release within the current minor |
 | `pin`    | nothing; devex never touches it             |
 
-A policy naming nothing in the repository fails the run, so a typo cannot leave a pin on
-`latest`. A `mise.policies` entry named only by configs mise does not load here, such as
-`mise.ci.toml` without `MISE_ENV=ci`, warns instead. No version ever moves backwards.
+A policy naming nothing in the repository fails the run, so a typo cannot leave a pin on `latest`. A `mise.policies`
+entry named only by configs mise does not load here, such as `mise.ci.toml` without `MISE_ENV=ci`, warns instead. No
+version ever moves backwards.
 
 ### `mise.policies`
 
-Key each tool as a mise config at the repository root writes it. devex asks `mise config ls`
-which configs mise loads there, so the set matches what `mise upgrade` acts on: set `MISE_ENV`
-and environment configs such as `mise.ci.toml` join it. Global configs and those of parent
-directories stay out, and so does `.tool-versions`, whose tools cannot take a policy. A key that
-names a tool the configs list under another key, such as `golangci-lint` for
-`github:golangci/golangci-lint`, fails. The error suggests that key when exactly one tracked config
-mise loads here names the tool, or says to keep one policy when two keys name it.
+Key each tool as a mise config at the repository root writes it. devex asks `mise config ls` which configs mise loads
+there, so the set matches what `mise upgrade` acts on: set `MISE_ENV` and environment configs such as `mise.ci.toml`
+join it. Global configs and those of parent directories stay out, and so does `.tool-versions`, whose tools cannot take
+a policy. A key that names a tool the configs list under another key, such as `golangci-lint` for
+`github:golangci/golangci-lint`, fails. The error suggests that key when exactly one tracked config mise loads here
+names the tool, or says to keep one policy when two keys name it.
 
 ```yaml
 dependencies:
@@ -167,20 +156,18 @@ dependencies:
       aqua:golangci/golangci-lint: minor
 ```
 
-No key may name Go, whether `go`, `golang`, or `core:go`: `go.target` and `go.directive`
-govern it. A tool capped at `minor`
-or `patch` moves to what `mise latest <tool>@<major>` or `@<major.minor>` reports, written at
-the pin's own precision and prefix, so `26.8.2` becomes `26.10.0` and `v1.72.0` becomes
-`v1.73.0`. A pin with exactly the precision the policy holds, such as `node = "26"` under
-`minor`, already names its range, so it stays as written and only its install moves. A pin with
-less, such as `node = "26"` under `patch`, spans more than the policy allows, and a version that
-is not a release, such as `latest` or `lts`, cannot be capped at all; devex warns about both and
-leaves them pinned.
+No key may name Go, whether `go`, `golang`, or `core:go`: `go.target` and `go.directive` govern it. A tool capped at
+`minor` or `patch` moves to what `mise latest <tool>@<major>` or `@<major.minor>` reports, written at the pin's own
+precision and prefix, so `26.8.2` becomes `26.10.0` and `v1.72.0` becomes `v1.73.0`. A pin with exactly the precision
+the policy holds, such as `node = "26"` under `minor`, already names its range, so it stays as written and only its
+install moves. A pin with less, such as `node = "26"` under `patch`, spans more than the policy allows, and a version
+that is not a release, such as `latest` or `lts`, cannot be capped at all; devex warns about both and leaves them
+pinned.
 
 ### `buf.policies`
 
-Key each remote plugin by its name without a version, under `remote` in a v2 template or
-`plugin` in a v1 one, and each git input by its `git_repo`:
+Key each remote plugin by its name without a version, under `remote` in a v2 template or `plugin` in a v1 one, and each
+git input by its `git_repo`:
 
 ```yaml
 dependencies:
@@ -190,32 +177,27 @@ dependencies:
       https://github.com/acme/protos.git: minor
 ```
 
-Remote plugins take `latest` or `pin` only: the registry reports a plugin's newest version but
-lists no others. A plugin moves to that version exactly as published. Git inputs take any
-policy; devex reads their tags with `git ls-remote` and skips prereleases. A plugin without a
-version floats to the newest on every `buf generate`, so devex warns unless its policy is `pin`.
-More forms stay unmanaged and warn unless their policy is `pin`: a plugin with a `revision`,
-which belongs to one plugin version; a version or tag that is not a release, such as
-`proto/v1.8.2`; an input that follows a `branch`, `commit`, or `ref`; and a `module` input with
-a version, keyed by its name without that version; and a version devex cannot locate in its
-file, such as a block scalar. A failed registry or `git ls-remote` lookup
-stops the run before devex writes anything; a `pin` policy on that entry skips the lookup.
+Remote plugins take `latest` or `pin` only: the registry reports a plugin's newest version but lists no others. A plugin
+moves to that version exactly as published. Git inputs take any policy; devex reads their tags with `git ls-remote` and
+skips prereleases. A plugin without a version floats to the newest on every `buf generate`, so devex warns unless its
+policy is `pin`. More forms stay unmanaged and warn unless their policy is `pin`: a plugin with a `revision`, which
+belongs to one plugin version; a version or tag that is not a release, such as `proto/v1.8.2`; an input that follows a
+`branch`, `commit`, or `ref`; and a `module` input with a version, keyed by its name without that version; and a version
+devex cannot locate in its file, such as a block scalar. A failed registry or `git ls-remote` lookup stops the run
+before devex writes anything; a `pin` policy on that entry skips the lookup.
 
 #### Git inputs that follow a Go module
 
-A git input whose repository a `go.mod` requires directly, at a release, follows that module
-instead of a policy. `https://github.com/acme/protos.git` or `git@github.com:acme/protos.git`
-matches `github.com/acme/protos`, or `github.com/acme/protos/v2` for a later major. The server
-and the generated clients then build from the same release: `upgrade --buf` moves the tag to the
-version `go.mod` requires once `--go` has upgraded modules, and `check` fails when the two
-differ, whichever of them moved. `upgrade --buf` and `check` reject a policy on a linked input,
-and `upgrade --go` without `--buf` warns about the policy and about each tag it leaves behind.
-The version comes from what the go command builds against: across `go.mod` files the highest
-wins, a `replace` naming another version of the same module sets it, and a `go.mod` that
-`go.exclude` matches counts for nothing. An indirect requirement, a pseudo-version, or a
-`replace` with a fork or a local path names no release to follow, so the input keeps its policy,
-as does one that matches both a `v1` and a `/v2` path, with a warning. devex reads no `use` or
-`replace` from `go.work`.
+A git input whose repository a `go.mod` requires directly, at a release, follows that module instead of a policy.
+`https://github.com/acme/protos.git` or `git@github.com:acme/protos.git` matches `github.com/acme/protos`, or
+`github.com/acme/protos/v2` for a later major. The server and the generated clients then build from the same release:
+`upgrade --buf` moves the tag to the version `go.mod` requires once `--go` has upgraded modules, and `check` fails when
+the two differ, whichever of them moved. `upgrade --buf` and `check` reject a policy on a linked input, and
+`upgrade --go` without `--buf` warns about the policy and about each tag it leaves behind. The version comes from what
+the go command builds against: across `go.mod` files the highest wins, a `replace` naming another version of the same
+module sets it, and a `go.mod` that `go.exclude` matches counts for nothing. An indirect requirement, a pseudo-version,
+or a `replace` with a fork or a local path names no release to follow, so the input keeps its policy, as does one that
+matches both a `v1` and a `/v2` path, with a warning. devex reads no `use` or `replace` from `go.work`.
 
 ## What it finds
 
@@ -229,109 +211,92 @@ as does one that matches both a `v1` and a `/v2` path, with a warning. devex rea
 | `.tool-versions`    | the `golang` or `go` entry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | declared            | each `pins` entry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
-A pin keeps its precision: `golang:1.26` stays `golang:1.26` through a patch upgrade, and the
-tag suffix, such as `-alpine3.24`, stays put. devex warns about versions it sees but cannot
-manage, such as `golang:latest`, a `${{ matrix.go }}` expression, or an ARG with no default.
+A pin keeps its precision: `golang:1.26` stays `golang:1.26` through a patch upgrade, and the tag suffix, such as
+`-alpine3.24`, stays put. devex warns about versions it sees but cannot manage, such as `golang:latest`, a
+`${{ matrix.go }}` expression, or an ARG with no default.
 
-When an ARG supplies a Dockerfile's version, devex also searches the rest of the repository
-for that ARG's name. A `--build-arg` set in a compose file, workflow, or Makefile overrides
-the Dockerfile default, and neither `upgrade` nor `check` can see it unless it is declared as
-a pin, so each mention produces a warning.
+When an ARG supplies a Dockerfile's version, devex also searches the rest of the repository for that ARG's name. A
+`--build-arg` set in a compose file, workflow, or Makefile overrides the Dockerfile default, and neither `upgrade` nor
+`check` can see it unless it is declared as a pin, so each mention produces a warning.
 
 ## How `upgrade` runs
 
-1. **Plan, writing nothing.** Discover every pin, derive the current version, resolve the
-   target from go.dev, and query the registry for each rewritten or digest-pinned image
-   tag. The planned versions must pass `check`. The mise and buf plans resolve here too. Pins
-   that disagree, an unpublished tag, a failed lookup, a bad policy, a floor above the
-   target, or with `--mise` a mise older than 2026.1.3, the first release whose `upgrade` takes
-   `--exclude`, stop the run here, with every file untouched.
-2. **Write.** When a pin mise reads moves, in a mise config or `.tool-versions`,
-   `mise install go@<target>` runs first if mise is on `PATH`, so its shims can run the new
-   Go; it writes no config. devex then confirms every planned edit against the
-   file's current text before changing any file. It replaces only the version digits, so
-   comments, formatting, mise tool options, and any `go` prefix survive; in `go.mod` and
-   `go.work` that yields the line `go mod edit` would write. A mise lock file, such as
-   `mise.lock` or `mise.ci.lock`, keeps the old Go, so devex warns; run `mise lock` to
-   refresh it.
-3. **`--mise`.** Rewrite each tool capped at `minor` or `patch` in place, alongside the Go
-   pins, then run a plain `mise upgrade` of the capped tools, installing each within the range
-   its config now names and refreshing `mise.lock`. `mise upgrade --bump` follows, with
-   `--exclude` for Go and every tool whose policy is not `latest`. The capped tools install
-   first because an uncapped tool can depend on one, as an npm tool does on `node`, and the bump
-   fails while that dependency's new version is uninstalled. The bump runs after the write because
-   it can shift the text of files devex edits in place, such as `.tool-versions`.
-4. **Upgrade modules.** Run `go get`, naming every direct requirement at `@upgrade`, then
-   `go mod tidy`, in every module with `GOTOOLCHAIN=go<target>` and `GOWORK=off`, so each works
-   on its own `go.mod`. Indirect requirements move only as far as the direct requirements' new
-   versions require; `go get -u` would take each to its newest release, which the modules
-   importing it may not support yet, as when a newer `k8s.io/kube-openapi` outran
-   `k8s.io/apimachinery`. `@upgrade` keeps a requirement already on a newer prerelease or
-   pseudo-version. A `tool` module the code does not import is marked indirect, so the same rule
-   applies.
+1. **Plan, writing nothing.** Discover every pin, derive the current version, resolve the target from go.dev, and query
+   the registry for each rewritten or digest-pinned image tag. The planned versions must pass `check`. The mise and buf
+   plans resolve here too. Pins that disagree, an unpublished tag, a failed lookup, a bad policy, a floor above the
+   target, or with `--mise` a mise older than 2026.1.3, the first release whose `upgrade` takes `--exclude`, stop the
+   run here, with every file untouched.
+2. **Write.** When a pin mise reads moves, in a mise config or `.tool-versions`, `mise install go@<target>` runs first
+   if mise is on `PATH`, so its shims can run the new Go; it writes no config. devex then confirms every planned edit
+   against the file's current text before changing any file. It replaces only the version digits, so comments,
+   formatting, mise tool options, and any `go` prefix survive; in `go.mod` and `go.work` that yields the line
+   `go mod edit` would write. A mise lock file, such as `mise.lock` or `mise.ci.lock`, keeps the old Go, so devex warns;
+   run `mise lock` to refresh it.
+3. **`--mise`.** Rewrite each tool capped at `minor` or `patch` in place, alongside the Go pins, then run a plain
+   `mise upgrade` of the capped tools, installing each within the range its config now names and refreshing `mise.lock`.
+   `mise upgrade --bump` follows, with `--exclude` for Go and every tool whose policy is not `latest`. The capped tools
+   install first because an uncapped tool can depend on one, as an npm tool does on `node`, and the bump fails while
+   that dependency's new version is uninstalled. The bump runs after the write because it can shift the text of files
+   devex edits in place, such as `.tool-versions`.
+4. **Upgrade modules.** Run `go get`, naming every direct requirement at `@upgrade`, then `go mod tidy`, in every module
+   with `GOTOOLCHAIN=go<target>` and `GOWORK=off`, so each works on its own `go.mod`. Indirect requirements move only as
+   far as the direct requirements' new versions require; `go get -u` would take each to its newest release, which the
+   modules importing it may not support yet, as when a newer `k8s.io/kube-openapi` outran `k8s.io/apimachinery`.
+   `@upgrade` keeps a requirement already on a newer prerelease or pseudo-version. A `tool` module the code does not
+   import is marked indirect, so the same rule applies.
 
-   devex skips a requirement when a `replace` covers the version `go.mod` lists and either
-   points at a local directory, which has no release to move to, or replaces only that exact
-   version, which `@upgrade` would move off. When another requirement needs a version above an
-   exact-version replacement, the module still moves off it to that version. A module with no
-   direct requirement left gets no `go get`.
+   devex skips a requirement when a `replace` covers the version `go.mod` lists and either points at a local directory,
+   which has no release to move to, or replaces only that exact version, which `@upgrade` would move off. When another
+   requirement needs a version above an exact-version replacement, the module still moves off it to that version. A
+   module with no direct requirement left gets no `go get`.
 
-   devex holds a dependency at its current version when the version `go get` tries needs a newer
-   Go, reports it, and upgrades the rest. A direct requirement whose new version needs a held
-   module to move is held too. When other requirements' new versions need a direct requirement
-   above what `@upgrade` picks, such as a prerelease, devex requests the highest version they
-   need. Each new hold or raised version reruns `go get`.
+   devex holds a dependency at its current version when the version `go get` tries needs a newer Go, reports it, and
+   upgrades the rest. A direct requirement whose new version needs a held module to move is held too. When other
+   requirements' new versions need a direct requirement above what `@upgrade` picks, such as a prerelease, devex
+   requests the highest version they need. Each new hold or raised version reruns `go get`.
 
-   A vendored module gets `go mod vendor`, unless a `go.work` sits beside it. Holding a module
-   back while its dependencies move can break the build, so a module with holds must compile on
-   the host, tests included, or the run fails and names the Go version the holds need; a module
-   with no package for the host passes. Once every module has upgraded, `go work use` lifts
-   every `go.work` floor that `go mod tidy` left behind, and a vendored workspace gets
+   A vendored module gets `go mod vendor`, unless a `go.work` sits beside it. Holding a module back while its
+   dependencies move can break the build, so a module with holds must compile on the host, tests included, or the run
+   fails and names the Go version the holds need; a module with no package for the host passes. Once every module has
+   upgraded, `go work use` lifts every `go.work` floor that `go mod tidy` left behind, and a vendored workspace gets
    `go work vendor`.
 
-   Holds and raised versions come from go's error text, so they have limits. A module that is
-   not yet in `go.mod`, such as one a dependency's new release pulls in, cannot be held, and the
-   run fails; raise the target instead. A raised version stays requested even if the requirement
-   that needed it later moves to a release that doesn't need it, which can leave a prerelease in
-   place.
+   Holds and raised versions come from go's error text, so they have limits. A module that is not yet in `go.mod`, such
+   as one a dependency's new release pulls in, cannot be held, and the run fails; raise the target instead. A raised
+   version stays requested even if the requirement that needed it later moves to a release that doesn't need it, which
+   can leave a prerelease in place.
 
 5. **Verify.** Run `check`; any drift fails the run.
-6. **`--buf`.** Rewrite the plugin versions and input tags in each `buf.gen*.yaml`, with each
-   git input that follows a Go module moved to the version `go.mod` now requires, run
-   `buf dep update` beside every `buf.yaml` that declares `deps`, then run `buf generate` from
-   the directory of every template that changed, so committed output follows. When a
-   `buf.lock` moved, every template regenerates instead. buf runs last, so it
-   generates with any buf CLI that mise just bumped.
+6. **`--buf`.** Rewrite the plugin versions and input tags in each `buf.gen*.yaml`, with each git input that follows a
+   Go module moved to the version `go.mod` now requires, run `buf dep update` beside every `buf.yaml` that declares
+   `deps`, then run `buf generate` from the directory of every template that changed, so committed output follows. When
+   a `buf.lock` moved, every template regenerates instead. buf runs last, so it generates with any buf CLI that mise
+   just bumped.
 
-Every command runs with an empty `GOROOT`, so a root the caller exports, such as `go run`'s,
-cannot pair a child's `go` with another release's compiler.
+Every command runs with an empty `GOROOT`, so a root the caller exports, such as `go run`'s, cannot pair a child's `go`
+with another release's compiler.
 
-A failure after step 2 leaves the written files in place. In CI the job fails and no pull
-request opens; locally, git is the rollback.
+A failure after step 2 leaves the written files in place. In CI the job fails and no pull request opens; locally, git is
+the rollback.
 
 ### Image tags
 
-devex queries each rewritten tag's registry anonymously before writing. An unpublished tag,
-such as a new Go release that dropped the pinned Alpine suffix, fails the plan and names the
-tag; choose a new suffix by hand. devex resolves a registry named by an ARG through that
-ARG's default. It cannot query one supplied only as a `--build-arg`, so it writes that tag
-unverified. A registry that needs credentials produces a warning and an unverified tag.
+devex queries each rewritten tag's registry anonymously before writing. An unpublished tag, such as a new Go release
+that dropped the pinned Alpine suffix, fails the plan and names the tag; choose a new suffix by hand. devex resolves a
+registry named by an ARG through that ARG's default. It cannot query one supplied only as a `--build-arg`, so it writes
+that tag unverified. A registry that needs credentials produces a warning and an unverified tag.
 
-A digest pin (`@sha256:…`) moves to the new tag's digest, even when the tag text stays the
-same, as `golang:1.26` does across patches. A registry that needs credentials fails the plan
-for a digest-pinned image that changes tag. When the tag stays the same, any failed refresh
-keeps the old digest and devex warns. An image without a tag, or with a whole reference or a
-digest from a build arg, such as `FROM ${GO_IMAGE}` or `@${GO_DIGEST}`, stays unmanaged with a
-warning.
+A digest pin (`@sha256:…`) moves to the new tag's digest, even when the tag text stays the same, as `golang:1.26` does
+across patches. A registry that needs credentials fails the plan for a digest-pinned image that changes tag. When the
+tag stays the same, any failed refresh keeps the old digest and devex warns. An image without a tag, or with a whole
+reference or a digest from a build arg, such as `FROM ${GO_IMAGE}` or `@${GO_DIGEST}`, stays unmanaged with a warning.
 
 ## `check`
 
-`check` makes no network calls. It fails when toolchain pins disagree, when any `go`
-directive sits above the toolchain, when a `go.work` `go` directive sits below that of a
-module it uses (the go command refuses to build that workspace), when the `directive` policy
-does not hold, or when a git input that follows a Go module sits on a tag other than the
-version `go.mod` requires. It skips a buf template it cannot parse, with a warning. Run it in
-pull request CI:
+`check` makes no network calls. It fails when toolchain pins disagree, when any `go` directive sits above the toolchain,
+when a `go.work` `go` directive sits below that of a module it uses (the go command refuses to build that workspace),
+when the `directive` policy does not hold, or when a git input that follows a Go module sits on a tag other than the
+version `go.mod` requires. It skips a buf template it cannot parse, with a warning. Run it in pull request CI:
 
 ```yaml
 - run: devex sre dependencies check
@@ -339,8 +304,8 @@ pull request CI:
 
 ## Tests
 
-Unit tests fake go.dev, registries, and every external command. Live checks against go.dev,
-Docker Hub, and buf.build run behind the `integration` build tag:
+Unit tests fake go.dev, registries, and every external command. Live checks against go.dev, Docker Hub, and buf.build
+run behind the `integration` build tag:
 
 ```shell
 go test -tags integration ./internal/sre/dependencies/...

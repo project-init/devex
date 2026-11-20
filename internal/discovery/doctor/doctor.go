@@ -165,6 +165,9 @@ func Run(
 	if len(configuration.DefaultLabels) > 0 {
 		configurationDetail += fmt.Sprintf("; %d default label(s)", len(configuration.DefaultLabels))
 	}
+	if configuration.AgentReadyLabel != "" {
+		configurationDetail += "; agent-ready label " + configuration.AgentReadyLabel
+	}
 	report.Checks = append(report.Checks, Check{
 		Severity: SeverityPass,
 		Name:     "configuration",

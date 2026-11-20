@@ -46,7 +46,8 @@ devex <subcommand> [options]
   devex localize mobile
   ```
 
-- **[discovery](cmd/devex/README.md#discovery)** - Turn an idea into reviewable discovery artifacts and publish approved work to Jira or GitHub
+- **[discovery](cmd/devex/README.md#discovery)** - Turn an idea into reviewable discovery artifacts and publish approved
+  work to Jira or GitHub
 
   ```bash
   devex discovery
@@ -58,7 +59,8 @@ devex <subcommand> [options]
   devex discovery publish plan docs/discoveries/audit-logs
   ```
 
-- **[contributions](cmd/devex/README.md#contributions)** - Analyze GitHub PR and review activity for contribution signals
+- **[contributions](cmd/devex/README.md#contributions)** - Analyze GitHub PR and review activity for contribution
+  signals
 
   ```bash
   devex contributions collect <config_file>

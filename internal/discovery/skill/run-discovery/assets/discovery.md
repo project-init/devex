@@ -35,11 +35,13 @@ Describe **HOW** you think we should go about arriving at a solution to the prob
 
 ## Phasing
 
-Describe a breakdown of the major milestones/phases necessary to implement the solution, including an estimate of **WHEN** each milestone should be completed
+Describe a breakdown of the major milestones/phases necessary to implement the solution, including an estimate of
+**WHEN** each milestone should be completed
 
 ## Ownership and Access
 
-This should include details about **WHO** (person or team) has ownership of the software (i.e management and maintenance), and **WHO** (people or teams) should have access to it.
+This should include details about **WHO** (person or team) has ownership of the software (i.e management and
+maintenance), and **WHO** (people or teams) should have access to it.
 
 ## Assumptions
 

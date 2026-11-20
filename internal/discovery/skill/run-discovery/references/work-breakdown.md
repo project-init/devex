@@ -32,15 +32,19 @@ items:
 
 ## Rules
 
-- Write `discovery.id` as lowercase letters and digits separated by single hyphens. Jira publishes it as a label, and labels reject whitespace.
+- Write `discovery.id` as lowercase letters and digits separated by single hyphens. Jira publishes it as a label, and
+  labels reject whitespace.
 - Use stable uppercase IDs containing letters, digits, hyphens, or underscores.
 - Keep labels free of whitespace. Jira rejects such labels only once it starts creating issues.
+- Add the configured `agent_ready_label` only to items that meet the agent-ready conditions in the skill. Leave it off
+  when in doubt.
 - Use one of: `initiative`, `feature`, `task`, `defect`, or `research`.
 - Give every item a nonempty title and description.
 - Give initiatives no parent.
 - Reference parents and dependencies by stable item ID.
 - Avoid parent and dependency cycles.
-- Omit `depends_on` entries naming an ancestor. Hierarchy already orders that work, and providers publish each dependency as a real blocking link, so an initiative would block its own child.
+- Omit `depends_on` entries naming an ancestor. Hierarchy already orders that work, and providers publish each
+  dependency as a real blocking link, so an initiative would block its own child.
 - Reserve `depends_on` for work that must finish first. Do not restate hierarchy, related context, or reading order.
 - Express verifiable completion conditions in `acceptance_criteria`.
 - Use `points`, `hours`, `days`, or `weeks` for estimates.

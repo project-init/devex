@@ -1,5 +1,7 @@
 default_target: github-project
 default_labels: []
+# Label the discovery skill adds only to work items an agent can finish without human help.
+# agent_ready_label: agent-ready
 
 targets:
   jira-project:

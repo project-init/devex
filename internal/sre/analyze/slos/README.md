@@ -1,15 +1,15 @@
 # SLOs
 
-Score the SLOs in an [OpenSLO v1](https://openslo.com/specification/) file against any metric
-upstream, so a team can see which SLOs to fix, or which to move, before their error budget runs out.
-Datadog is the only upstream integrated today.
+Score the SLOs in an [OpenSLO v1](https://openslo.com/specification/) file against any metric upstream, so a team can
+see which SLOs to fix, or which to move, before their error budget runs out. Datadog is the only upstream integrated
+today.
 
-`devex sre analyze slos --slo-file <file>` reads each SLO, asks the metric upstream for its data over
-the SLO's own time window, ending now, and gives each SLO a verdict, an error budget, and an action. A 7d SLO
-is scored over the last 7 days, and a 30d one over the last 30.
+`devex sre analyze slos --slo-file <file>` reads each SLO, asks the metric upstream for its data over the SLO's own time
+window, ending now, and gives each SLO a verdict, an error budget, and an action. A 7d SLO is scored over the last 7
+days, and a 30d one over the last 30.
 
-Nothing has to be set up in the repository it runs in. Export the two Datadog keys, pass the file,
-and the report comes out:
+Nothing has to be set up in the repository it runs in. Export the two Datadog keys, pass the file, and the report comes
+out:
 
 ```shell
 export DD_API_KEY=... DD_APP_KEY=...
@@ -56,31 +56,29 @@ devex reads this subset of OpenSLO v1, and refuses the rest with what to change:
 - `kind: SLO` documents; any other kind, such as `Service`, is skipped.
 - An inline `spec.indicator`, not an `indicatorRef`, and one rolling `timeWindow` in `m`, `h`, `d`, or `w`.
 - One objective, with `target` as a share, e.g. `0.95`.
-- `budgetingMethod: Timeslices` with a `thresholdMetric`, `op: lt`, a `value` above 0 in the
-  indicator's own unit, and a `timeSliceWindow`. A slice at the value counts as bad.
+- `budgetingMethod: Timeslices` with a `thresholdMetric`, `op: lt`, a `value` above 0 in the indicator's own unit, and a
+  `timeSliceWindow`. A slice at the value counts as bad.
 - `budgetingMethod: Occurrences` with a `ratioMetric` of `good` and `total`.
-- A `metricSource` of `type: Datadog`. Write the query without `.rollup()` or `.as_count()`: devex
-  adds the rollup per slice, and counts a ratio's queries.
+- A `metricSource` of `type: Datadog`. Write the query without `.rollup()` or `.as_count()`: devex adds the rollup per
+  slice, and counts a ratio's queries.
 
-`metadata.displayName` names the SLO in the report when it is set, and `metadata.name` otherwise.
-The `tags` label, a list or a comma-separated string, is what `--tag` filters on. See
-[testdata/openslo.yaml](testdata/openslo.yaml). Each document converts into one SLO type right after
-parsing, so the scoring reads none of OpenSLO's shape.
+`metadata.displayName` names the SLO in the report when it is set, and `metadata.name` otherwise. The `tags` label, a
+list or a comma-separated string, is what `--tag` filters on. See [testdata/openslo.yaml](testdata/openslo.yaml). Each
+document converts into one SLO type right after parsing, so the scoring reads none of OpenSLO's shape.
 
 ### Metrics sources
 
-Each backend is a source that owns its query syntax and returns each SLO's points per slice; the
-scoring does the math without knowing which backend it talks to. Datadog is the one source today.
-Another backend, such as Prometheus, is one more implementation of `metricSource` in `fetch.go`.
+Each backend is a source that owns its query syntax and returns each SLO's points per slice; the scoring does the math
+without knowing which backend it talks to. Datadog is the one source today. Another backend, such as Prometheus, is one
+more implementation of `metricSource` in `fetch.go`.
 
 ### Datadog keys
 
-Export `DD_API_KEY` and `DD_APP_KEY`. The app key needs the `timeseries_query` scope. devex does not
-fetch them: a key in the shell is one thing to keep working, where a secret to read is an AWS
-profile, a session, and a role as well.
+Export `DD_API_KEY` and `DD_APP_KEY`. The app key needs the `timeseries_query` scope. devex does not fetch them: a key
+in the shell is one thing to keep working, where a secret to read is an AWS profile, a session, and a role as well.
 
-The keys go to the org's Datadog site: `--datadog-site`, then `DD_SITE`, then `DATADOG_SITE`, then
-`datadoghq.com` (US1). An org on US1 sets nothing. An org on another site sets it beside the keys:
+The keys go to the org's Datadog site: `--datadog-site`, then `DD_SITE`, then `DATADOG_SITE`, then `datadoghq.com`
+(US1). An org on US1 sets nothing. An org on another site sets it beside the keys:
 
 ```shell
 export DD_API_KEY=... DD_APP_KEY=... DD_SITE=datadoghq.eu
@@ -88,13 +86,13 @@ export DD_API_KEY=... DD_APP_KEY=... DD_SITE=datadoghq.eu
 
 ## Verdicts
 
-Every SLO gets an error budget from its target. A slice under the threshold is good and one at it or
-over it is bad; for a ratio, a good event is good. `BURN` is the bad share over the share the target
-allows: `1.00x` spends exactly the budget over the window, and `2.00x` spends it in half the window.
-`BUDGET LEFT` is what is not spent yet, negative once overspent.
+Every SLO gets an error budget from its target. A slice under the threshold is good and one at it or over it is bad; for
+a ratio, a good event is good. `BURN` is the bad share over the share the target allows: `1.00x` spends exactly the
+budget over the window, and `2.00x` spends it in half the window. `BUDGET LEFT` is what is not spent yet, negative once
+overspent.
 
-A Timeslices SLO also reads its slices against the threshold. `TYPICAL` is the median slice and
-`WORST` the slice 1 in 20 reach. A slice is near the threshold at 75% of it or more.
+A Timeslices SLO also reads its slices against the threshold. `TYPICAL` is the median slice and `WORST` the slice 1 in
+20 reach. A slice is near the threshold at 75% of it or more.
 
 | Verdict   | When                                                                                              |
 | --------- | ------------------------------------------------------------------------------------------------- |
@@ -105,12 +103,12 @@ A Timeslices SLO also reads its slices against the threshold. `TYPICAL` is the m
 | LOW DATA  | under a day of slices, or under `--min-events` events; the HTML still shows what the numbers read |
 | NO DATA   | the queries returned nothing in the window                                                        |
 
-The report sorts the most urgent first. `<75% / 75-100% / >=THRESHOLD` splits each SLO's slices by
-where they sat against the threshold; CSV gives each share its own column. `TO THRESHOLD` is when the
-daily median trend reaches the threshold, left empty when it falls, holds, or gets there past 90 days.
-A healthy SLO whose worst slices stay under half its threshold gets a lower one to consider.
+The report sorts the most urgent first. `<75% / 75-100% / >=THRESHOLD` splits each SLO's slices by where they sat
+against the threshold; CSV gives each share its own column. `TO THRESHOLD` is when the daily median trend reaches the
+threshold, left empty when it falls, holds, or gets there past 90 days. A healthy SLO whose worst slices stay under half
+its threshold gets a lower one to consider.
 
-The HTML page has a tile per verdict and a section per verdict, with HEALTHY, LOW DATA, and NO DATA
-folded. It shows the default columns with a toggle for the rest, draws the split as a bar that counts
-the slices in each share on hover, colors each number red at or over the threshold and yellow at 75%
-of it or more, and explains each verdict and column on hover.
+The HTML page has a tile per verdict and a section per verdict, with HEALTHY, LOW DATA, and NO DATA folded. It shows the
+default columns with a toggle for the rest, draws the split as a bar that counts the slices in each share on hover,
+colors each number red at or over the threshold and yellow at 75% of it or more, and explains each verdict and column on
+hover.
