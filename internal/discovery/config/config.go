@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/project-init/devex/internal/discovery/domain"
 	"github.com/project-init/devex/internal/strictyaml"
@@ -18,9 +19,12 @@ import (
 var examples embed.FS
 
 type File struct {
-	DefaultTarget string            `yaml:"default_target,omitempty"`
-	DefaultLabels []string          `yaml:"default_labels,omitempty"`
-	Targets       map[string]Target `yaml:"targets"`
+	DefaultTarget string   `yaml:"default_target,omitempty"`
+	DefaultLabels []string `yaml:"default_labels,omitempty"`
+	// AgentReadyLabel names the label the discovery skill puts on work items it judges an agent
+	// can finish without human help. Empty turns the marking off.
+	AgentReadyLabel string            `yaml:"agent_ready_label,omitempty"`
+	Targets         map[string]Target `yaml:"targets"`
 }
 
 type Target struct {
@@ -78,6 +82,14 @@ func Load(path string) (*File, error) {
 			return nil, fmt.Errorf("default_labels contains duplicate label %q", label)
 		}
 		seenLabels[label] = struct{}{}
+	}
+	if file.AgentReadyLabel != "" {
+		if strings.TrimSpace(file.AgentReadyLabel) == "" || strings.ContainsFunc(file.AgentReadyLabel, unicode.IsSpace) {
+			return nil, fmt.Errorf("agent_ready_label %q must not contain whitespace", file.AgentReadyLabel)
+		}
+		if _, exists := seenLabels[file.AgentReadyLabel]; exists {
+			return nil, fmt.Errorf("agent_ready_label %q must not also be a default label, which would mark every item ready", file.AgentReadyLabel)
+		}
 	}
 	return &file, nil
 }

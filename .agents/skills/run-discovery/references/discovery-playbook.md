@@ -4,21 +4,28 @@
 
 ### Rough
 
-The user has a desired outcome or pain point but little evidence, scope, or constraint detail. Concentrate on who experiences the problem, why it matters, what success means, and which facts must be gathered.
+The user has a desired outcome or pain point but little evidence, scope, or constraint detail. Concentrate on who
+experiences the problem, why it matters, what success means, and which facts must be gathered.
 
 ### Partially formed
 
-The user has a likely approach and some context. Test the approach against constraints, identify meaningful alternatives, and separate implementation detail from unresolved product or architectural decisions.
+The user has a likely approach and some context. Test the approach against constraints, identify meaningful
+alternatives, and separate implementation detail from unresolved product or architectural decisions.
 
 ### Implementation-ready
 
-The user has evidence, an accepted direction, and bounded scope. Confirm ownership, access, failure modes, rollout, milestones, and acceptance criteria. Avoid reopening settled questions without new evidence.
+The user has evidence, an accepted direction, and bounded scope. Confirm ownership, access, failure modes, rollout,
+milestones, and acceptance criteria. Avoid reopening settled questions without new evidence.
 
 ## Question selection
 
-Ask the question whose answer most changes scope, architecture, risk, or sequencing. Ask only one question per turn. Prefer bounded choices when they are honest representations of the decision; use an open question when options would conceal important possibilities.
+Ask the question whose answer most changes scope, architecture, risk, or sequencing. Ask only one question per turn.
+Prefer bounded choices when they are honest representations of the decision; use an open question when options would
+conceal important possibilities.
 
-Questioning is a loop, not a phase. Every pass that gathers evidence can surface a new fork or kill an old premise, and each one earns another round. Reopen a settled question when new evidence undermines the basis for the original answer, and say which evidence did it.
+Questioning is a loop, not a phase. Every pass that gathers evidence can surface a new fork or kill an old premise, and
+each one earns another round. Reopen a settled question when new evidence undermines the basis for the original answer,
+and say which evidence did it.
 
 ## Readiness rubric
 
@@ -34,7 +41,8 @@ Proceed to final artifacts when the discovery can answer:
 - Who owns the result and who needs access?
 - Which assumptions and unknowns remain?
 
-Unknowns may remain when the user deferred them, when they are explicitly represented as research work, or when they do not jeopardize the proposed direction. An unknown the user has never seen does not qualify.
+Unknowns may remain when the user deferred them, when they are explicitly represented as research work, or when they do
+not jeopardize the proposed direction. An unknown the user has never seen does not qualify.
 
 ## Facilitation rules
 
@@ -48,4 +56,7 @@ Unknowns may remain when the user deferred them, when they are explicitly repres
 
 ## Common failure
 
-An agent asks a bounded question round, gets answers, investigates further, and discovers that a premise behind those answers was wrong. Rather than returning to the user, it silently reshapes the plan and lists the fallout as open questions in the finished document. The user then has to catch the reversal by reading carefully. Go back and re-ask instead.
+An agent asks a bounded question round, gets answers, investigates further, and discovers that a premise behind those
+answers was wrong. Rather than returning to the user, it silently reshapes the plan and lists the fallout as open
+questions in the finished document. The user then has to catch the reversal by reading carefully. Go back and re-ask
+instead.

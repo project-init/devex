@@ -1,16 +1,16 @@
 ##@ Lint and Formatting
 
 [tasks.lint]
-depends = ["lint-*"]
+depends = ["lint:*"]
 
-[tasks.lint-go]
+[tasks."lint:go"]
 run = "golangci-lint run --fix"
 
 [tasks.format]
-depends = ["format-*"]
+depends = ["format:*"]
 
 [tasks."format:misc"]
 run = "oxfmt ."
 
-[tasks.format-go]
+[tasks."format:go"]
 run = "go fmt ./..."

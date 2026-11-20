@@ -77,6 +77,49 @@ targets:
 	}
 }
 
+func TestLoadAgentReadyLabel(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    string
+		wantLabel string
+		wantError string
+	}{
+		{name: "unset", config: "default_labels: [triaged]\n"},
+		{name: "set", config: "default_labels: [triaged]\nagent_ready_label: agent-ready\n", wantLabel: "agent-ready"},
+		{name: "whitespace", config: "agent_ready_label: agent ready\n", wantError: "must not contain whitespace"},
+		{name: "blank", config: "agent_ready_label: '  '\n", wantError: "must not contain whitespace"},
+		{name: "default label", config: "default_labels: [agent-ready]\nagent_ready_label: agent-ready\n", wantError: "must not also be a default label"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "discovery.yaml")
+			content := test.config + `targets:
+  github-devex:
+    provider: github
+    github:
+      owner: project-init
+      repository: devex
+`
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			configuration, err := Load(path)
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("Load() error = %v, want containing %q", err, test.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if configuration.AgentReadyLabel != test.wantLabel {
+				t.Fatalf("AgentReadyLabel = %q, want %q", configuration.AgentReadyLabel, test.wantLabel)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsUnknownDefaultTarget(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "discovery.yaml")
 	content := `default_target: missing
