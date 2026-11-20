@@ -1,0 +1,13 @@
+{
+  "ignorePatterns": [],
+  "sortTailwindcss": {},
+  "overrides": [
+    {
+      "files": ["**/*.md", "**/*.mdx"],
+      "options": {
+        "printWidth": 120,
+        "proseWrap": "always"
+      }
+    }
+  ]
+}

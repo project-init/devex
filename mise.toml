@@ -1,10 +1,14 @@
 [tools]
+# Go
 go = "1.27.4"
 golangci-lint = "2.15.0"
+
+# Infrastructure
 awscli = { version = "2.40.3", symlink_bins = "true" }
-node = "26.13.1"
-prettier = "3.10.1"
 goreleaser = "2.20.2"
+
+# Markdown
+oxfmt = "0.79.0"
 
 [settings]
 experimental = true
