@@ -22,6 +22,26 @@ type PlanInput struct {
 	DocumentURL string
 	// TrackingURL is the issue the discovery document links from its title, empty when absent.
 	TrackingURL string
+	// Synopsis opens every initiative's description. Its fields are empty when the bundle has none.
+	Synopsis Synopsis
+}
+
+// Synopsis is the bundle's synopsis, rendered for trackers that draw Mermaid and for those that
+// cannot.
+type Synopsis struct {
+	// WithDiagram keeps the Mermaid diagram.
+	WithDiagram string
+	// DiagramLinked replaces the diagram with a link to the synopsis document, or drops it when
+	// no URL can be built.
+	DiagramLinked string
+}
+
+// WithSynopsis opens description with synopsis, separated by a blank line, when there is one.
+func WithSynopsis(synopsis string, description string) string {
+	if synopsis == "" {
+		return description
+	}
+	return synopsis + "\n\n" + description
 }
 
 type Adapter interface {

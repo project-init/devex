@@ -11,8 +11,9 @@ requests and issue trackers, but not this codebase or its vocabulary.
 
 - Aim for 30 to 60 seconds of speech: 75 to 150 words. `devex discovery validate` counts the prose and the closing link,
   skips the title and diagram, and rejects more than 150 words.
-- Write sentences you would say out loud. Use "we" and plain verbs. Skip headings, bullets, tables, and bold labels; a
-  speaker never announces "Problem:".
+- Write paragraphs of sentences you would say out loud. Use "we" and plain verbs. Skip headings, bullets, tables, and
+  bold labels; a speaker never announces "Problem:". `devex discovery validate` rejects every block but paragraphs and
+  the diagram, because each published initiative opens with the synopsis.
 - Open with the problem, not the system you will build. Name who hurts and what it costs them, with the discovery's
   number for that cost or its symptom. When the discovery states no cost, state the symptom; never infer a cost.
 - Follow with the proposal in two or three sentences: what changes for the reader first, then only as much mechanism as
@@ -25,7 +26,10 @@ requests and issue trackers, but not this codebase or its vocabulary.
   directing the agent, provided it names the same person.
 - Open each paragraph with its subject, never "It" or "This". A listener cannot hear the paragraph break, so a pronoun
   attaches to the wrong sentence.
-- End with `[Read the full discovery](discovery.md)`.
+- End with `[Read the full discovery](discovery.md)` in a paragraph of its own. Link any other file the same way or not
+  at all, embed images only from the web, and write no HTML but comments. Each published initiative opens with the
+  synopsis, and an issue cannot open a file from the repository, so validation rejects a file link inside prose and a
+  repository image anywhere.
 
 Trace every claim to `discovery.md`. The synopsis compresses; it never adds a fact, number, decision, or option the
 discovery lacks. Carry every hedge with its claim, wherever the discovery puts it: "typically" stays, and when the
