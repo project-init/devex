@@ -6,7 +6,7 @@ Use `schema_version: v1` and keep provider-specific configuration outside the bu
 schema_version: v1
 
 discovery:
-  id: audit-logs
+  id: audit-logs-2026-11-21
   title: Organization audit logs
   document: discovery.md
 

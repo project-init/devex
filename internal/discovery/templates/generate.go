@@ -3,25 +3,31 @@ package templates
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 )
 
 //go:embed discovery.md.tmpl work-breakdown.yaml.tmpl
 var files embed.FS
 
 type templateData struct {
-	Slug              string
+	ID                string
 	Title             string
 	DefaultLabelsYAML string
 }
 
 type GenerateOptions struct {
 	DefaultLabels []string
+	// Date names the bundle's iteration folder and ends its discovery ID. The zero value means
+	// today.
+	Date time.Time
 }
 
 var invalidSlug = regexp.MustCompile(`[^a-z0-9]+`)
@@ -35,26 +41,43 @@ func GenerateWithOptions(baseDirectory string, name string, options GenerateOpti
 	if slug == "" {
 		return "", fmt.Errorf("discovery name must contain letters or digits")
 	}
-	title := titleFromName(name)
-	directory := filepath.Join(baseDirectory, slug)
-	if err := os.MkdirAll(directory, 0o755); err != nil {
+	date := options.Date
+	if date.IsZero() {
+		date = time.Now()
+	}
+	// Each iteration gets its own folder and discovery ID, so a later iteration publishes fresh
+	// issues and leaves the work an earlier one published, and the document it links, intact.
+	iteration := date.Format(time.DateOnly)
+	directory := filepath.Join(baseDirectory, slug, iteration)
+	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Mkdir(directory, 0o755); errors.Is(err, fs.ErrExist) {
+		return "", fmt.Errorf("discovery bundle %s already exists; edit it instead of starting another iteration today", directory)
+	} else if err != nil {
 		return "", err
 	}
 	data := templateData{
-		Slug:              slug,
-		Title:             title,
+		ID:                slug + "-" + iteration,
+		Title:             titleFromName(name),
 		DefaultLabelsYAML: formatLabelsYAML(options.DefaultLabels),
 	}
-	if err := renderNew(filepath.Join(directory, "discovery.md"), "discovery.md.tmpl", data); err != nil {
-		return "", err
-	}
-	if err := renderNew(filepath.Join(directory, "work-breakdown.yaml"), "work-breakdown.yaml.tmpl", data); err != nil {
-		return "", err
-	}
-	if err := writeNew(filepath.Join(directory, ".gitignore"), []byte(".publish/\n")); err != nil {
+	if err := renderBundle(directory, data); err != nil {
+		// The folder is this run's alone, so removing it frees the day's iteration for a retry.
+		_ = os.RemoveAll(directory)
 		return "", err
 	}
 	return filepath.Abs(directory)
+}
+
+func renderBundle(directory string, data templateData) error {
+	if err := renderNew(filepath.Join(directory, "discovery.md"), "discovery.md.tmpl", data); err != nil {
+		return err
+	}
+	if err := renderNew(filepath.Join(directory, "work-breakdown.yaml"), "work-breakdown.yaml.tmpl", data); err != nil {
+		return err
+	}
+	return writeNew(filepath.Join(directory, ".gitignore"), []byte(".publish/\n"))
 }
 
 func formatLabelsYAML(labels []string) string {

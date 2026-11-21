@@ -69,17 +69,30 @@ Do not create final artifacts until the important design sections are accepted.
 
 ## Create the bundle
 
+Check for an earlier iteration first. List the discovery folders under `<directory>`, and when one covers the same
+problem, ask the user whether this discovery is a new iteration of it. On yes, pass that folder's name to `init` exactly
+as written, so the new iteration lands beside the earlier ones. Then copy the earlier iteration's title into the new
+`discovery.md` and `work-breakdown.yaml`, since `init` builds the title from the folder name, link the latest earlier
+iteration from **Useful Context**, and state what changed since. A folder that holds `work-breakdown.yaml` directly
+predates dated iterations; treat it as the first iteration and leave it where it is, because its published issues link
+to that path.
+
 Run:
 
 ```bash
 devex discovery init <directory> <name>
 ```
 
+The CLI slugs `<name>`, creates `<directory>/<slug>/<YYYY-MM-DD>/`, and prints the bundle's path. It ends `discovery.id`
+in the same date, as in `audit-logs-2026-11-21`, so each iteration publishes its own issues and leaves earlier ones
+untouched.
+
 Populate `discovery.md` using the accepted design and populate `work-breakdown.yaml` using
 [references/work-breakdown.md](references/work-breakdown.md). Read `default_labels` from the discovery configuration
 (`.sre/discovery.yaml` unless `--config` selected another file) and include every configured default on every work item,
 merging them with item-specific labels without duplicates. The CLI seeds its starter items with these defaults. If the
-CLI is unavailable, use the templates in `assets/` as fallbacks and apply the defaults manually.
+CLI is unavailable, use the templates in `assets/` as fallbacks, apply the defaults manually, and follow the same dated
+layout and `discovery.id` rule.
 
 ### Mark work an agent can finish alone
 

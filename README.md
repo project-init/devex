@@ -55,8 +55,8 @@ devex <subcommand> [options]
   devex discovery install-skill
   devex discovery config init
   devex discovery init docs/discoveries audit-logs
-  devex discovery validate docs/discoveries/audit-logs
-  devex discovery publish plan docs/discoveries/audit-logs
+  devex discovery validate docs/discoveries/audit-logs/2026-11-21
+  devex discovery publish plan docs/discoveries/audit-logs/2026-11-21
   ```
 
 - **[contributions](cmd/devex/README.md#contributions)** - Analyze GitHub PR and review activity for contribution
