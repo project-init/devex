@@ -4,6 +4,7 @@ discovery:
   id: example-discovery-2026-11-21
   title: Example discovery
   document: discovery.md
+  synopsis: synopsis.md
 
 items:
   - id: INIT-001

@@ -9,6 +9,7 @@ discovery:
   id: audit-logs-2026-11-21
   title: Organization audit logs
   document: discovery.md
+  synopsis: synopsis.md
 
 items:
   - id: INIT-001
@@ -34,6 +35,7 @@ items:
 
 - Write `discovery.id` as lowercase letters and digits separated by single hyphens. Jira publishes it as a label, and
   labels reject whitespace.
+- Name the bundle's synopsis in `discovery.synopsis`. Validation then requires the file and checks it.
 - Use stable uppercase IDs containing letters, digits, hyphens, or underscores.
 - Keep labels free of whitespace. Jira rejects such labels only once it starts creating issues.
 - Add the configured `agent_ready_label` only to items that meet the agent-ready conditions in the skill. Leave it off

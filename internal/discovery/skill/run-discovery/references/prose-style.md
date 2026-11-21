@@ -1,6 +1,6 @@
 # Prose style
 
-Governs every word a human reads: `discovery.md`, the titles, descriptions, and acceptance criteria in
+Governs every word a human reads: `discovery.md`, `synopsis.md`, the titles, descriptions, and acceptance criteria in
 `work-breakdown.yaml`, and the pull request body that carries the bundle for review.
 
 Write with vigor. Omit needless words. Be specific. A discovery is read by someone deciding whether to fund the work, so
@@ -29,6 +29,8 @@ every sentence must earn its place.
 
 - **`discovery.md`** — narrative, but dense. Benefits, considerations, alternatives, assumptions, and unknowns stay as
   concise bullets, never paragraphs wearing bullet points.
+- **`synopsis.md`** — spoken, not written. Full sentences a person would say aloud, with no headings or bullets. Where
+  [synopsis.md](synopsis.md) differs from these rules, such as naming things rather than files, it wins.
 - **`work-breakdown.yaml`** — titles are imperative and specific: "Delete the SPA fallback handler", not "SPA work".
   Descriptions say what changes and why. Acceptance criteria are observable and testable: state the condition a reviewer
   can check, not an intention. "CI passes with no Build SPA step" beats "CI should be updated".

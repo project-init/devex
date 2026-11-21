@@ -313,13 +313,20 @@ docs/discoveries/audit-logs/
 └── 2026-11-21/
     ├── .gitignore
     ├── discovery.md
+    ├── synopsis.md
     └── work-breakdown.yaml
 ```
 
-`discovery.md` is the narrative document for GitHub-based peer review. `work-breakdown.yaml` is a provider-neutral graph
-with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels, and estimates. The generated YAML
-includes every supported work-item field, using empty lists where appropriate so teams can see what is configurable
-without consulting the Go schema.
+`discovery.md` is the narrative document for GitHub-based peer review. `synopsis.md` is that discovery told aloud in
+under a minute: what you would say to a colleague in passing, with one Mermaid diagram when the change reshapes how
+several parts interact. GitHub renders the diagram in the pull request. `work-breakdown.yaml` names the synopsis in
+`discovery.synopsis`, and `validate` then requires it to open with an H1 title and use no other headings, keep its prose
+to 150 words, and draw at most one `flowchart`, `sequenceDiagram`, or `stateDiagram-v2` diagram, or their `graph` and
+`stateDiagram` aliases. Bundles without the key still validate. The discovery skill writes the synopsis last, renders
+its diagram, and has an independent reviewer check both against `discovery.md` before you see them.
+`work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance
+criteria, labels, and estimates. The generated YAML includes every supported work-item field, using empty lists where
+appropriate so teams can see what is configurable without consulting the Go schema.
 
 Each dated folder is one iteration of the discovery. To revisit a discovery, run `init` again with the same name on a
 later day: the new iteration lands beside the earlier ones. Its `discovery.id` ends in the date, as in

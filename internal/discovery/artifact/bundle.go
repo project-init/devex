@@ -40,7 +40,7 @@ func Load(directory string) (*Bundle, error) {
 		return nil, err
 	}
 
-	documentPath, err := safeDocumentPath(absDirectory, workBreakdown.Discovery.Document)
+	documentPath, err := safeDocumentPath(absDirectory, "discovery.document", workBreakdown.Discovery.Document)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +49,9 @@ func Load(directory string) (*Bundle, error) {
 		return nil, fmt.Errorf("read discovery document %s: %w", documentPath, err)
 	}
 	if err := validateDiscoveryDocument(discoveryContent); err != nil {
+		return nil, err
+	}
+	if err := checkSynopsis(absDirectory, workBreakdown.Discovery.Synopsis); err != nil {
 		return nil, err
 	}
 
@@ -69,13 +72,13 @@ func (b *Bundle) Digest() string {
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
-func safeDocumentPath(directory string, document string) (string, error) {
+func safeDocumentPath(directory string, field string, document string) (string, error) {
 	if filepath.IsAbs(document) {
-		return "", fmt.Errorf("discovery.document must be relative to the bundle")
+		return "", fmt.Errorf("%s must be relative to the bundle", field)
 	}
 	cleaned := filepath.Clean(document)
 	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("discovery.document must stay inside the bundle")
+		return "", fmt.Errorf("%s must stay inside the bundle", field)
 	}
 	return filepath.Join(directory, cleaned), nil
 }

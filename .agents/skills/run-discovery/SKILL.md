@@ -1,10 +1,10 @@
 ---
 name: run-discovery
 description:
-  Turn an idea into a reviewable product or technical discovery bundle containing discovery.md and work-breakdown.yaml.
-  Use when exploring a feature, problem, architectural change, or uncertain initiative; refining intent and
-  requirements; comparing approaches; writing a discovery document; creating a structured implementation breakdown; or
-  preparing approved discovery work for Jira or GitHub Issues.
+  Turn an idea into a reviewable product or technical discovery bundle containing discovery.md, synopsis.md, and
+  work-breakdown.yaml. Use when exploring a feature, problem, architectural change, or uncertain initiative; refining
+  intent and requirements; comparing approaches; writing a discovery document; creating a structured implementation
+  breakdown; or preparing approved discovery work for Jira or GitHub Issues.
 ---
 
 # Run Discovery
@@ -72,10 +72,10 @@ Do not create final artifacts until the important design sections are accepted.
 Check for an earlier iteration first. List the discovery folders under `<directory>`, and when one covers the same
 problem, ask the user whether this discovery is a new iteration of it. On yes, pass that folder's name to `init` exactly
 as written, so the new iteration lands beside the earlier ones. Then copy the earlier iteration's title into the new
-`discovery.md` and `work-breakdown.yaml`, since `init` builds the title from the folder name, link the latest earlier
-iteration from **Useful Context**, and state what changed since. A folder that holds `work-breakdown.yaml` directly
-predates dated iterations; treat it as the first iteration and leave it where it is, because its published issues link
-to that path.
+`discovery.md`, `synopsis.md`, and `work-breakdown.yaml`, since `init` builds the title from the folder name, link the
+latest earlier iteration from **Useful Context**, and state what changed since. A folder that holds
+`work-breakdown.yaml` directly predates dated iterations; treat it as the first iteration and leave it where it is,
+because its published issues link to that path.
 
 Run:
 
@@ -124,8 +124,15 @@ the label before publishing.
 Keep narrative reasoning in `discovery.md`. Keep executable scope, hierarchy, dependencies, acceptance criteria, and
 estimates in `work-breakdown.yaml`; do not duplicate the entire discovery narrative in every work item.
 
-Write every word a human will read — `discovery.md`, `work-breakdown.yaml`, and the pull request body that carries them
-— to [references/prose-style.md](references/prose-style.md).
+Write every word a human will read — `discovery.md`, `synopsis.md`, `work-breakdown.yaml`, and the pull request body
+that carries them — to [references/prose-style.md](references/prose-style.md).
+
+### Write the synopsis last
+
+Write `synopsis.md` after the user accepts `discovery.md`: it is the discovery told aloud in under a minute, with one
+diagram when a picture shows the change faster than prose can. Follow [references/synopsis.md](references/synopsis.md),
+including its review loop. Most readers stop at the synopsis, so never present one that has not passed an independent
+review against `discovery.md`.
 
 Run:
 
@@ -134,7 +141,7 @@ devex discovery validate <bundle-directory>
 ```
 
 Resolve every validation error before presenting the bundle for peer review. Tell the user to review the Markdown and
-YAML through their normal GitHub workflow.
+YAML through their normal GitHub workflow, starting with `synopsis.md`, where GitHub renders the diagram.
 
 ## Publish after human review
 
