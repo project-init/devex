@@ -581,6 +581,39 @@ func TestPlanRelatesEpicsToTheTrackingIssue(t *testing.T) {
 	}
 }
 
+// Jira cannot draw Mermaid, so the epic opens with the synopsis that links its diagram.
+func TestPlanOpensEpicsWithTheLinkedSynopsis(t *testing.T) {
+	operations, _, err := NewWithClient(nil, "user@example.com", "token").Plan(
+		context.Background(),
+		provider.PlanInput{
+			WorkBreakdown: &domain.WorkBreakdown{
+				Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
+				Items: []domain.WorkItem{
+					{ID: "INIT-001", Kind: domain.KindInitiative, Title: "Deliver audit logs", Description: "Deliver audit logs."},
+					{ID: "WI-001", Kind: domain.KindTask, Parent: "INIT-001", Title: "First", Description: "First."},
+				},
+			},
+			Synopsis: provider.Synopsis{WithDiagram: "With diagram.", DiagramLinked: "Diagram linked."},
+		},
+		jiraTarget("https://jira.test"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptions := map[domain.ItemID]any{}
+	for _, operation := range operations {
+		if operation.Action == provider.ActionCreateIssue {
+			descriptions[operation.ItemID] = operation.Fields["description"]
+		}
+	}
+	if descriptions["INIT-001"] != "Diagram linked.\n\nDeliver audit logs." {
+		t.Fatalf("epic description = %#v, want the linked synopsis first", descriptions["INIT-001"])
+	}
+	if descriptions["WI-001"] != "First." {
+		t.Fatalf("task description = %#v, want no synopsis", descriptions["WI-001"])
+	}
+}
+
 // A discovery document may cite an issue in another tracker. Only an issue in the instance being
 // published to can be linked, and silently dropping the rest would hide the reason.
 func TestPlanWarnsWhenTheTrackingIssueIsElsewhere(t *testing.T) {

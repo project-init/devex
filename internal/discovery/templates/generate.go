@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-//go:embed discovery.md.tmpl work-breakdown.yaml.tmpl
+//go:embed discovery.md.tmpl synopsis.md.tmpl work-breakdown.yaml.tmpl
 var files embed.FS
 
 type templateData struct {
@@ -81,6 +81,9 @@ func GenerateWithOptions(baseDirectory string, name string, options GenerateOpti
 
 func renderBundle(directory string, data templateData) error {
 	if err := renderNew(filepath.Join(directory, "discovery.md"), "discovery.md.tmpl", data); err != nil {
+		return err
+	}
+	if err := renderNew(filepath.Join(directory, "synopsis.md"), "synopsis.md.tmpl", data); err != nil {
 		return err
 	}
 	if err := renderNew(filepath.Join(directory, "work-breakdown.yaml"), "work-breakdown.yaml.tmpl", data); err != nil {

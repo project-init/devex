@@ -39,6 +39,10 @@ func CreatePlan(
 		DocumentURL:   source.DocumentURL(ctx, bundle.Directory, bundle.WorkBreakdown.Discovery.Document),
 		TrackingURL:   artifact.TrackingURL(bundle.DiscoveryContent),
 	}
+	if len(bundle.SynopsisContent) > 0 {
+		synopsisURL := source.DocumentURL(ctx, bundle.Directory, bundle.WorkBreakdown.Discovery.Synopsis)
+		input.Synopsis = planSynopsis(bundle.SynopsisContent, synopsisURL)
+	}
 	operations, warnings, err := adapter.Plan(ctx, input, target)
 	if err != nil {
 		return nil, err
@@ -146,4 +150,18 @@ func ValidatePlan(plan *provider.Plan, bundle *artifact.Bundle) error {
 		return fmt.Errorf("invalid target embedded in plan: %w", err)
 	}
 	return nil
+}
+
+func planSynopsis(content []byte, url string) provider.Synopsis {
+	return provider.Synopsis{
+		WithDiagram: artifact.IssueSynopsis(content, func(mermaid string) string {
+			return "```mermaid\n" + mermaid + "\n```"
+		}),
+		DiagramLinked: artifact.IssueSynopsis(content, func(string) string {
+			if url == "" {
+				return ""
+			}
+			return "Diagram: " + url
+		}),
+	}
 }
