@@ -1,8 +1,8 @@
 # Synopsis
 
 `synopsis.md` is the discovery told aloud: what you would say to a colleague who gives you one minute. A reader who
-stops there must still know what we propose, how it works, and why it is the right call. Write it last, after
-`discovery.md` is accepted, because a synopsis summarizes decisions; it never makes them.
+stops there must still know what we propose, how it works, and why it is the right call. Write it last, from the
+finished `discovery.md`, because a synopsis summarizes decisions; it never makes them.
 
 ## Tell it as what, how, and why
 
@@ -147,4 +147,3 @@ them.
    edge. Fix the rest, render again, and send the changed text and image back for review.
 6. Stop when a round returns `ready`, or after three rounds. Take anything still open to the user rather than deciding
    it alone.
-7. Present the synopsis and its rendered diagram to the user for approval, as you present other design sections.

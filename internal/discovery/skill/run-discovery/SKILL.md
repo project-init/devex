@@ -128,8 +128,9 @@ that carries them — to [references/prose-style.md](references/prose-style.md).
 
 ### Write the synopsis last
 
-Write `synopsis.md` after the user accepts `discovery.md`: it is the discovery told aloud in under a minute, as what we
-propose, how it works, and why, with one diagram when a picture shows the change faster than prose can. Follow
+Write `synopsis.md` after `discovery.md`: it is the discovery told aloud in under a minute, as what we propose, how it
+works, and why, with one diagram when a picture shows the change faster than prose can. Skip a separate approval of
+`discovery.md` and `synopsis.md`: the user accepted the design under **Validate the design**. Follow
 [references/synopsis.md](references/synopsis.md), including its review loop. Most readers stop at the synopsis, so never
 present one that has not passed an independent review against `discovery.md`.
 
@@ -139,8 +140,14 @@ Run:
 devex discovery validate <bundle-directory>
 ```
 
-Resolve every validation error before presenting the bundle for peer review. Tell the user to review the Markdown and
-YAML through their normal GitHub workflow, starting with `synopsis.md`, where GitHub renders the diagram.
+Resolve every validation error before presenting the bundle for peer review. Present the synopsis text with the bundle.
+When the synopsis has a diagram, add its render, or a note that the diagram is unverified when Node is missing. Then
+tell the user to review the Markdown and YAML through their normal GitHub workflow, starting with `synopsis.md`, where
+GitHub renders any diagram.
+
+When peer review feedback changes `discovery.md` or `synopsis.md`, rerun the synopsis review loop before presenting the
+bundle again. `discovery.md` stays the source: bring the synopsis in line with it, and take any change the discovery
+itself needs to the user.
 
 ## Publish after human review
 
