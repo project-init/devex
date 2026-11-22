@@ -44,7 +44,8 @@ The diagram may add the shape of the how: an order, a branch, a loop, a contrast
 - Aim for 30 to 60 seconds of speech: 75 to 150 words. `devex discovery validate` counts the prose and the closing link,
   skips the title and diagram, and rejects more than 150 words.
 - Write sentences you would say out loud. Use "we" and plain verbs. Skip headings, bullets, tables, and bold labels; a
-  speaker never announces "What:".
+  speaker never announces "What:". `devex discovery validate` rejects every block but paragraphs and the diagram,
+  because each published initiative opens with the synopsis.
 - When the word limit forces a cut, cut alternatives first, then trim mechanism, but never below a sentence that says
   how it works. Keep every point on the keep list.
 - Use the reader's words. Say "discovery", not "bundle"; name things, never files. When a term needs a definition,
@@ -53,7 +54,9 @@ The diagram may add the shape of the how: an order, a branch, a loop, a contrast
   wrong: "an AI reviewer", not "a reviewer".
 - Open each beat with its cue, never "It" or "This". A listener cannot hear the paragraph break, so a pronoun attaches
   to the wrong sentence.
-- End with `[Read the full discovery](discovery.md)`.
+- End with `[Read the full discovery](discovery.md)` in a paragraph of its own. Link no other file, embed images only
+  from the web, and write no HTML but comments. Each published initiative opens with the synopsis, and an issue cannot
+  open a file from the repository, so validation rejects a file link inside prose and a repository image anywhere.
 
 Trace every claim to `discovery.md`. The synopsis compresses; it never adds a fact, number, decision, or option the
 discovery lacks. Carry every hedge with its claim, wherever the discovery puts it: "typically" stays, and when the

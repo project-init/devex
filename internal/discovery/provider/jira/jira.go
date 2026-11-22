@@ -99,6 +99,11 @@ func (a *Adapter) Plan(
 			}
 		}
 		marker := workBreakdown.Discovery.ID + "/" + string(item.ID)
+		description := item.Description
+		if item.Kind == domain.KindInitiative {
+			// Jira's document format has no Mermaid, so the epic links the diagram instead.
+			description = provider.WithSynopsis(input.Synopsis.DiagramLinked, description)
+		}
 		for _, dependency := range item.DependsOn {
 			links = append(links, linkOperation(workBreakdown.Discovery.ID, item.ID, dependency, linkType))
 		}
@@ -116,7 +121,7 @@ func (a *Adapter) Plan(
 				"project_key":         target.Jira.ProjectKey,
 				"issue_type":          issueType,
 				"title":               item.Title,
-				"description":         item.Description,
+				"description":         description,
 				"acceptance_criteria": item.AcceptanceCriteria,
 				"document_url":        input.DocumentURL,
 				"labels":              labels,

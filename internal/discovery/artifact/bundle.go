@@ -18,6 +18,8 @@ type Bundle struct {
 	Directory        string
 	WorkBreakdown    *domain.WorkBreakdown
 	DiscoveryContent []byte
+	// SynopsisContent is empty when the work breakdown names no synopsis.
+	SynopsisContent  []byte
 	WorkBreakdownRaw []byte
 }
 
@@ -51,7 +53,8 @@ func Load(directory string) (*Bundle, error) {
 	if err := validateDiscoveryDocument(discoveryContent); err != nil {
 		return nil, err
 	}
-	if err := checkSynopsis(absDirectory, workBreakdown.Discovery.Synopsis); err != nil {
+	synopsisContent, err := loadSynopsis(absDirectory, workBreakdown.Discovery.Synopsis)
+	if err != nil {
 		return nil, err
 	}
 
@@ -59,6 +62,7 @@ func Load(directory string) (*Bundle, error) {
 		Directory:        absDirectory,
 		WorkBreakdown:    &workBreakdown,
 		DiscoveryContent: discoveryContent,
+		SynopsisContent:  synopsisContent,
 		WorkBreakdownRaw: raw,
 	}, nil
 }
@@ -69,6 +73,12 @@ func (b *Bundle) Digest() string {
 	_, _ = hash.Write(b.DiscoveryContent)
 	_, _ = hash.Write([]byte("\x00work-breakdown\x00"))
 	_, _ = hash.Write(b.WorkBreakdownRaw)
+	// Initiatives publish the synopsis, so a plan goes stale when it changes. Bundles without one
+	// keep the digest their existing plans recorded.
+	if len(b.SynopsisContent) > 0 {
+		_, _ = hash.Write([]byte("\x00synopsis\x00"))
+		_, _ = hash.Write(b.SynopsisContent)
+	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
