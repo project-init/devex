@@ -1,36 +1,65 @@
 # Synopsis
 
 `synopsis.md` is the discovery told aloud: what you would say to a colleague who gives you one minute. A reader who
-stops there must still know the problem, the proposal, and what it costs. Write it last, after `discovery.md` is
-accepted, because a synopsis summarizes decisions; it never makes them.
+stops there must still know what we propose, how it works, and why it is the right call. Write it last, after
+`discovery.md` is accepted, because a synopsis summarizes decisions; it never makes them.
 
-## Write it to be spoken
+## Tell it as what, how, and why
 
 Write for the person who decides whether to fund the work. They know the business and everyday tools such as pull
 requests and issue trackers, but not this codebase or its vocabulary.
 
+Tell the story in three paragraphs before the closing link, in this order. Open each with a spoken cue that names its
+beat, so a listener follows the structure without a heading:
+
+1. **What**: the change we propose and the problem it answers. Name who hurts and what it costs them, with the
+   discovery's number for that cost or its symptom. When the discovery states no cost, state the symptom; never infer
+   one. Open with a cue such as "We propose…".
+2. **How**: how the change works and what it takes. Give only as much mechanism as the reader needs, then the phases or
+   effort from **Phasing**. Open with a cue that names the change, such as "Here's how the new check works:". The
+   diagram, when you draw one, follows this paragraph.
+3. **Why**: why this way wins. Take the reason from **Proposed Approach** or **Benefits**, and when you name an
+   alternative, pick one the discovery says lost and whose flaw answers that reason. Name it fully, as in "rewriting the
+   billing service in place", so a listener cannot mistake it for the proposal. Close on the one risk worth watching
+   and, when the discovery says, how it is handled. Open with a cue that names the change, such as "We chose the new
+   check because…".
+
+A recommendation to do nothing fills the same beats: what we recommend, how things run if we keep them and what that
+costs, and why it wins, closing on what would change the answer.
+
+Vary the cues to fit the story, but open each beat with one.
+
+The **keep list** names what the prose must state, since a listener cannot hear a diagram, and what survives every cut:
+
+- what we propose, who it hurts today, and what it costs them or the symptom, or, for a recommendation to do nothing,
+  what we recommend;
+- how it works and what it takes, or, for a recommendation to do nothing, how things run today and what that costs;
+- the reason it wins;
+- the main risk, with its handling when the discovery gives one, or, for a recommendation to do nothing, what would
+  change the answer;
+- every hedge, including each part of an assumption, so a safeguard the discovery assumes runs never reads as certain.
+
+The diagram may add the shape of the how: an order, a branch, a loop, a contrast, or where parts connect.
+
 - Aim for 30 to 60 seconds of speech: 75 to 150 words. `devex discovery validate` counts the prose and the closing link,
   skips the title and diagram, and rejects more than 150 words.
 - Write sentences you would say out loud. Use "we" and plain verbs. Skip headings, bullets, tables, and bold labels; a
-  speaker never announces "Problem:".
-- Open with the problem, not the system you will build. Name who hurts and what it costs them, with the discovery's
-  number for that cost or its symptom. When the discovery states no cost, state the symptom; never infer a cost.
-- Follow with the proposal in two or three sentences: what changes for the reader first, then only as much mechanism as
-  they need. Give the reason it wins, and name an alternative only when the discovery says why it lost.
-- Close with what it takes, from **Phasing**, and the one risk worth watching.
-- When the word limit forces a cut, cut mechanism first, then alternatives. Keep the problem, the proposal, the cost,
-  and the main risk.
+  speaker never announces "What:".
+- When the word limit forces a cut, cut alternatives first, then trim mechanism, but never below a sentence that says
+  how it works. Keep every point on the keep list.
 - Use the reader's words. Say "discovery", not "bundle"; name things, never files. When a term needs a definition,
   replace the term. Rename a role the same way when the discovery's word would mislead, as "author" for the person
-  directing the agent, provided it names the same person.
-- Open each paragraph with its subject, never "It" or "This". A listener cannot hear the paragraph break, so a pronoun
-  attaches to the wrong sentence.
+  directing the agent, provided it names the same person. Say what kind of actor does a step when a reader would guess
+  wrong: "an AI reviewer", not "a reviewer".
+- Open each beat with its cue, never "It" or "This". A listener cannot hear the paragraph break, so a pronoun attaches
+  to the wrong sentence.
 - End with `[Read the full discovery](discovery.md)`.
 
 Trace every claim to `discovery.md`. The synopsis compresses; it never adds a fact, number, decision, or option the
 discovery lacks. Carry every hedge with its claim, wherever the discovery puts it: "typically" stays, and when the
-discovery assumes a safeguard runs, say "when", not "always". When the summary needs something the discovery lacks, fix
-the discovery and take the change to the user.
+discovery assumes a safeguard runs, say "when", not "always". Place a hedge mid-sentence, and end the sentence on what
+the reader should remember. When the summary needs something the discovery lacks, fix the discovery and take the change
+to the user.
 
 ## Decide whether to draw
 
@@ -42,14 +71,14 @@ process decision, and a recommendation to do nothing never qualify. These change
 - Work passes through four or more steps or actors, with an order, branch, or loop that matters.
 - An entity's lifecycle gains, loses, or reorders states.
 
-Then cover the prose and read the diagram alone. Keep it when it shows an order, branch, loop, or contrast that the
-prose does not; delete it when it only names things the prose already named. Replace the template's placeholder comment
-with the diagram, or delete the comment when you skip it.
+Then apply the keep test: keep the diagram when it gives a reader, at a glance, a shape the prose must spell out piece
+by piece, whether an order, a branch, a loop, a contrast, or where parts connect. Delete it otherwise. Replace the
+template's placeholder comment with the diagram, or delete the comment when you skip it.
 
 ## Draw a snapshot
 
-Write Mermaid in a fenced `mermaid` block after the prose and before the closing link; GitHub renders it in the pull
-request and in issues. Pick the type by what changes:
+Write Mermaid in a fenced `mermaid` block between the how and why paragraphs, where it illustrates the how; GitHub
+renders it in the pull request and in issues. Pick the type by what changes:
 
 | What changes                          | Diagram                                                   |
 | ------------------------------------- | --------------------------------------------------------- |
@@ -71,6 +100,8 @@ every other type.
 - Point each edge the way the work flows, and read each labeled edge aloud as a sentence: source, label, target. Every
   sentence must be true to the discovery. When a person performs a step, name the person in the node, as in
   `M["Maintainer publishes"]`, so no edge credits a document or a meeting with an action.
+- Draw the step every branch shares before the split, and branch only on what differs.
+- When the discovery names no actor for a step, name the step itself, as in `Publish`, rather than inventing one.
 - Draw a review, check, or approval as a step on the path, as in `Draft --> Review --> Published`. A side arrow into a
   node from off the path reads as another input. A loop back to the step under review is fine; label it with what
   returns, as in `-->|returns findings|`.
@@ -78,7 +109,8 @@ every other type.
   labels on a fan-out read as "both".
 - Use `flowchart TB` for a chain longer than four nodes or one with a loop. A wide left-to-right strip shrinks to
   unreadable text in a pull request, and back edges clip their labels.
-- Mark what changes in the label: `"(new)"`, `"(changed)"` for an existing part that behaves differently, or
+- Mark what changes in the label: `"(new)"` for a part that did not exist, including one inside a changed part,
+  `"(changed)"` for an existing part that behaves differently, such as an API that now returns a cursor, or
   `"(removed)"` with a dashed stroke from `classDef removed stroke-dasharray: 5 5`. A label needs no legend and reads in
   light and dark themes. Mark nothing when everything shown is new, and let the subgraphs carry the contrast in a
   `Today` and `Proposed` diagram. Keep parentheses for these markers, so no other aside reads as one.
@@ -89,10 +121,11 @@ every other type.
 
 ## Review before presenting
 
-Most readers read only the synopsis, and the diagram is what they remember. Review both before the user sees them.
+Most readers read only the synopsis, and a reader who skims remembers the diagram. Review both before the user sees
+them.
 
 1. Run `devex discovery validate <bundle-directory>` and fix every error.
-2. Render each diagram outside the bundle, so no image is committed:
+2. Render the diagram outside the bundle, so no image is committed:
 
    ```bash
    npx -y @mermaid-js/mermaid-cli@12.2.0 -i <bundle-directory>/synopsis.md -o <scratch-directory>/synopsis.md -e png -s 2

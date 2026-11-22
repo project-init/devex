@@ -318,8 +318,8 @@ docs/discoveries/
 ```
 
 `discovery.md` is the narrative document for GitHub-based peer review. `synopsis.md` is that discovery told aloud in
-under a minute: what you would say to a colleague in passing, with one Mermaid diagram when the change reshapes how
-several parts interact. GitHub renders the diagram in the pull request. `work-breakdown.yaml` names the synopsis in
+under a minute, as what we propose, how it works, and why, with one Mermaid diagram when a picture shows the change
+faster than prose can. GitHub renders the diagram in the pull request. `work-breakdown.yaml` names the synopsis in
 `discovery.synopsis`, and `validate` then requires it to open with an H1 title and use no other headings, keep its prose
 to 150 words, and draw at most one `flowchart`, `sequenceDiagram`, or `stateDiagram-v2` diagram, or their `graph` and
 `stateDiagram` aliases. Bundles without the key still validate. The discovery skill writes the synopsis last, renders

@@ -128,10 +128,10 @@ that carries them — to [references/prose-style.md](references/prose-style.md).
 
 ### Write the synopsis last
 
-Write `synopsis.md` after the user accepts `discovery.md`: it is the discovery told aloud in under a minute, with one
-diagram when a picture shows the change faster than prose can. Follow [references/synopsis.md](references/synopsis.md),
-including its review loop. Most readers stop at the synopsis, so never present one that has not passed an independent
-review against `discovery.md`.
+Write `synopsis.md` after the user accepts `discovery.md`: it is the discovery told aloud in under a minute, as what we
+propose, how it works, and why, with one diagram when a picture shows the change faster than prose can. Follow
+[references/synopsis.md](references/synopsis.md), including its review loop. Most readers stop at the synopsis, so never
+present one that has not passed an independent review against `discovery.md`.
 
 Run:
 
