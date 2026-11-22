@@ -1,7 +1,7 @@
 schema_version: v1
 
 discovery:
-  id: example-discovery-2026-11-21
+  id: 2026-11-21-example-discovery
   title: Example discovery
   document: discovery.md
   synopsis: synopsis.md
