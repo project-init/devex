@@ -25,12 +25,14 @@ type templateData struct {
 
 type GenerateOptions struct {
 	DefaultLabels []string
-	// Date names the bundle's iteration folder and ends its discovery ID. The zero value means
-	// today.
+	// Date opens the bundle's folder name and discovery ID. The zero value means today.
 	Date time.Time
 }
 
 var invalidSlug = regexp.MustCompile(`[^a-z0-9]+`)
+
+// datePrefix matches the date that opens an iteration's folder name.
+var datePrefix = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-`)
 
 func Generate(baseDirectory string, name string) (string, error) {
 	return GenerateWithOptions(baseDirectory, name, GenerateOptions{})
@@ -41,15 +43,22 @@ func GenerateWithOptions(baseDirectory string, name string, options GenerateOpti
 	if slug == "" {
 		return "", fmt.Errorf("discovery name must contain letters or digits")
 	}
+	if datePrefix.MatchString(slug) && earlierIteration(baseDirectory, slug) {
+		// Naming an earlier iteration starts the next one, rather than nesting one date in another.
+		// Only a dated name changes, so a name that matches an undated bundle keeps its casing.
+		slug = datePrefix.ReplaceAllString(slug, "")
+		name = slug
+	}
 	date := options.Date
 	if date.IsZero() {
 		date = time.Now()
 	}
-	// Each iteration gets its own folder and discovery ID, so a later iteration publishes fresh
-	// issues and leaves the work an earlier one published, and the document it links, intact.
-	iteration := date.Format(time.DateOnly)
-	directory := filepath.Join(baseDirectory, slug, iteration)
-	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
+	// The date leads the folder name so a listing sorts discoveries by when they began. Each
+	// iteration gets its own folder and discovery ID, so a later iteration publishes fresh issues
+	// and leaves the work an earlier one published, and the document it links, intact.
+	folder := date.Format(time.DateOnly) + "-" + slug
+	directory := filepath.Join(baseDirectory, folder)
+	if err := os.MkdirAll(baseDirectory, 0o755); err != nil {
 		return "", err
 	}
 	if err := os.Mkdir(directory, 0o755); errors.Is(err, fs.ErrExist) {
@@ -58,7 +67,7 @@ func GenerateWithOptions(baseDirectory string, name string, options GenerateOpti
 		return "", err
 	}
 	data := templateData{
-		ID:                slug + "-" + iteration,
+		ID:                folder,
 		Title:             titleFromName(name),
 		DefaultLabelsYAML: formatLabelsYAML(options.DefaultLabels),
 	}
@@ -81,6 +90,13 @@ func renderBundle(directory string, data templateData) error {
 		return err
 	}
 	return writeNew(filepath.Join(directory, ".gitignore"), []byte(".publish/\n"))
+}
+
+// earlierIteration reports whether slug names a bundle already in baseDirectory. A name that merely
+// starts with a date, such as "2024-12-31 outage review", names none and keeps its date.
+func earlierIteration(baseDirectory string, slug string) bool {
+	_, err := os.Stat(filepath.Join(baseDirectory, slug, "work-breakdown.yaml"))
+	return err == nil
 }
 
 func formatLabelsYAML(labels []string) string {

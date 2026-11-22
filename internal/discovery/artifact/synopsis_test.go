@@ -189,7 +189,7 @@ func TestLoadChecksTheNamedSynopsis(t *testing.T) {
 			if test.key != "" {
 				key = "  synopsis: " + test.key + "\n"
 			}
-			write(t, directory, WorkBreakdownFile, "schema_version: v1\ndiscovery:\n  id: audit-logs-2026-11-21\n"+
+			write(t, directory, WorkBreakdownFile, "schema_version: v1\ndiscovery:\n  id: 2026-11-21-audit-logs\n"+
 				"  title: Audit logs\n  document: discovery.md\n"+key+"items:\n  - id: INIT-001\n"+
 				"    kind: initiative\n    title: Deliver audit logs\n    description: Record security events.\n")
 			write(t, directory, "discovery.md", discoveryDocument)
