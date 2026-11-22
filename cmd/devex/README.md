@@ -303,14 +303,14 @@ still reflects failures.
 
 ```shell
 devex discovery init docs/discoveries audit-logs
-devex discovery validate docs/discoveries/audit-logs/2026-11-21
+devex discovery validate docs/discoveries/2026-11-21-audit-logs
 ```
 
 `init` names the bundle after today's date, so the bundle it created on November 21, 2026 contains:
 
 ```text
-docs/discoveries/audit-logs/
-└── 2026-11-21/
+docs/discoveries/
+└── 2026-11-21-audit-logs/
     ├── .gitignore
     ├── discovery.md
     └── work-breakdown.yaml
@@ -321,12 +321,12 @@ with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels,
 includes every supported work-item field, using empty lists where appropriate so teams can see what is configurable
 without consulting the Go schema.
 
-Each dated folder is one iteration of the discovery. To revisit a discovery, run `init` again with the same name on a
-later day: the new iteration lands beside the earlier ones. Its `discovery.id` ends in the date, as in
-`audit-logs-2026-11-21`, so publishing it creates fresh issues and leaves the earlier iteration's issues, and the
-document they link, unchanged. `init` refuses a second iteration on the same day; edit that day's bundle instead. A
-bundle created before dated iterations keeps its files at the top of its folder, and new iterations land in dated
-folders beside them. Leave it in place: its published issues link to that path.
+Each folder is one iteration of a discovery, named for the day it began, so a listing sorts discoveries by date. To
+revisit a discovery, run `init` on a later day with the same name, or with the earlier folder's name, whose date `init`
+drops: the new iteration lands as `2027-02-03-audit-logs`. Its `discovery.id` matches the folder name, so publishing it
+creates fresh issues and leaves the earlier iteration's issues, and the document they link, unchanged. `init` refuses a
+second iteration on the same day; edit that day's bundle instead. A bundle created before dated folders keeps its
+undated name. Leave it in place: its published issues link to that path.
 
 **Configure project defaults and publication targets:**
 
@@ -382,10 +382,10 @@ This keeps scripted overrides explicit while allowing the common path to omit `-
 **Plan and apply publication:**
 
 ```shell
-devex discovery publish plan docs/discoveries/audit-logs/2026-11-21
+devex discovery publish plan docs/discoveries/2026-11-21-audit-logs
 # Override the configured default when needed:
-devex discovery publish plan docs/discoveries/audit-logs/2026-11-21 --target jira-project
-devex discovery publish apply docs/discoveries/audit-logs/2026-11-21/.publish/github-project/plan.yaml
+devex discovery publish plan docs/discoveries/2026-11-21-audit-logs --target jira-project
+devex discovery publish apply docs/discoveries/2026-11-21-audit-logs/.publish/github-project/plan.yaml
 ```
 
 `plan` performs no remote mutations; with `--sync` it reads the target but still writes nothing. It writes a frozen plan
@@ -421,8 +421,8 @@ re-plans; it executes the frozen artifact and refuses to run against a bundle th
 **Republish a changed bundle:**
 
 ```shell
-devex discovery publish plan docs/discoveries/audit-logs/2026-11-21 --sync
-devex discovery publish apply docs/discoveries/audit-logs/2026-11-21/.publish/jira-project/sync-<timestamp>/plan.yaml
+devex discovery publish plan docs/discoveries/2026-11-21-audit-logs --sync
+devex discovery publish apply docs/discoveries/2026-11-21-audit-logs/.publish/jira-project/sync-<timestamp>/plan.yaml
 ```
 
 A plain plan only creates: `apply` reuses any issue already published and changes nothing on it. `--sync` reads the
