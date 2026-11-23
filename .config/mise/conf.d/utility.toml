@@ -1,0 +1,4 @@
+##@ Utilities
+
+[tasks."update:dependencies"]
+run = "mise sre dependencies upgrade --all"
