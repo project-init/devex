@@ -590,7 +590,7 @@ func TestPlanOpensEpicsWithTheLinkedSynopsis(t *testing.T) {
 				Discovery: domain.DiscoveryRef{ID: "audit", Document: "discovery.md"},
 				Items: []domain.WorkItem{
 					{ID: "INIT-001", Kind: domain.KindInitiative, Title: "Deliver audit logs", Description: "Deliver audit logs."},
-					{ID: "WI-001", Kind: domain.KindTask, Parent: "INIT-001", Title: "First", Description: "First."},
+					{ID: "WI-001", Kind: domain.KindTask, Parent: "INIT-001", Repository: "acme/api", Title: "First", Description: "First."},
 				},
 			},
 			Synopsis: provider.Synopsis{WithDiagram: "With diagram.", DiagramLinked: "Diagram linked."},
@@ -609,8 +609,8 @@ func TestPlanOpensEpicsWithTheLinkedSynopsis(t *testing.T) {
 	if descriptions["INIT-001"] != "Diagram linked.\n\nDeliver audit logs." {
 		t.Fatalf("epic description = %#v, want the linked synopsis first", descriptions["INIT-001"])
 	}
-	if descriptions["WI-001"] != "First." {
-		t.Fatalf("task description = %#v, want no synopsis", descriptions["WI-001"])
+	if descriptions["WI-001"] != "Repository: `acme/api`\n\nFirst." {
+		t.Fatalf("task description = %#v, want the repository first and no synopsis", descriptions["WI-001"])
 	}
 }
 

@@ -20,6 +20,8 @@ items:
   - id: WI-001
     kind: research
     parent: INIT-001
+    # Required on a task, feature, or defect with none of those kinds beneath it: the one repository it changes.
+    # repository: your-organization/your-repository
     title: Validate the proposed approach
     description: Resolve the most important unknowns before implementation.
     acceptance_criteria:

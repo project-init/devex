@@ -318,7 +318,8 @@ func TestBodyLinksTheTrackingIssueFromInitiatives(t *testing.T) {
 	}
 }
 
-// Readers land on the initiative, so it opens with the synopsis; tasks stay focused on their work.
+// Readers land on the initiative, so it opens with the synopsis; tasks stay focused on their work
+// and open with the repository they change.
 func TestBodyOpensInitiativesWithTheSynopsis(t *testing.T) {
 	input := provider.PlanInput{Synopsis: provider.Synopsis{WithDiagram: "Synopsis prose.", DiagramLinked: "Linked."}}
 	initiative := domain.WorkItem{ID: "INIT-001", Kind: domain.KindInitiative, Title: "Audit", Description: "Deliver audit logs."}
@@ -327,9 +328,9 @@ func TestBodyOpensInitiativesWithTheSynopsis(t *testing.T) {
 		t.Fatalf("body = %q, want the synopsis with its diagram first", body)
 	}
 	task := initiative
-	task.ID, task.Kind = "WI-001", domain.KindTask
-	if body := bodyForItem(task, input, "<!-- marker -->"); strings.Contains(body, "Synopsis prose.") {
-		t.Fatalf("body = %q, want no synopsis on a task", body)
+	task.ID, task.Kind, task.Repository = "WI-001", domain.KindTask, "acme/api"
+	if body := bodyForItem(task, input, "<!-- marker -->"); !strings.HasPrefix(body, "Repository: `acme/api`\n\nDeliver audit logs.") {
+		t.Fatalf("body = %q, want the repository first and no synopsis on a task", body)
 	}
 }
 

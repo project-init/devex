@@ -36,12 +36,18 @@ type Synopsis struct {
 	DiagramLinked string
 }
 
-// WithSynopsis opens description with synopsis, separated by a blank line, when there is one.
-func WithSynopsis(synopsis string, description string) string {
-	if synopsis == "" {
-		return description
+// Description opens an item's description with the repository it changes, when it names one, and
+// an initiative's with synopsis above that, when there is one. Each opener stands in a paragraph of
+// its own. The repository sits in a code span, so a tracker renders no part of it as a link.
+func Description(item domain.WorkItem, synopsis string) string {
+	description := item.Description
+	if item.Repository != "" {
+		description = "Repository: `" + item.Repository + "`\n\n" + description
 	}
-	return synopsis + "\n\n" + description
+	if item.Kind == domain.KindInitiative && synopsis != "" {
+		description = synopsis + "\n\n" + description
+	}
+	return description
 }
 
 type Adapter interface {

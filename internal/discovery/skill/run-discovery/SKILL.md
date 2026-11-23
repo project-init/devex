@@ -93,6 +93,12 @@ merging them with item-specific labels without duplicates. The CLI seeds its sta
 CLI is unavailable, use the templates in `assets/` as fallbacks, apply the defaults manually, and follow the same dated
 layout and `discovery.id` rule.
 
+### Give each ticket one repository
+
+Find the repositories the accepted design changes, and split the work so each ticket changes one, as
+[references/work-breakdown.md](references/work-breakdown.md#one-ticket-per-repository) describes. When you cannot tell
+which repository owns a change, ask the user.
+
 ### Mark work an agent can finish alone
 
 When the discovery configuration sets `agent_ready_label`, decide for each work item whether an agent could finish it

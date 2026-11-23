@@ -327,7 +327,14 @@ files only from a paragraph of their own, embed images only from the web, write 
 its diagram, and has an independent reviewer check both against `discovery.md` before you see them.
 `work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance
 criteria, labels, and estimates. The generated YAML includes every supported work-item field, using empty lists where
-appropriate so teams can see what is configurable without consulting the Go schema.
+appropriate so teams can see what is configurable without consulting the Go schema; `repository` appears as a comment,
+since the starter research item needs none.
+
+Each ticket changes one repository. `validate` requires a `repository`, such as `acme/api`, on every task, feature, or
+defect with none of those kinds beneath it. The discovery skill splits work that spans repositories into one item per
+repository and chains the items with `depends_on` in the order they must land. A bundle written before this rule fails
+validation until each such item names its repository. Then `publish plan --sync` and `publish apply` add the repository
+line to its issues; issues edited since devex last wrote them need `publish plan --sync --force`.
 
 Each folder is one iteration of a discovery, named for the day it began, so a listing sorts discoveries by date. To
 revisit a discovery, run `init` on a later day with the same name, or with the earlier folder's name, whose date `init`
@@ -462,9 +469,11 @@ idempotency check if a receipt is lost.
 The tool deliberately does not prove or verify peer approval. Review and approval happen through the team's normal
 GitHub process; a human explicitly runs `publish apply` afterward.
 
-GitHub initiatives are tracking issues, and hierarchy and dependencies are rendered as links in issue bodies. Jira kind
-and issue-type mappings are configured per target. Jira publishes every `depends_on` edge as a real issue link oriented
-so the dependency blocks the dependent item; set `link_type` on the target to use a link type other than `Blocks`.
+GitHub initiatives are tracking issues, and hierarchy and dependencies are rendered as links in issue bodies. Each
+published issue opens with its item's repository, when the item names one, as in ``Repository: `acme/api` ``; an
+initiative puts it below the synopsis. Jira kind and issue-type mappings are configured per target. Jira publishes every
+`depends_on` edge as a real issue link oriented so the dependency blocks the dependent item; set `link_type` on the
+target to use a link type other than `Blocks`.
 
 Write the discovery document's title as a Markdown link to the issue that prompted the investigation, as the template
 does. Jira relates every published epic back to that issue, and GitHub links it from the tracking issue's body, so a
