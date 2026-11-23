@@ -31,6 +31,8 @@ type DiscoveryRef struct {
 	ID       string `yaml:"id" json:"id"`
 	Title    string `yaml:"title" json:"title"`
 	Document string `yaml:"document" json:"document"`
+	// Synopsis names the bundle's spoken summary. Bundles created before synopses leave it empty.
+	Synopsis string `yaml:"synopsis,omitempty" json:"synopsis,omitempty"`
 }
 
 type WorkItem struct {

@@ -1,9 +1,10 @@
 schema_version: v1
 
 discovery:
-  id: example-discovery
+  id: 2026-11-21-example-discovery
   title: Example discovery
   document: discovery.md
+  synopsis: synopsis.md
 
 items:
   - id: INIT-001

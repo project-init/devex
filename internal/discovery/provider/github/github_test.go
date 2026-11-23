@@ -318,6 +318,21 @@ func TestBodyLinksTheTrackingIssueFromInitiatives(t *testing.T) {
 	}
 }
 
+// Readers land on the initiative, so it opens with the synopsis; tasks stay focused on their work.
+func TestBodyOpensInitiativesWithTheSynopsis(t *testing.T) {
+	input := provider.PlanInput{Synopsis: provider.Synopsis{WithDiagram: "Synopsis prose.", DiagramLinked: "Linked."}}
+	initiative := domain.WorkItem{ID: "INIT-001", Kind: domain.KindInitiative, Title: "Audit", Description: "Deliver audit logs."}
+
+	if body := bodyForItem(initiative, input, "<!-- marker -->"); !strings.HasPrefix(body, "Synopsis prose.\n\nDeliver audit logs.") {
+		t.Fatalf("body = %q, want the synopsis with its diagram first", body)
+	}
+	task := initiative
+	task.ID, task.Kind = "WI-001", domain.KindTask
+	if body := bodyForItem(task, input, "<!-- marker -->"); strings.Contains(body, "Synopsis prose.") {
+		t.Fatalf("body = %q, want no synopsis on a task", body)
+	}
+}
+
 func TestGitHubAuthErrorKeepsATimeout(t *testing.T) {
 	timeout := fmt.Errorf("gh auth token did not finish within 15s: %w", githubclient.ErrAuthTimedOut)
 	err := githubAuthError(timeout)

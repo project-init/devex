@@ -303,22 +303,38 @@ still reflects failures.
 
 ```shell
 devex discovery init docs/discoveries audit-logs
-devex discovery validate docs/discoveries/audit-logs
+devex discovery validate docs/discoveries/2026-11-21-audit-logs
 ```
 
-The generated bundle contains:
+`init` names the bundle after today's date, so the bundle it created on November 21, 2026 contains:
 
 ```text
-docs/discoveries/audit-logs/
-├── .gitignore
-├── discovery.md
-└── work-breakdown.yaml
+docs/discoveries/
+└── 2026-11-21-audit-logs/
+    ├── .gitignore
+    ├── discovery.md
+    ├── synopsis.md
+    └── work-breakdown.yaml
 ```
 
-`discovery.md` is the narrative document for GitHub-based peer review. `work-breakdown.yaml` is a provider-neutral graph
-with stable work-item IDs, hierarchy, dependencies, acceptance criteria, labels, and estimates. The generated YAML
-includes every supported work-item field, using empty lists where appropriate so teams can see what is configurable
-without consulting the Go schema.
+`discovery.md` is the narrative document for GitHub-based peer review. `synopsis.md` is that discovery told aloud in
+under a minute, as what we propose, how it works, and why, with one Mermaid diagram when a picture shows the change
+faster than prose can. GitHub renders the diagram in the pull request. `work-breakdown.yaml` names the synopsis in
+`discovery.synopsis`, and `validate` then requires it to open with an H1 title, hold only paragraphs after it, link
+files only from a paragraph of their own, embed images only from the web, write no HTML but comments, keep its prose to
+150 words, and draw at most one `flowchart`, `sequenceDiagram`, or `stateDiagram-v2` diagram, or their `graph` and
+`stateDiagram` aliases. Bundles without the key still validate. The discovery skill writes the synopsis last, renders
+its diagram, and has an independent reviewer check both against `discovery.md` before you see them.
+`work-breakdown.yaml` is a provider-neutral graph with stable work-item IDs, hierarchy, dependencies, acceptance
+criteria, labels, and estimates. The generated YAML includes every supported work-item field, using empty lists where
+appropriate so teams can see what is configurable without consulting the Go schema.
+
+Each folder is one iteration of a discovery, named for the day it began, so a listing sorts discoveries by date. To
+revisit a discovery, run `init` on a later day with the same name, or with the earlier folder's name, whose date `init`
+drops: the new iteration lands as `2027-02-03-audit-logs`. Its `discovery.id` matches the folder name, so publishing it
+creates fresh issues and leaves the earlier iteration's issues, and the document they link, unchanged. `init` refuses a
+second iteration on the same day; edit that day's bundle instead. A bundle created before dated folders keeps its
+undated name. Leave it in place: its published issues link to that path.
 
 **Configure project defaults and publication targets:**
 
@@ -374,10 +390,10 @@ This keeps scripted overrides explicit while allowing the common path to omit `-
 **Plan and apply publication:**
 
 ```shell
-devex discovery publish plan docs/discoveries/audit-logs
+devex discovery publish plan docs/discoveries/2026-11-21-audit-logs
 # Override the configured default when needed:
-devex discovery publish plan docs/discoveries/audit-logs --target jira-project
-devex discovery publish apply docs/discoveries/audit-logs/.publish/github-project/plan.yaml
+devex discovery publish plan docs/discoveries/2026-11-21-audit-logs --target jira-project
+devex discovery publish apply docs/discoveries/2026-11-21-audit-logs/.publish/github-project/plan.yaml
 ```
 
 `plan` performs no remote mutations; with `--sync` it reads the target but still writes nothing. It writes a frozen plan
@@ -413,8 +429,8 @@ re-plans; it executes the frozen artifact and refuses to run against a bundle th
 **Republish a changed bundle:**
 
 ```shell
-devex discovery publish plan docs/discoveries/audit-logs --sync
-devex discovery publish apply docs/discoveries/audit-logs/.publish/jira-project/sync-<timestamp>/plan.yaml
+devex discovery publish plan docs/discoveries/2026-11-21-audit-logs --sync
+devex discovery publish apply docs/discoveries/2026-11-21-audit-logs/.publish/jira-project/sync-<timestamp>/plan.yaml
 ```
 
 A plain plan only creates: `apply` reuses any issue already published and changes nothing on it. `--sync` reads the
@@ -463,6 +479,12 @@ source because ADF images reference uploaded attachments.
 Published issues footer the discovery document as a URL on the repository's default branch, resolved from the `origin`
 remote. The link works once the branch carrying the bundle merges. A bundle outside a GitHub checkout has no such URL,
 and the footer is omitted rather than naming a path no reader can open.
+
+Each initiative's description opens with the bundle's synopsis, minus its title and any paragraph that only links a file
+beside it, such as the closing link to the discovery, which the issue's footer already carries. GitHub tracking issues
+keep the diagram, since GitHub renders Mermaid. Jira's description format cannot draw Mermaid, so epics replace the
+diagram with a link to `synopsis.md` on the default branch, or drop it when the bundle sits outside a GitHub checkout.
+Editing the synopsis makes earlier plans stale; `plan --sync` carries the edit to the initiative.
 
 ---
 

@@ -381,7 +381,12 @@ func markerPrefix(discoveryID string) string {
 
 func bodyForItem(item domain.WorkItem, input provider.PlanInput, idempotencyMarker string) string {
 	var body strings.Builder
-	body.WriteString(item.Description)
+	description := item.Description
+	if item.Kind == domain.KindInitiative {
+		// GitHub renders Mermaid, so the tracking issue keeps the synopsis's diagram.
+		description = provider.WithSynopsis(input.Synopsis.WithDiagram, description)
+	}
+	body.WriteString(description)
 	body.WriteString("\n\n")
 	if len(item.AcceptanceCriteria) > 0 {
 		body.WriteString("## Acceptance criteria\n\n")
