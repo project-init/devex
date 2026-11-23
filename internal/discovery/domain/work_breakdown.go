@@ -36,9 +36,12 @@ type DiscoveryRef struct {
 }
 
 type WorkItem struct {
-	ID                 ItemID    `yaml:"id" json:"id"`
-	Kind               ItemKind  `yaml:"kind" json:"kind"`
-	Parent             ItemID    `yaml:"parent,omitempty" json:"parent,omitempty"`
+	ID     ItemID   `yaml:"id" json:"id"`
+	Kind   ItemKind `yaml:"kind" json:"kind"`
+	Parent ItemID   `yaml:"parent,omitempty" json:"parent,omitempty"`
+	// Repository names the one repository the item changes, such as acme/api. Validate requires
+	// it on every task, feature, or defect with none of those kinds beneath it.
+	Repository         string    `yaml:"repository,omitempty" json:"repository,omitempty"`
 	Title              string    `yaml:"title" json:"title"`
 	Description        string    `yaml:"description" json:"description"`
 	AcceptanceCriteria []string  `yaml:"acceptance_criteria,omitempty" json:"acceptance_criteria,omitempty"`
@@ -62,6 +65,14 @@ const (
 )
 
 var idPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_-]*$`)
+
+// repositoryPattern admits a repository path such as acme/api or group/subgroup/api. It admits no
+// backtick, so the path stays inside the code span that opens each published description.
+var repositoryPattern = regexp.MustCompile(`^` + repositorySegment + `(/` + repositorySegment + `)+$`)
+
+// repositorySegment is one name in a repository path, holding at least one letter or digit so that
+// "." and ".." never pass.
+const repositorySegment = `[A-Za-z0-9._-]*[A-Za-z0-9][A-Za-z0-9._-]*`
 
 // discoveryIDPattern keeps discovery.id usable as a work-tracker label. Jira rejects labels
 // containing whitespace, and a label is only applied once every issue has been created.
@@ -127,6 +138,13 @@ func (w *WorkBreakdown) Validate() error {
 				problems = append(problems, fmt.Sprintf("item %q cannot depend on itself", item.ID))
 			}
 		}
+		if item.Repository != "" && !repositoryPattern.MatchString(item.Repository) {
+			problems = append(problems, fmt.Sprintf(
+				"item %q has repository %q; write a path such as acme/api",
+				item.ID,
+				item.Repository,
+			))
+		}
 		if item.Estimate != nil && !validEstimate(*item.Estimate) {
 			problems = append(problems, fmt.Sprintf("item %q has an invalid estimate", item.ID))
 		}
@@ -135,7 +153,37 @@ func (w *WorkBreakdown) Validate() error {
 	if initiativeCount == 0 {
 		problems = append(problems, "items must contain at least one initiative")
 	}
+	// An item above implementation work spans that work's repositories, so it needs none of its
+	// own, and one it names must be the repository of all that work. Code hosts match paths
+	// regardless of case. The visited set keeps a parent cycle from looping here before
+	// OrderedItems reports it.
+	spansWork := make(map[ItemID]bool, len(w.Items))
 	for _, item := range w.Items {
+		if !implementation(item.Kind) {
+			continue
+		}
+		visited := map[ItemID]bool{item.ID: true}
+		for parent := item.Parent; parent != "" && !visited[parent]; parent = byID[parent].Parent {
+			visited[parent] = true
+			spansWork[parent] = true
+			if named := byID[parent].Repository; named != "" && item.Repository != "" && !strings.EqualFold(named, item.Repository) {
+				problems = append(problems, fmt.Sprintf(
+					"item %q names repository %q, but item %q beneath it changes %q",
+					parent,
+					named,
+					item.ID,
+					item.Repository,
+				))
+			}
+		}
+	}
+	for _, item := range w.Items {
+		if implementation(item.Kind) && !spansWork[item.ID] && item.Repository == "" {
+			problems = append(problems, fmt.Sprintf(
+				"item %q needs a repository; split work that spans repositories into one item per repository",
+				item.ID,
+			))
+		}
 		if item.Parent != "" {
 			if _, exists := byID[item.Parent]; !exists {
 				problems = append(problems, fmt.Sprintf("item %q references unknown parent %q", item.ID, item.Parent))
@@ -238,6 +286,10 @@ func validKind(kind ItemKind) bool {
 	default:
 		return false
 	}
+}
+
+func implementation(kind ItemKind) bool {
+	return kind == KindFeature || kind == KindTask || kind == KindDefect
 }
 
 func validEstimate(estimate Estimate) bool {
