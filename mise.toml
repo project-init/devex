@@ -4,8 +4,8 @@ go = "1.27.4"
 golangci-lint = "2.15.0"
 
 # Infrastructure
-awscli = { version = "2.40.3", symlink_bins = "true" }
-goreleaser = "2.20.2"
+awscli = { version = "2.42.1", symlink_bins = "true" }
+goreleaser = "2.20.3"
 
 # Markdown
 oxfmt = "0.79.0"
